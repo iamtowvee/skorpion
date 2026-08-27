@@ -1,0 +1,32 @@
+configuration syntax
+
+Config File is manifest.spc file with format:
+
+key[value]
+block{key[value],keyTwo[value],}
+other {
+    key[value],
+    keyTwo[value],
+}
+
+all values is string, bool, arrays (included in <>) or numbers (int, float)
+
+Min CF:
+
+```
+name["Example"]
+version["1.0.0"]
+target[<"win", "linux">]
+main["./main.sk"]
+```
+
+All fields with default values:
+    name:               string          Havent default
+    version:            string          Havent default
+    authors:            array           null
+    target:             array           Havent default
+    main:               string          Havent default
+    buildOutName        string          Project name + "_" + Project version
+    buildOutPath        string          Path "bin/"
+    testOutName         string          Project name + "_" + Project version
+    testOutPath         string          Path "test/"

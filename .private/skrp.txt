@@ -1,0 +1,77 @@
+skorpion syntax
+
+If at line only 1 expression then semicolon optional
+
+Imports must be in start of file
+Can be imported only functions and const variables
+Can be imported only exportable functions and exportable variables
+
+NOT Exportable functions:
+```c
+int *add( /* args */ ) { /* logic */ }
+```
+
+Exportable functions:
+```c
+int add( /* args */ ) { /* logic */ }
+```
+
+Comments may be inline and many-line, comments don't affect on program logic
+Inline comments open with // and close with end of line
+Many-line comments open with /* and close with */
+
+Any program need main function:
+```c
+void main(arr args) {
+    /* Main func logic */
+}
+```
+
+main() can take only one argument - array with name args, is const, you can't edit this array
+main() always has void type
+code under main() will be ignored
+
+code after return statement will be ignored
+
+Types which skorpion has:
+```c
+int, char, string, arr, dict, float, double, bool, void, any
+```
+
+any is static type, it only at first one check himself value and take type
+
+For example:
+```c
+void main(arr args) {
+    any example = 4
+    example = true // Err+1054: Type mismatch (Try to write bool 'true' into int 'example')
+}
+```
+
+If need NOT any and NOT specific type you can use: T<first, second, ...>
+
+Example program:
+```c
+use module &alias       // using:   alias.something()
+use path/module_two     // using:   module_two.something()
+use #module_three       // using:   something()
+use std/io
+
+T<int, float, double> add(T<int, float, double> a, T<int, float, double> b) {
+    return a + b
+}
+
+void main(arr args) {
+    any o1 = add(alias.pi + 6)
+    any o2 = add(module_two.number + 4)
+    io.sendln($o1 + ", " + $o2) // $ is translate to string
+}
+```
+
+If has two modules with same names, then all same imports need to have alias
+For example:
+```c
+use path/module
+use path/module_same &ms
+use other/module_same &oms
+```

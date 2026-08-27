@@ -1,0 +1,43 @@
+[root]/
+   |- go.mod                        # go 1.21, package skrp
+   |- main.go                       # Just Calling skorpion.go's function InitLang(os.Args[1:])
+   |- bin/
+      |- skorpion.exe
+      |- skorpion
+   |- docs/...
+   |- libs/
+      |- linux/
+         |- tcc
+      |- win/
+         |- tcc.exe
+      |- std/
+         |- ...
+   |- res/
+      |- skorpion.go
+      |- cli/
+         |-
+         |- args.go                 # Args like `--uncolored`
+         |- actions.go              # Commands like `skorpion build`
+         |- checks.go               # Commands like `skorpion --help`
+      |- errors/
+         |- error.go                # Main of errors module, API functions: InitErrors(), NewError(shortCode), TakeErrorsList(), CloseErrors(), ...
+                                    # Short code looks like Err+0000 without Err+ (only 0000)
+         |- codes.go                # Codes like Err+0000
+         |- messages.go             # Commands like `skorpion --help`
+      |- front/
+         |- front.go                # Main of front module, API functions: InitLexer(), InitParser(), InitAST(), ...
+         |- ast.go                  # Create AST
+         |- config.go               # Check config options
+         |- types.go                # Init Types
+         |- parser.go               # Parse code
+         |- lexer.go                # Init Keyword, Operators, ...
+      |- midlevel/
+         |- mid.go                  # Main of midlevel module, API functions: SemCheck(file), OptimizeIR(), ...
+         |- semantic.go             # Semantic checks
+         |- optimize.go             # Optimize IR, clean deadcode and other
+      |- backend/
+         |- back.go                 # Main of backend module, API functions: Pipe(ir), genCFromIR(piped_ir), ...
+         |- pipeline.go             # Pipeline, GC
+                                    # GC is a static refcounting GC, which work only in compile-time and clear memory after variable last use place
+         |- codegen.go              # Generate C Code from 
+         |- builder.go              # Call current profile for create binary from C
