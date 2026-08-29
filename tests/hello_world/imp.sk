@@ -1,0 +1,5 @@
+void println(string msg) {
+    includeC ```
+        printf("%s\n", msg);
+    ```
+}

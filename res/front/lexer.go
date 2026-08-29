@@ -34,8 +34,9 @@ const (
 	TOKEN_AMPERSAND
 	TOKEN_HASH
 	TOKEN_DOLLAR
+	TOKEN_DOT
 	TOKEN_INCLUDE_C
-	TOKEN_BACKTICK // Новый токен для ```
+	TOKEN_BACKTICK
 )
 
 type Token struct {
@@ -143,6 +144,8 @@ func (l *Lexer) NextToken() Token {
 		return l.makeToken(TOKEN_HASH, "#")
 	case '$':
 		return l.makeToken(TOKEN_DOLLAR, "$")
+	case '.':
+		return l.makeToken(TOKEN_DOT, ".")
 	default:
 		errors.NewError("0001", "Unknown character", l.line, l.col, "")
 		l.pos++
@@ -375,6 +378,8 @@ func (tt TokenType) String() string {
 		return "#"
 	case TOKEN_DOLLAR:
 		return "$"
+	case TOKEN_DOT:
+		return "."
 	case TOKEN_INCLUDE_C:
 		return "includeC"
 	default:

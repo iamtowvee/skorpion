@@ -508,6 +508,29 @@ func (p *Parser) parseAssignmentOrCall() Node {
 	name := p.peek.Literal
 	p.advance()
 
+	// Проверяем, не точка ли это (module.function)
+	if p.peek.Type == TOKEN_DOT {
+		p.advance()
+		if p.peek.Type == TOKEN_IDENT {
+			// module.function
+			moduleName := name
+			funcName := p.peek.Literal
+			p.advance()
+			fullName := moduleName + "." + funcName
+
+			if p.peek.Type == TOKEN_LPAREN {
+				return p.parseCall(fullName)
+			}
+
+			// Если после точки не вызов, то это ошибка
+			p.hasErrors = true
+			errors.NewFatalError("0018",
+				fmt.Sprintf("Expected function call after '.', got '%s' (at %d:%d)", p.peek.Literal, p.peek.Line, p.peek.Column),
+				p.peek.Line, p.peek.Column, "")
+			return nil
+		}
+	}
+
 	if p.peek.Type == TOKEN_LPAREN {
 		return p.parseCall(name)
 	}
@@ -642,6 +665,23 @@ func (p *Parser) parsePrimary() Node {
 	case TOKEN_IDENT:
 		name := p.peek.Literal
 		p.advance()
+
+		// Проверяем, не точка ли это (module.function)
+		if p.peek.Type == TOKEN_DOT {
+			p.advance()
+			if p.peek.Type == TOKEN_IDENT {
+				moduleName := name
+				funcName := p.peek.Literal
+				p.advance()
+				fullName := moduleName + "." + funcName
+
+				if p.peek.Type == TOKEN_LPAREN {
+					return p.parseCall(fullName)
+				}
+				return &Ident{Name: fullName}
+			}
+		}
+
 		if p.peek.Type == TOKEN_LPAREN {
 			return p.parseCall(name)
 		}

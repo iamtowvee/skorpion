@@ -1,11 +1,7 @@
-void print(string msg) {
-    includeC ```
-        printf("%s\n", msg);
-    ```
-}
+use #imp
 
 void main(arr args) {
     int x = 10
     string s = "Hello"
-    print($x + s)
+    println($x + s)
 }

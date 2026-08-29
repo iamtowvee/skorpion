@@ -11,10 +11,8 @@ typedef int sk_bool;
 #define true 1
 #define false 0
 
-void print(sk_string msg) {
-    printf("%s\n", msg);
-    return;
-}
+// Function prototypes
+void println(sk_string msg);
 
 void main(void* args) {
     int x;
@@ -27,7 +25,12 @@ void main(void* args) {
     char t2[256];
     strcpy(t2, t1);
     strcat(t2, s);
-    print(t2);
+    println(t2);
+    return;
+}
+
+void println(sk_string msg) {
+    printf("%s\n", msg);
     return;
 }
 

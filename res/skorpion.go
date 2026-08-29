@@ -130,10 +130,10 @@ func buildProject() {
 	}
 	mainFile = filepath.Join(projectPath, mainFile)
 
-	// Читаем исходник
-	content, err := os.ReadFile(mainFile)
+	// Загружаем программу с импортами
+	mainProg, err := front.LoadProgram(mainFile)
 	if err != nil {
-		errors.NewFatalError("1001", fmt.Sprintf("Cannot read %s", mainFile), 0, 0, mainFile)
+		errors.NewFatalError("1001", fmt.Sprintf("Import error: %v", err), 0, 0, mainFile)
 		errors.PrintErrors()
 		os.Exit(1)
 		return
@@ -142,6 +142,7 @@ func buildProject() {
 	// Если нужно показать токены
 	if showTokens {
 		fmt.Println(cli.Colors.Bold(cli.Colors.Yellow("\n=== Tokens ===")))
+		content, _ := os.ReadFile(mainFile)
 		lexer := front.NewLexer(string(content))
 		tok := lexer.NextToken()
 		for tok.Type != front.TOKEN_EOF {
@@ -150,7 +151,6 @@ func buildProject() {
 		}
 		fmt.Println()
 
-		// Проверяем ошибки лексера
 		if errors.HasFatal() {
 			errors.PrintErrors()
 			os.Exit(1)
@@ -158,35 +158,44 @@ func buildProject() {
 		}
 	}
 
-	// Парсим
-	prog := front.InitAST(string(content))
+	// Создаём менеджер импортов
+	im := front.NewImportManager(projectPath)
+	im.LoadMain(mainFile)
 
-	// Проверяем ошибки парсера
-	if errors.HasFatal() || errors.HasErrors() {
-		errors.PrintErrors()
-		os.Exit(1)
-		return
-	}
-
-	fmt.Printf(cli.Colors.Info("Parsed %d functions\n"), len(prog.Functions))
+	fmt.Printf(cli.Colors.Info("Parsed %d functions\n"), len(mainProg.Functions))
 
 	// Если нужно показать AST
 	if showAST {
 		fmt.Println(cli.Colors.Bold(cli.Colors.Yellow("\n=== AST ===")))
-		printAST(prog, 0)
+		printAST(mainProg, 0)
 		fmt.Println()
 	}
 
-	// Семантический анализ
-	mid := midlevel.NewMidLevel(prog)
-	if !mid.SemCheck() {
+	// СЕМАНТИЧЕСКИЙ АНАЛИЗ
+	semantic := midlevel.NewSemanticAnalyzer(mainProg)
+	semantic.SetImportManager(im)
+
+	if !semantic.Analyze() {
 		errors.PrintErrors()
 		os.Exit(1)
 		return
 	}
 	fmt.Println(cli.Colors.Success("Semantic analysis passed"))
 
-	// Оптимизация
+	// ОПТИМИЗАЦИЯ — СОБИРАЕМ ВСЕ ФУНКЦИИ (main + импорты)
+	allFunctions := make([]*front.Function, len(mainProg.Functions))
+	copy(allFunctions, mainProg.Functions)
+
+	// Добавляем функции из импортов
+	importedFuncs := im.GetAllFunctions()
+	allFunctions = append(allFunctions, importedFuncs...)
+
+	mergedProg := &front.Program{
+		Imports:   mainProg.Imports,
+		Functions: allFunctions,
+	}
+
+	mid := midlevel.NewMidLevel(mergedProg)
 	optProg := mid.OptimizeIR()
 	fmt.Println(cli.Colors.Success("Optimization complete"))
 
@@ -228,6 +237,7 @@ func buildProject() {
 	}
 
 	// Генерация C кода
+	fmt.Println("Generating C code...")
 	back := backend.NewBackend(optProg)
 	cCode := back.GenCFromIR(ir)
 
@@ -239,6 +249,7 @@ func buildProject() {
 	}
 
 	// Сборка бинарника
+	fmt.Println("Building binary...")
 	if !back.Build(ir, buildConfig) {
 		errors.PrintErrors()
 		os.Exit(1)

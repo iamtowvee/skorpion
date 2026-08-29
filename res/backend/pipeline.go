@@ -33,7 +33,13 @@ func (p *Pipeline) Process() *IRProgram {
 	}
 
 	// 2. Обрабатываем функции
+	processed := make(map[string]bool)
 	for _, fn := range p.Program.Functions {
+		// Пропускаем дубликаты
+		if processed[fn.Name] {
+			continue
+		}
+		processed[fn.Name] = true
 		p.processFunction(fn)
 	}
 
@@ -190,9 +196,9 @@ func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string
 	right := p.processExpression(bin.Right, irFn)
 
 	// Проверяем, не конкатенация ли это строк
-	// Если оба операнда - строки или один из них строка
-	leftIsString := strings.HasPrefix(left, "\"") || strings.HasPrefix(left, "t") && p.isStringTemp(left, irFn)
-	rightIsString := strings.HasPrefix(right, "\"") || strings.HasPrefix(right, "t") && p.isStringTemp(right, irFn)
+	// Просто проверяем, если один из операндов - строка
+	leftIsString := p.isStringValue(left, irFn)
+	rightIsString := p.isStringValue(right, irFn)
 
 	if bin.Op == "+" && (leftIsString || rightIsString) {
 		// Конкатенация строк
@@ -216,6 +222,41 @@ func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string
 	})
 
 	return result
+}
+
+// isStringValue проверяет, является ли значение строкой
+func (p *Pipeline) isStringValue(value string, irFn *IRFunction) bool {
+	// Если это строковая константа
+	if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+		return true
+	}
+
+	// Если это переменная, проверяем её тип
+	for _, local := range irFn.Locals {
+		if strings.Contains(local, value) {
+			// Если объявлена как sk_string
+			if strings.Contains(local, "sk_string") {
+				return true
+			}
+		}
+	}
+
+	// Проверяем инструкции, которые создают строки
+	for _, ins := range irFn.Instructions {
+		if ins.Result == value {
+			switch ins.Op {
+			case "to_string", "strcat":
+				return true
+			case "=":
+				// Если присваивается строковая константа
+				if strings.HasPrefix(ins.Arg1, "\"") && strings.HasSuffix(ins.Arg1, "\"") {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
 }
 
 func (p *Pipeline) processExpression(expr front.Node, irFn *IRFunction) string {
@@ -270,9 +311,16 @@ func (p *Pipeline) processCall(call *front.CallExpr, irFn *IRFunction) {
 		}
 	}
 
+	// Убираем префикс модуля для вызова импортированной функции
+	funcName := call.Name
+	if strings.Contains(funcName, ".") {
+		parts := strings.Split(funcName, ".")
+		funcName = parts[len(parts)-1]
+	}
+
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:   "call",
-		Arg1: call.Name,
+		Arg1: funcName,
 		Arg2: argsStr,
 	})
 }
