@@ -2,9 +2,9 @@ package main
 
 import (
 	"os"
-	skm "skrp/res"
+	"skrp/res"
 )
 
 func main() {
-	skm.InitLang(os.Args[1:])
+	res.InitLang(os.Args[1:])
 }

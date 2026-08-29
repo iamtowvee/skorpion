@@ -4,371 +4,479 @@ import (
 	"fmt"
 	"skrp/res/errors"
 	"skrp/res/front"
+	"strconv"
 	"strings"
 )
 
-// SemanticChecker проверяет семантику
-type SemanticChecker struct {
-	variables map[string]string // name -> type
-	functions map[string]string // name -> returnType
-	scope     []map[string]string
+type SemanticAnalyzer struct {
+	GlobalScope     *Scope
+	CurrentScope    *Scope
+	CurrentFunction *front.Function
+	Program         *front.Program
+	Errors          []errors.SkorpionError
 }
 
-// NewSemanticChecker создает новый семантический чекер
-func NewSemanticChecker() *SemanticChecker {
-	return &SemanticChecker{
-		variables: make(map[string]string),
-		functions: make(map[string]string),
-		scope:     make([]map[string]string, 0),
+func NewSemanticAnalyzer(prog *front.Program) *SemanticAnalyzer {
+	sa := &SemanticAnalyzer{
+		Program:     prog,
+		GlobalScope: NewScope(nil, true),
+	}
+	return sa
+}
+
+func (sa *SemanticAnalyzer) Analyze() bool {
+	// Инициализация встроенных типов (как символы)
+	sa.initBuiltinTypes()
+
+	// 1. Регистрация всех функций в глобальной области
+	for _, fn := range sa.Program.Functions {
+		sa.registerFunction(fn)
+	}
+
+	// 2. Проверка наличия main()
+	if !sa.checkMain() {
+		return false
+	}
+
+	// 3. Анализ каждой функции
+	for _, fn := range sa.Program.Functions {
+		sa.CurrentFunction = fn
+		sa.CurrentScope = NewScope(sa.GlobalScope, false)
+		sa.analyzeFunction(fn)
+	}
+
+	return len(sa.Errors) == 0
+}
+
+func (sa *SemanticAnalyzer) initBuiltinTypes() {
+	// Регистрируем базовые типы как символы-типы
+	types := []string{"int", "string", "float", "double", "bool", "char", "arr", "dict", "void", "any"}
+	for _, t := range types {
+		sa.GlobalScope.Define("type_"+t, SYM_CONST, "type", true)
 	}
 }
 
-// Check проверяет AST
-func (s *SemanticChecker) Check(ast *front.ASTNode) error {
-	s.pushScope()
+func (sa *SemanticAnalyzer) registerFunction(fn *front.Function) {
+	// Проверяем, что функция не объявлена дважды
+	if existing := sa.GlobalScope.Resolve(fn.Name); existing != nil {
+		sa.addError("1003", fmt.Sprintf("Function '%s' already declared", fn.Name), 0, 0, "")
+		return
+	}
 
-	for _, node := range ast.Children {
-		if err := s.checkNode(node); err != nil {
-			return err
+	// Регистрируем функцию
+	sa.GlobalScope.Define(fn.Name, SYM_FUNCTION, fn.ReturnType, fn.IsExport)
+}
+
+func (sa *SemanticAnalyzer) checkMain() bool {
+	mainSym := sa.GlobalScope.Resolve("main")
+	if mainSym == nil {
+		sa.addError("1004", "No main() function found", 0, 0, "")
+		return false
+	}
+
+	// Проверяем, что main имеет тип void
+	if mainSym.Type != "void" {
+		sa.addError("1005", "main() must return void", 0, 0, "")
+		return false
+	}
+
+	// Ищем саму функцию, чтобы проверить параметры
+	for _, fn := range sa.Program.Functions {
+		if fn.Name == "main" {
+			if len(fn.Params) != 1 {
+				sa.addError("1006", "main() must take exactly one parameter (arr args)", 0, 0, "")
+				return false
+			}
+			if fn.Params[0].Type != "arr" {
+				sa.addError("1007", "main() parameter must be of type 'arr'", 0, 0, "")
+				return false
+			}
+			break
 		}
 	}
 
-	s.popScope()
-	return nil
+	return true
 }
 
-func (s *SemanticChecker) checkNode(node *front.ASTNode) error {
-	switch node.Type {
-	case "Function":
-		return s.checkFunction(node)
-	case "VariableDeclaration":
-		return s.checkVariableDeclaration(node)
-	case "Assignment":
-		return s.checkAssignment(node)
-	case "Call":
-		return s.checkCall(node)
-	case "Return":
-		return s.checkReturn(node)
-	case "If":
-		return s.checkIf(node)
-	case "While":
-		return s.checkWhile(node)
-	case "Block":
-		return s.checkBlock(node)
-	case "Use":
-		// Проверяем, что модуль существует
-		return s.checkUse(node)
-	case "IncludeC":
-		// includeC не требует проверки
-		return nil
+func (sa *SemanticAnalyzer) analyzeFunction(fn *front.Function) {
+	// Вход в новую область видимости
+	sa.CurrentScope = NewScope(sa.GlobalScope, false)
+	defer func() {
+		sa.CurrentScope = sa.CurrentScope.Parent
+	}()
+
+	// Регистрируем параметры
+	for _, param := range fn.Params {
+		sa.CurrentScope.Define(param.Name, SYM_VARIABLE, param.Type, false)
+	}
+
+	// Анализируем тело функции
+	if fn.Body != nil {
+		sa.analyzeBlock(fn.Body, true)
+	}
+}
+
+func (sa *SemanticAnalyzer) analyzeBlock(block *front.Block, isFunctionBody bool) {
+	for _, stmt := range block.Statements {
+		sa.analyzeNode(stmt)
+	}
+}
+
+func (sa *SemanticAnalyzer) analyzeNode(node front.Node) front.Node {
+	switch n := node.(type) {
+	case *front.VarDecl:
+		return sa.analyzeVarDecl(n)
+	case *front.Assign:
+		return sa.analyzeAssign(n)
+	case *front.BinaryExpr:
+		return sa.analyzeBinary(n)
+	case *front.UnaryExpr:
+		return sa.analyzeUnary(n)
+	case *front.Number:
+		return sa.analyzeNumber(n)
+	case *front.String:
+		return sa.analyzeString(n)
+	case *front.Ident:
+		return sa.analyzeIdent(n)
+	case *front.ReturnStmt:
+		return sa.analyzeReturn(n)
+	case *front.CallExpr:
+		return sa.analyzeCall(n)
+	case *front.Block:
+		sa.analyzeBlock(n, false)
+		return n
+	case *front.IfStmt:
+		return sa.analyzeIf(n)
+	case *front.WhileStmt:
+		return sa.analyzeWhile(n)
+	case *front.ForStmt:
+		return sa.analyzeFor(n)
+	case *front.IncludeC:
+		return n
 	default:
-		// Для выражений просто проверяем детей
-		for _, child := range node.Children {
-			if err := s.checkNode(child); err != nil {
-				return err
+		return n
+	}
+}
+
+func (sa *SemanticAnalyzer) analyzeUnary(unary *front.UnaryExpr) front.Node {
+	if unary.Op == "$" {
+		// $ преобразует любой тип в строку
+		sa.analyzeNode(unary.Expr)
+		// Тип результата - string
+		return unary
+	}
+	return unary
+}
+
+func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
+	// Проверяем, что переменная не объявлена дважды
+	if existing := sa.CurrentScope.ResolveLocal(decl.Name); existing != nil {
+		sa.addError("1008", fmt.Sprintf("Variable '%s' already declared in this scope", decl.Name), 0, 0, "")
+		return decl
+	}
+
+	// Проверяем тип
+	if !sa.isValidType(decl.Type) {
+		sa.addError("1009", fmt.Sprintf("Unknown type '%s'", decl.Type), 0, 0, "")
+		return decl
+	}
+
+	// Анализируем выражение инициализации
+	var exprType string
+	if decl.Expr != nil {
+		exprType = sa.getNodeType(decl.Expr)
+
+		// Проверка соответствия типов
+		if decl.Type == "any" {
+			// any принимает любой тип
+		} else if decl.Type != exprType && exprType != "" {
+			sa.addError("1010", fmt.Sprintf("Type mismatch: cannot assign '%s' to '%s'", exprType, decl.Type), 0, 0, "")
+			return decl
+		}
+	}
+
+	// Регистрируем переменную
+	sa.CurrentScope.Define(decl.Name, SYM_VARIABLE, decl.Type, false)
+	return decl
+}
+
+func (sa *SemanticAnalyzer) analyzeAssign(assign *front.Assign) front.Node {
+	// Проверяем, что переменная существует
+	sym := sa.CurrentScope.Resolve(assign.Name)
+	if sym == nil {
+		sa.addError("1011", fmt.Sprintf("Undefined variable '%s'", assign.Name), 0, 0, "")
+		return assign
+	}
+
+	// Проверяем, что переменная не константа
+	if sym.IsConst {
+		sa.addError("1012", fmt.Sprintf("Cannot assign to constant '%s'", assign.Name), 0, 0, "")
+		return assign
+	}
+
+	// Анализируем выражение
+	if assign.Expr != nil {
+		exprType := sa.getNodeType(assign.Expr)
+
+		// Проверка соответствия типов
+		if sym.Type == "any" {
+			// any принимает любой тип
+		} else if sym.Type != exprType && exprType != "" {
+			sa.addError("1013", fmt.Sprintf("Type mismatch: cannot assign '%s' to '%s' (variable '%s')",
+				exprType, sym.Type, assign.Name), 0, 0, "")
+			return assign
+		}
+	}
+
+	return assign
+}
+
+func (sa *SemanticAnalyzer) analyzeBinary(bin *front.BinaryExpr) front.Node {
+	left := sa.analyzeNode(bin.Left)
+	right := sa.analyzeNode(bin.Right)
+
+	leftType := sa.getNodeType(left)
+	rightType := sa.getNodeType(right)
+
+	// Проверка операций
+	switch bin.Op {
+	case "+", "-", "*", "/":
+		// Арифметические операции допустимы для чисел
+		if !sa.isNumericType(leftType) || !sa.isNumericType(rightType) {
+			sa.addError("1014", fmt.Sprintf("Arithmetic operation '%s' requires numeric types (got %s and %s)",
+				bin.Op, leftType, rightType), 0, 0, "")
+		}
+	case "<", ">":
+		// Сравнения допустимы для чисел
+		if !sa.isNumericType(leftType) || !sa.isNumericType(rightType) {
+			sa.addError("1015", fmt.Sprintf("Comparison operation '%s' requires numeric types (got %s and %s)",
+				bin.Op, leftType, rightType), 0, 0, "")
+		}
+	}
+
+	return bin
+}
+
+func (sa *SemanticAnalyzer) analyzeNumber(num *front.Number) front.Node {
+	// Проверяем, что это валидное число
+	if _, err := strconv.Atoi(num.Value); err != nil {
+		if _, err := strconv.ParseFloat(num.Value, 64); err != nil {
+			sa.addError("1016", fmt.Sprintf("Invalid number '%s'", num.Value), 0, 0, "")
+		}
+	}
+	return num
+}
+
+func (sa *SemanticAnalyzer) analyzeString(str *front.String) front.Node {
+	return str
+}
+
+func (sa *SemanticAnalyzer) analyzeIdent(ident *front.Ident) front.Node {
+	// Проверяем, что идентификатор существует
+	sym := sa.CurrentScope.Resolve(ident.Name)
+	if sym == nil {
+		sa.addError("1017", fmt.Sprintf("Undefined identifier '%s'", ident.Name), 0, 0, "")
+	}
+	return ident
+}
+
+func (sa *SemanticAnalyzer) analyzeReturn(ret *front.ReturnStmt) front.Node {
+	if ret.Expr != nil {
+		exprType := sa.getNodeType(ret.Expr)
+
+		// Проверяем соответствие типу возврата функции
+		if sa.CurrentFunction.ReturnType == "void" {
+			sa.addError("1018", "Cannot return value from void function", 0, 0, "")
+			return ret
+		}
+
+		if sa.CurrentFunction.ReturnType != exprType && exprType != "" {
+			sa.addError("1019", fmt.Sprintf("Return type mismatch: expected '%s', got '%s'",
+				sa.CurrentFunction.ReturnType, exprType), 0, 0, "")
+			return ret
+		}
+	} else {
+		// return без значения
+		if sa.CurrentFunction.ReturnType != "void" {
+			sa.addError("1020", fmt.Sprintf("Expected return value of type '%s'", sa.CurrentFunction.ReturnType), 0, 0, "")
+			return ret
+		}
+	}
+	return ret
+}
+
+func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
+	// Проверяем, что функция существует
+	sym := sa.CurrentScope.Resolve(call.Name)
+	if sym == nil {
+		sa.addError("1021", fmt.Sprintf("Undefined function '%s'", call.Name), 0, 0, "")
+		return call
+	}
+
+	if sym.Kind != SYM_FUNCTION {
+		sa.addError("1022", fmt.Sprintf("'%s' is not a function", call.Name), 0, 0, "")
+		return call
+	}
+
+	// Находим саму функцию для проверки параметров
+	var targetFunc *front.Function
+	for _, fn := range sa.Program.Functions {
+		if fn.Name == call.Name {
+			targetFunc = fn
+			break
+		}
+	}
+
+	if targetFunc != nil {
+		// Проверяем количество аргументов
+		if len(call.Args) != len(targetFunc.Params) {
+			sa.addError("1023", fmt.Sprintf("Function '%s' expects %d arguments, got %d",
+				call.Name, len(targetFunc.Params), len(call.Args)), 0, 0, "")
+			return call
+		}
+
+		// Проверяем типы аргументов
+		for i, arg := range call.Args {
+			argType := sa.getNodeType(arg)
+			paramType := targetFunc.Params[i].Type
+
+			if argType != paramType && argType != "" && paramType != "any" {
+				sa.addError("1024", fmt.Sprintf("Argument %d type mismatch: expected '%s', got '%s'",
+					i+1, paramType, argType), 0, 0, "")
 			}
 		}
 	}
-	return nil
+
+	return call
 }
 
-func (s *SemanticChecker) checkFunction(node *front.ASTNode) error {
-	data := node.Value.(map[string]interface{})
-	name := data["name"].(string)
-	returnType := data["returnType"].(string)
-
-	// Проверяем, что функция не объявлена дважды
-	if _, exists := s.functions[name]; exists {
-		errors.NewErrorWithPosition(
-			errors.ERR_REDECLARED_VAR,
-			fmt.Sprintf("Функция '%s' уже объявлена", name),
-			node.Line, node.Column, "",
-		)
-		return fmt.Errorf("function redeclared")
+func (sa *SemanticAnalyzer) analyzeIf(ifStmt *front.IfStmt) front.Node {
+	// Анализируем условие
+	condType := sa.getNodeType(ifStmt.Condition)
+	if condType != "bool" && condType != "" {
+		sa.addError("1025", fmt.Sprintf("If condition must be boolean, got '%s'", condType), 0, 0, "")
 	}
 
-	s.functions[name] = returnType
-	s.pushScope()
-
-	// Добавляем параметры в область видимости
-	params := data["params"].([]map[string]string)
-	for _, param := range params {
-		paramType := param["type"]
-		paramName := param["name"]
-
-		// Проверяем тип
-		if !s.isValidType(paramType) {
-			errors.NewErrorWithPosition(
-				errors.ERR_INVALID_TYPE,
-				fmt.Sprintf("Некорректный тип: %s", paramType),
-				node.Line, node.Column, "",
-			)
-			return fmt.Errorf("invalid type")
-		}
-
-		s.variables[paramName] = paramType
+	// Анализируем блок then
+	if ifStmt.Then != nil {
+		sa.analyzeBlock(ifStmt.Then, false)
 	}
 
-	// Проверяем тело функции
-	if len(node.Children) > 0 {
-		body := node.Children[0]
-		if err := s.checkBlock(body); err != nil {
-			return err
-		}
+	// Анализируем блок else
+	if ifStmt.Else != nil {
+		sa.analyzeBlock(ifStmt.Else, false)
 	}
 
-	s.popScope()
-	return nil
+	return ifStmt
 }
 
-func (s *SemanticChecker) checkVariableDeclaration(node *front.ASTNode) error {
-	data := node.Value.(map[string]interface{})
-	varType := data["type"].(string)
-	varName := data["name"].(string)
-
-	// Проверяем тип
-	if !s.isValidType(varType) {
-		errors.NewErrorWithPosition(
-			errors.ERR_INVALID_TYPE,
-			fmt.Sprintf("Некорректный тип: %s", varType),
-			node.Line, node.Column, "",
-		)
-		return fmt.Errorf("invalid type")
+func (sa *SemanticAnalyzer) analyzeWhile(while *front.WhileStmt) front.Node {
+	// Анализируем условие
+	condType := sa.getNodeType(while.Condition)
+	if condType != "bool" && condType != "" {
+		sa.addError("1026", fmt.Sprintf("While condition must be boolean, got '%s'", condType), 0, 0, "")
 	}
 
-	// Проверяем, что переменная не объявлена дважды
-	if _, exists := s.variables[varName]; exists {
-		errors.NewErrorWithPosition(
-			errors.ERR_REDECLARED_VAR,
-			fmt.Sprintf("Переменная '%s' уже объявлена", varName),
-			node.Line, node.Column, "",
-		)
-		return fmt.Errorf("variable redeclared")
+	// Анализируем тело
+	if while.Body != nil {
+		sa.analyzeBlock(while.Body, false)
 	}
 
-	// Проверяем инициализацию
-	if len(node.Children) > 0 {
-		exprType, err := s.checkExpression(node.Children[0])
-		if err != nil {
-			return err
-		}
-
-		// Проверяем соответствие типов
-		if varType != "any" && varType != exprType {
-			errors.NewErrorWithPosition(
-				errors.ERR_TYPE_MISMATCH,
-				fmt.Sprintf("Тип '%s' не соответствует объявленному типу '%s'", exprType, varType),
-				node.Line, node.Column, "",
-			)
-			return fmt.Errorf("type mismatch")
-		}
-	}
-
-	s.variables[varName] = varType
-	return nil
+	return while
 }
 
-func (s *SemanticChecker) checkAssignment(node *front.ASTNode) error {
-	data := node.Value.(map[string]interface{})
-	varName := data["name"].(string)
-
-	// Проверяем, что переменная объявлена
-	varType, exists := s.variables[varName]
-	if !exists {
-		errors.NewErrorWithPosition(
-			errors.ERR_UNDECLARED_VAR,
-			fmt.Sprintf("Переменная '%s' не объявлена", varName),
-			node.Line, node.Column, "",
-		)
-		return fmt.Errorf("undeclared variable")
+func (sa *SemanticAnalyzer) analyzeFor(forStmt *front.ForStmt) front.Node {
+	// Анализируем инициализацию
+	if forStmt.Init != nil {
+		sa.analyzeNode(forStmt.Init)
 	}
 
-	// Проверяем выражение
-	if len(node.Children) > 0 {
-		exprType, err := s.checkExpression(node.Children[0])
-		if err != nil {
-			return err
-		}
-
-		// Проверяем соответствие типов
-		if varType != "any" && varType != exprType {
-			errors.NewErrorWithPosition(
-				errors.ERR_TYPE_MISMATCH,
-				fmt.Sprintf("Тип '%s' не соответствует типу переменной '%s'", exprType, varType),
-				node.Line, node.Column, "",
-			)
-			return fmt.Errorf("type mismatch")
+	// Анализируем условие
+	if forStmt.Cond != nil {
+		condType := sa.getNodeType(forStmt.Cond)
+		if condType != "bool" && condType != "" {
+			sa.addError("1027", fmt.Sprintf("For condition must be boolean, got '%s'", condType), 0, 0, "")
 		}
 	}
 
-	return nil
+	// Анализируем пост-выражение
+	if forStmt.Post != nil {
+		sa.analyzeNode(forStmt.Post)
+	}
+
+	// Анализируем тело
+	if forStmt.Body != nil {
+		sa.analyzeBlock(forStmt.Body, false)
+	}
+
+	return forStmt
 }
 
-func (s *SemanticChecker) checkCall(node *front.ASTNode) error {
-	data := node.Value.(map[string]interface{})
-	name := data["name"].(string)
-
-	// Проверяем, что функция объявлена
-	if _, exists := s.functions[name]; !exists {
-		errors.NewErrorWithPosition(
-			errors.ERR_UNDECLARED_VAR,
-			fmt.Sprintf("Функция '%s' не объявлена", name),
-			node.Line, node.Column, "",
-		)
-		return fmt.Errorf("undeclared function")
-	}
-
-	// Проверяем аргументы
-	for _, arg := range node.Children {
-		if _, err := s.checkExpression(arg); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (s *SemanticChecker) checkReturn(node *front.ASTNode) error {
-	if len(node.Children) > 0 {
-		if _, err := s.checkExpression(node.Children[0]); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (s *SemanticChecker) checkIf(node *front.ASTNode) error {
-	if len(node.Children) < 2 {
-		return fmt.Errorf("if without condition or body")
-	}
-
-	// Проверяем условие
-	if _, err := s.checkExpression(node.Children[0]); err != nil {
-		return err
-	}
-
-	// Проверяем блок then
-	if err := s.checkNode(node.Children[1]); err != nil {
-		return err
-	}
-
-	// Проверяем else, если есть
-	if len(node.Children) > 2 {
-		if err := s.checkNode(node.Children[2]); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (s *SemanticChecker) checkWhile(node *front.ASTNode) error {
-	if len(node.Children) < 2 {
-		return fmt.Errorf("while without condition or body")
-	}
-
-	// Проверяем условие
-	if _, err := s.checkExpression(node.Children[0]); err != nil {
-		return err
-	}
-
-	// Проверяем тело
-	if err := s.checkNode(node.Children[1]); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (s *SemanticChecker) checkBlock(node *front.ASTNode) error {
-	s.pushScope()
-	for _, child := range node.Children {
-		if err := s.checkNode(child); err != nil {
-			return err
-		}
-	}
-	s.popScope()
-	return nil
-}
-
-func (s *SemanticChecker) checkUse(node *front.ASTNode) error {
-	// TODO: Проверка существования модуля
-	return nil
-}
-
-func (s *SemanticChecker) checkExpression(node *front.ASTNode) (string, error) {
-	switch node.Type {
-	case "NumberLiteral":
-		// Определяем int или float
-		val := node.Value.(string)
-		if strings.Contains(val, ".") {
-			return "float", nil
-		}
-		return "int", nil
-	case "StringLiteral":
-		return "string", nil
-	case "CharLiteral":
-		return "char", nil
-	case "BoolLiteral":
-		return "bool", nil
-	case "Identifier":
-		name := node.Value.(string)
-		if typ, exists := s.variables[name]; exists {
-			return typ, nil
-		}
-		return "", fmt.Errorf("variable not found: %s", name)
-	case "BinaryOp":
-		if len(node.Children) != 2 {
-			return "", fmt.Errorf("binary op requires 2 operands")
-		}
-		leftType, err := s.checkExpression(node.Children[0])
-		if err != nil {
-			return "", err
-		}
-		rightType, err := s.checkExpression(node.Children[1])
-		if err != nil {
-			return "", err
-		}
-
-		// Проверяем, что типы совместимы для операции
-		if leftType != rightType && leftType != "any" && rightType != "any" {
-			errors.NewErrorWithPosition(
-				errors.ERR_INVALID_OPERATION,
-				fmt.Sprintf("Операция не поддерживается между типами '%s' и '%s'", leftType, rightType),
-				node.Line, node.Column, "",
-			)
-			return "", fmt.Errorf("invalid operation")
-		}
-		return leftType, nil
-	case "Call":
-		// Проверяем, что функция возвращает значение
-		data := node.Value.(map[string]interface{})
-		name := data["name"].(string)
-		if retType, exists := s.functions[name]; exists {
-			return retType, nil
-		}
-		return "", fmt.Errorf("function not found: %s", name)
-	default:
-		return "", fmt.Errorf("unknown expression type: %s", node.Type)
-	}
-}
-
-func (s *SemanticChecker) isValidType(typ string) bool {
+// Вспомогательные методы
+func (sa *SemanticAnalyzer) isValidType(typ string) bool {
 	validTypes := map[string]bool{
-		"int": true, "char": true, "string": true,
-		"arr": true, "dict": true, "float": true,
-		"double": true, "bool": true, "void": true,
-		"any": true, "T": true,
+		"int": true, "string": true, "float": true, "double": true,
+		"bool": true, "char": true, "arr": true, "dict": true,
+		"void": true, "any": true,
 	}
 	return validTypes[typ]
 }
 
-func (s *SemanticChecker) pushScope() {
-	s.scope = append(s.scope, make(map[string]string))
+func (sa *SemanticAnalyzer) isNumericType(typ string) bool {
+	numericTypes := map[string]bool{
+		"int": true, "float": true, "double": true, "char": true,
+	}
+	return numericTypes[typ]
 }
 
-func (s *SemanticChecker) popScope() {
-	if len(s.scope) > 0 {
-		s.scope = s.scope[:len(s.scope)-1]
+func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
+	switch n := node.(type) {
+	case *front.Number:
+		if strings.Contains(n.Value, ".") {
+			return "float"
+		}
+		return "int"
+	case *front.String:
+		return "string"
+	case *front.Ident:
+		sym := sa.CurrentScope.Resolve(n.Name)
+		if sym != nil {
+			return sym.Type
+		}
+		return ""
+	case *front.BinaryExpr:
+		leftType := sa.getNodeType(n.Left)
+		rightType := sa.getNodeType(n.Right)
+		// Для простоты возвращаем тип левой части
+		if leftType != "" {
+			return leftType
+		}
+		return rightType
+	case *front.CallExpr:
+		sym := sa.CurrentScope.Resolve(n.Name)
+		if sym != nil {
+			return sym.Type
+		}
+		return ""
+	case *front.VarDecl:
+		return n.Type
+	case *front.Assign:
+		sym := sa.CurrentScope.Resolve(n.Name)
+		if sym != nil {
+			return sym.Type
+		}
+		return ""
+	default:
+		return ""
 	}
+}
+
+func (sa *SemanticAnalyzer) addError(code, message string, line, col int, file string) {
+	sa.Errors = append(sa.Errors, errors.SkorpionError{
+		Code:    code,
+		Message: message,
+		Line:    line,
+		Column:  col,
+		File:    file,
+	})
 }

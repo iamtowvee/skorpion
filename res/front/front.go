@@ -1,27 +1,31 @@
 package front
 
-// InitLexer инициализирует лексер
-func InitLexer(code string) ([]Token, error) {
-	lexer := NewLexer(code)
-	tokens, err := lexer.Tokenize()
-	if err != nil {
-		return nil, err
+import (
+	"skrp/res/errors"
+)
+
+// Фасад для парсера
+func NewParser(input string) *Parser {
+	return &Parser{
+		lexer:     NewLexer(input),
+		hasErrors: false,
 	}
-	return tokens, nil
 }
 
-// InitParser инициализирует парсер
-func InitParser(tokens []Token) (*ASTNode, error) {
-	parser := NewParser(tokens)
-	ast, err := parser.Parse()
-	if err != nil {
-		return nil, err
+// Фасад для AST
+func InitAST(input string) *Program {
+	// Проверяем, были ли ошибки
+	if errors.HasFatal() {
+		return &Program{Imports: []*Import{}, Functions: []*Function{}}
 	}
-	return ast, nil
-}
 
-// ParseConfig парсит конфигурационный файл
-func ParseConfig(path string) (*ConfigData, error) {
-	parser := NewConfigParser()
-	return parser.Parse(path)
+	parser := NewParser(input)
+	prog := parser.Parse()
+
+	// Если есть фатальные ошибки, возвращаем пустую программу
+	if errors.HasFatal() {
+		return &Program{Imports: []*Import{}, Functions: []*Function{}}
+	}
+
+	return prog
 }

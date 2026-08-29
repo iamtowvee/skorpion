@@ -3,708 +3,701 @@ package front
 import (
 	"fmt"
 	"skrp/res/errors"
+	"strings"
 )
 
-// ASTNode структура узла AST
-type ASTNode struct {
-	Type     string
-	Value    interface{}
-	Children []*ASTNode
-	Line     int
-	Column   int
-}
-
-// Parser структура парсера
 type Parser struct {
-	tokens  []Token
-	pos     int
-	current Token
+	lexer     *Lexer
+	current   Token
+	peek      Token
+	hasErrors bool
 }
 
-// NewParser создает новый парсер
-func NewParser(tokens []Token) *Parser {
+func NewParserInternal(input string) *Parser {
 	p := &Parser{
-		tokens: tokens,
-		pos:    0,
+		lexer:     NewLexer(input),
+		hasErrors: false,
 	}
 	p.advance()
 	return p
 }
 
 func (p *Parser) advance() {
-	if p.pos >= len(p.tokens) {
-		p.current = Token{TOKEN_EOF, "EOF", 0, 0}
-	} else {
-		p.current = p.tokens[p.pos]
-		p.pos++
+	p.current = p.peek
+	p.peek = p.lexer.NextToken()
+}
+
+func (p *Parser) match(tt TokenType) bool {
+	if p.peek.Type == tt {
+		p.advance()
+		return true
+	}
+	return false
+}
+
+func (p *Parser) expect(tt TokenType) Token {
+	if p.peek.Type == tt {
+		p.advance()
+		return p.current
+	}
+	p.hasErrors = true
+	errors.NewFatalError("0004",
+		fmt.Sprintf("Expected '%s', got '%s' (at %d:%d)", tt.String(), p.peek.Literal, p.peek.Line, p.peek.Column),
+		p.peek.Line, p.peek.Column, "")
+	return p.current
+}
+
+func (p *Parser) isType(token Token) bool {
+	switch token.Literal {
+	case "void", "int", "string", "float", "double", "bool", "char", "arr", "dict", "any":
+		return true
+	}
+	return false
+}
+
+func (p *Parser) Parse() *Program {
+	// Проверяем, были ли ошибки в лексере
+	if errors.HasFatal() {
+		return &Program{Imports: []*Import{}, Functions: []*Function{}}
+	}
+
+	prog := &Program{Imports: []*Import{}, Functions: []*Function{}}
+
+	// Сначала импорты
+	for p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "use" {
+		if p.hasErrors || errors.HasFatal() {
+			break
+		}
+		imp := p.parseImport()
+		if imp != nil {
+			prog.Imports = append(prog.Imports, imp)
+		}
+		if errors.HasFatal() {
+			return prog
+		}
+	}
+
+	// Затем функции
+	for p.peek.Type != TOKEN_EOF {
+		if p.hasErrors || errors.HasFatal() {
+			break
+		}
+
+		// Отладочный вывод
+		fmt.Printf("[DEBUG] Parse loop: token='%s', type=%d, isType=%v\n",
+			p.peek.Literal, p.peek.Type, p.isType(p.peek))
+
+		// Проверяем, что это функция (тип возврата)
+		if p.isType(p.peek) {
+			fmt.Printf("[DEBUG] Found function type: '%s'\n", p.peek.Literal)
+			fn := p.parseFunction()
+			if fn != nil {
+				prog.Functions = append(prog.Functions, fn)
+				fmt.Printf("[DEBUG] Added function: %s\n", fn.Name)
+			}
+		} else {
+			// Если не функция, пропускаем
+			fmt.Printf("[DEBUG] Skipping token: '%s'\n", p.peek.Literal)
+			p.advance()
+		}
+
+		if errors.HasFatal() {
+			break
+		}
+	}
+
+	fmt.Printf("[DEBUG] Total functions parsed: %d\n", len(prog.Functions))
+
+	return prog
+}
+
+func (p *Parser) parseImport() *Import {
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	p.advance() // use
+	imp := &Import{}
+
+	if p.peek.Type == TOKEN_HASH {
+		p.advance()
+		imp.All = true
+	}
+
+	// Путь: path/to/module
+	path := ""
+	for p.peek.Type == TOKEN_IDENT || p.peek.Literal == "/" {
+		if p.peek.Type == TOKEN_IDENT {
+			path += p.peek.Literal
+		} else if p.peek.Literal == "/" {
+			path += "/"
+		}
+		p.advance()
+	}
+	imp.Path = path
+
+	if p.peek.Type == TOKEN_AMPERSAND {
+		p.advance()
+		if p.peek.Type == TOKEN_IDENT {
+			imp.Alias = p.peek.Literal
+			p.advance()
+		}
+	}
+
+	return imp
+}
+
+func (p *Parser) parseFunction() *Function {
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	fmt.Printf("[DEBUG] parseFunction: starting\n")
+
+	// Тип возврата
+	retType := p.peek.Literal
+	fmt.Printf("[DEBUG] Return type: '%s'\n", retType)
+	p.advance()
+
+	// Имя
+	if p.peek.Type != TOKEN_IDENT {
+		p.hasErrors = true
+		errors.NewFatalError("0006",
+			fmt.Sprintf("Expected function name, got '%s' (at %d:%d)", p.peek.Literal, p.peek.Line, p.peek.Column),
+			p.peek.Line, p.peek.Column, "")
+		return nil
+	}
+	name := p.peek.Literal
+	fmt.Printf("[DEBUG] Function name: '%s'\n", name)
+	p.advance()
+
+	// Открывающая скобка
+	if p.peek.Type != TOKEN_LPAREN {
+		p.hasErrors = true
+		errors.NewFatalError("0014",
+			fmt.Sprintf("Expected '(', got '%s' (at %d:%d)", p.peek.Literal, p.peek.Line, p.peek.Column),
+			p.peek.Line, p.peek.Column, "")
+		return nil
+	}
+	p.advance()
+
+	// Параметры
+	params := []*Param{}
+	if p.peek.Type != TOKEN_RPAREN {
+		for {
+			// Тип параметра
+			if !p.isType(p.peek) {
+				p.hasErrors = true
+				errors.NewFatalError("0008",
+					fmt.Sprintf("Expected parameter type, got '%s' (at %d:%d)", p.peek.Literal, p.peek.Line, p.peek.Column),
+					p.peek.Line, p.peek.Column, "")
+				return nil
+			}
+			paramType := p.peek.Literal
+			p.advance()
+
+			// Имя параметра
+			if p.peek.Type != TOKEN_IDENT {
+				p.hasErrors = true
+				errors.NewFatalError("0009",
+					fmt.Sprintf("Expected parameter name, got '%s' (at %d:%d)", p.peek.Literal, p.peek.Line, p.peek.Column),
+					p.peek.Line, p.peek.Column, "")
+				return nil
+			}
+			paramName := p.peek.Literal
+			p.advance()
+
+			params = append(params, &Param{Name: paramName, Type: paramType})
+
+			if p.peek.Type == TOKEN_COMMA {
+				p.advance()
+				continue
+			} else {
+				break
+			}
+		}
+	}
+
+	// Закрывающая скобка
+	if p.peek.Type != TOKEN_RPAREN {
+		p.hasErrors = true
+		errors.NewFatalError("0015",
+			fmt.Sprintf("Expected ')', got '%s' (at %d:%d)", p.peek.Literal, p.peek.Line, p.peek.Column),
+			p.peek.Line, p.peek.Column, "")
+		return nil
+	}
+	p.advance()
+
+	// Экспорт (звездочка)
+	isExport := true
+	if p.peek.Type == TOKEN_STAR {
+		isExport = false
+		p.advance()
+	}
+
+	// Тело функции
+	if p.peek.Type != TOKEN_LBRACE {
+		p.hasErrors = true
+		errors.NewFatalError("0016",
+			fmt.Sprintf("Expected '{', got '%s' (at %d:%d)", p.peek.Literal, p.peek.Line, p.peek.Column),
+			p.peek.Line, p.peek.Column, "")
+		return nil
+	}
+
+	body := p.parseBlock()
+	if body == nil {
+		return nil
+	}
+
+	fmt.Printf("[DEBUG] Function parsed successfully: %s\n", name)
+
+	return &Function{
+		Name:       name,
+		ReturnType: retType,
+		Params:     params,
+		Body:       body,
+		IsExport:   isExport,
 	}
 }
 
-func (p *Parser) peek() Token {
-	if p.pos >= len(p.tokens) {
-		return Token{TOKEN_EOF, "EOF", 0, 0}
+func (p *Parser) parseBlock() *Block {
+	if p.hasErrors || errors.HasFatal() {
+		return nil
 	}
-	return p.tokens[p.pos]
+
+	p.expect(TOKEN_LBRACE)
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	block := &Block{Statements: []Node{}}
+
+	for p.peek.Type != TOKEN_RBRACE && p.peek.Type != TOKEN_EOF {
+		if p.hasErrors || errors.HasFatal() {
+			break
+		}
+		stmt := p.parseStatement()
+		if stmt != nil {
+			block.Statements = append(block.Statements, stmt)
+		}
+	}
+
+	p.expect(TOKEN_RBRACE)
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	return block
 }
 
-func (p *Parser) expect(tokenType TokenType) error {
-	if p.current.Type != tokenType {
-		errors.NewErrorWithPosition(
-			errors.ERR_UNEXPECTED_TOKEN,
-			fmt.Sprintf("Ожидается %s, получено %s", tokenType, p.current.Type),
-			p.current.Line, p.current.Column, "",
-		)
-		return fmt.Errorf("unexpected token")
+func (p *Parser) parseStatement() Node {
+	if p.hasErrors || errors.HasFatal() {
+		return nil
 	}
+
+	switch p.peek.Type {
+	case TOKEN_KEYWORD:
+		switch p.peek.Literal {
+		case "if":
+			return p.parseIf()
+		case "while":
+			return p.parseWhile()
+		case "for":
+			return p.parseFor()
+		case "return":
+			return p.parseReturn()
+		case "int", "string", "float", "double", "bool", "char", "arr", "dict", "any":
+			return p.parseVarDecl()
+		}
+	case TOKEN_INCLUDE_C:
+		return p.parseIncludeC()
+	case TOKEN_IDENT:
+		return p.parseAssignmentOrCall()
+	}
+
+	// Если не распознали, пропускаем
 	p.advance()
 	return nil
 }
 
-// Parse парсит входной поток токенов
-func (p *Parser) Parse() (*ASTNode, error) {
-	root := &ASTNode{
-		Type:     "Program",
-		Children: make([]*ASTNode, 0),
+func (p *Parser) parseIncludeC() *IncludeC {
+	if p.hasErrors || errors.HasFatal() {
+		return nil
 	}
 
-	// Парсим программу
-	for p.current.Type != TOKEN_EOF {
-		switch p.current.Type {
-		case TOKEN_USE:
-			node, err := p.parseUse()
-			if err != nil {
-				return nil, err
+	p.advance() // includeC
+	p.expect(TOKEN_LBRACE)
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	code := ""
+	braceCount := 1
+	p.advance()
+
+	for braceCount > 0 && p.peek.Type != TOKEN_EOF {
+		if p.peek.Type == TOKEN_LBRACE {
+			braceCount++
+			code += "{"
+		} else if p.peek.Type == TOKEN_RBRACE {
+			braceCount--
+			if braceCount == 0 {
+				break
 			}
-			root.Children = append(root.Children, node)
-		case TOKEN_INCLUDE_C:
-			node, err := p.parseIncludeC()
-			if err != nil {
-				return nil, err
-			}
-			root.Children = append(root.Children, node)
-		case TOKEN_TYPE_VOID, TOKEN_TYPE_INT, TOKEN_TYPE_STRING,
-			TOKEN_TYPE_FLOAT, TOKEN_TYPE_DOUBLE, TOKEN_TYPE_BOOL,
-			TOKEN_TYPE_ARR, TOKEN_TYPE_DICT, TOKEN_TYPE_ANY,
-			TOKEN_TYPE_T, TOKEN_TYPE_CHAR:
-			node, err := p.parseFunction()
-			if err != nil {
-				return nil, err
-			}
-			root.Children = append(root.Children, node)
-		default:
-			// Если это идентификатор типа, возможно объявление переменной
-			if p.current.Type == TOKEN_IDENT {
-				// Проверяем, что это тип
-				if p.isType(p.current.Literal) {
-					node, err := p.parseVariableDeclaration()
-					if err != nil {
-						return nil, err
-					}
-					root.Children = append(root.Children, node)
-				} else {
-					errors.NewErrorWithPosition(
-						errors.ERR_UNEXPECTED_TOKEN,
-						fmt.Sprintf("Неожиданный токен: %s", p.current.Literal),
-						p.current.Line, p.current.Column, "",
-					)
-					return nil, fmt.Errorf("unexpected token")
-				}
-			} else {
-				errors.NewErrorWithPosition(
-					errors.ERR_UNEXPECTED_TOKEN,
-					fmt.Sprintf("Неожиданный токен: %s", p.current.Literal),
-					p.current.Line, p.current.Column, "",
-				)
-				return nil, fmt.Errorf("unexpected token")
-			}
+			code += "}"
+		} else {
+			code += p.peek.Literal
 		}
-	}
-
-	return root, nil
-}
-
-func (p *Parser) isType(literal string) bool {
-	types := map[string]bool{
-		"int": true, "char": true, "string": true,
-		"arr": true, "dict": true, "float": true,
-		"double": true, "bool": true, "void": true,
-		"any": true, "T": true,
-	}
-	return types[literal]
-}
-
-// parseUse парсит use модуль
-func (p *Parser) parseUse() (*ASTNode, error) {
-	node := &ASTNode{
-		Type:   "Use",
-		Line:   p.current.Line,
-		Column: p.current.Column,
-	}
-
-	if err := p.expect(TOKEN_USE); err != nil {
-		return nil, err
-	}
-
-	// Путь модуля или модуль с алиасом
-	if p.current.Type == TOKEN_IDENT || p.current.Type == TOKEN_TYPE_ANY {
-		path := p.current.Literal
 		p.advance()
-
-		// Может быть путь с / (например std/io)
-		for p.current.Type == TOKEN_DIV {
-			path += "/"
-			p.advance()
-			if p.current.Type == TOKEN_IDENT {
-				path += p.current.Literal
-				p.advance()
-			}
-		}
-
-		node.Value = map[string]interface{}{
-			"path": path,
-		}
-
-		// Проверяем алиас
-		if p.current.Type == TOKEN_AMP {
-			p.advance()
-			if p.current.Type == TOKEN_IDENT {
-				node.Value.(map[string]interface{})["alias"] = p.current.Literal
-				p.advance()
-			}
-		}
-
-		return node, nil
 	}
 
-	return nil, fmt.Errorf("invalid use syntax")
+	if p.peek.Type == TOKEN_RBRACE {
+		p.advance()
+	}
+
+	return &IncludeC{Code: strings.TrimSpace(code)}
 }
 
-// parseIncludeC парсит includeC { ... }
-func (p *Parser) parseIncludeC() (*ASTNode, error) {
-	node := &ASTNode{
-		Type:   "IncludeC",
-		Line:   p.current.Line,
-		Column: p.current.Column,
+func (p *Parser) parseIf() Node {
+	if p.hasErrors || errors.HasFatal() {
+		return nil
 	}
 
-	if err := p.expect(TOKEN_INCLUDE_C); err != nil {
-		return nil, err
+	p.advance() // if
+	cond := p.parseExpression()
+	if cond == nil {
+		return nil
 	}
 
-	if err := p.expect(TOKEN_LBRACE); err != nil {
-		return nil, err
+	then := p.parseBlock()
+	if then == nil {
+		return nil
 	}
 
-	// Собираем C код до закрывающей скобки
-	cCode := ""
-	depth := 1
+	var elseBlock *Block
+	if p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "else" {
+		p.advance()
+		elseBlock = p.parseBlock()
+		if elseBlock == nil {
+			return nil
+		}
+	}
 
-	for depth > 0 && p.current.Type != TOKEN_EOF {
-		if p.current.Type == TOKEN_LBRACE {
-			depth++
-		} else if p.current.Type == TOKEN_RBRACE {
-			depth--
-			if depth == 0 {
+	return &IfStmt{Condition: cond, Then: then, Else: elseBlock}
+}
+
+func (p *Parser) parseWhile() Node {
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	p.advance() // while
+	cond := p.parseExpression()
+	if cond == nil {
+		return nil
+	}
+
+	body := p.parseBlock()
+	if body == nil {
+		return nil
+	}
+
+	return &WhileStmt{Condition: cond, Body: body}
+}
+
+func (p *Parser) parseFor() Node {
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	p.advance() // for
+	p.expect(TOKEN_LPAREN)
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	var init Node
+	if p.peek.Type != TOKEN_SEMICOLON {
+		init = p.parseStatement()
+		if init == nil {
+			return nil
+		}
+	}
+	p.expect(TOKEN_SEMICOLON)
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	var cond Node
+	if p.peek.Type != TOKEN_SEMICOLON {
+		cond = p.parseExpression()
+		if cond == nil {
+			return nil
+		}
+	}
+	p.expect(TOKEN_SEMICOLON)
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	var post Node
+	if p.peek.Type != TOKEN_RPAREN {
+		post = p.parseStatement()
+		if post == nil {
+			return nil
+		}
+	}
+	p.expect(TOKEN_RPAREN)
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	body := p.parseBlock()
+	if body == nil {
+		return nil
+	}
+
+	return &ForStmt{Init: init, Cond: cond, Post: post, Body: body}
+}
+
+func (p *Parser) parseReturn() Node {
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	p.advance() // return
+
+	var expr Node
+	if p.peek.Type != TOKEN_RBRACE && p.peek.Type != TOKEN_SEMICOLON {
+		expr = p.parseExpression()
+		if expr == nil {
+			return nil
+		}
+	}
+
+	if p.peek.Type == TOKEN_SEMICOLON {
+		p.advance()
+	}
+
+	return &ReturnStmt{Expr: expr}
+}
+
+func (p *Parser) parseVarDecl() Node {
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	varType := p.peek.Literal
+	p.advance()
+
+	if p.peek.Type != TOKEN_IDENT {
+		p.hasErrors = true
+		errors.NewFatalError("0011",
+			fmt.Sprintf("Expected variable name, got '%s' (at %d:%d)", p.peek.Literal, p.peek.Line, p.peek.Column),
+			p.peek.Line, p.peek.Column, "")
+		return nil
+	}
+	name := p.peek.Literal
+	p.advance()
+
+	var expr Node
+	if p.peek.Type == TOKEN_EQUALS {
+		p.advance()
+		expr = p.parseExpression()
+		if expr == nil {
+			return nil
+		}
+	}
+
+	if p.peek.Type == TOKEN_SEMICOLON {
+		p.advance()
+	}
+
+	return &VarDecl{Name: name, Type: varType, Expr: expr}
+}
+
+func (p *Parser) parseAssignmentOrCall() Node {
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	name := p.peek.Literal
+	p.advance()
+
+	if p.peek.Type == TOKEN_LPAREN {
+		return p.parseCall(name)
+	}
+
+	var expr Node
+	if p.peek.Type == TOKEN_EQUALS {
+		p.advance()
+		expr = p.parseExpression()
+		if expr == nil {
+			return nil
+		}
+	}
+
+	if p.peek.Type == TOKEN_SEMICOLON {
+		p.advance()
+	}
+
+	return &Assign{Name: name, Expr: expr}
+}
+
+func (p *Parser) parseCall(name string) Node {
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	p.expect(TOKEN_LPAREN)
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	args := []Node{}
+	if p.peek.Type != TOKEN_RPAREN {
+		for {
+			expr := p.parseExpression()
+			if expr == nil {
+				return nil
+			}
+			args = append(args, expr)
+			if p.peek.Type == TOKEN_COMMA {
 				p.advance()
+			} else {
 				break
 			}
 		}
-
-		// Добавляем токен как есть
-		if p.current.Type != TOKEN_EOF {
-			cCode += p.current.Literal + " "
-		}
-		p.advance()
+	}
+	p.expect(TOKEN_RPAREN)
+	if p.hasErrors || errors.HasFatal() {
+		return nil
 	}
 
-	node.Value = cCode
-	return node, nil
+	return &CallExpr{Name: name, Args: args}
 }
 
-// parseFunction парсит функцию
-func (p *Parser) parseFunction() (*ASTNode, error) {
-	node := &ASTNode{
-		Type:     "Function",
-		Line:     p.current.Line,
-		Column:   p.current.Column,
-		Children: make([]*ASTNode, 0),
+func (p *Parser) parseExpression() Node {
+	if p.hasErrors || errors.HasFatal() {
+		return nil
 	}
-
-	// Тип возврата
-	returnType := p.current.Literal
-	p.advance()
-
-	// Имя функции
-	if p.current.Type != TOKEN_IDENT {
-		return nil, fmt.Errorf("expected function name")
-	}
-	name := p.current.Literal
-	p.advance()
-
-	// Параметры
-	if err := p.expect(TOKEN_LPAREN); err != nil {
-		return nil, err
-	}
-
-	params := make([]map[string]string, 0)
-	for p.current.Type != TOKEN_RPAREN && p.current.Type != TOKEN_EOF {
-		if p.current.Type == TOKEN_TYPE_VOID || p.current.Type == TOKEN_TYPE_INT ||
-			p.current.Type == TOKEN_TYPE_STRING || p.current.Type == TOKEN_TYPE_ARR ||
-			p.current.Type == TOKEN_TYPE_DICT || p.current.Type == TOKEN_TYPE_FLOAT ||
-			p.current.Type == TOKEN_TYPE_DOUBLE || p.current.Type == TOKEN_TYPE_BOOL ||
-			p.current.Type == TOKEN_TYPE_ANY || p.current.Type == TOKEN_TYPE_CHAR ||
-			p.current.Type == TOKEN_TYPE_T {
-
-			paramType := p.current.Literal
-			p.advance()
-
-			if p.current.Type != TOKEN_IDENT {
-				return nil, fmt.Errorf("expected parameter name")
-			}
-			paramName := p.current.Literal
-			p.advance()
-
-			params = append(params, map[string]string{
-				"type": paramType,
-				"name": paramName,
-			})
-
-			if p.current.Type == TOKEN_COMMA {
-				p.advance()
-			}
-		} else {
-			break
-		}
-	}
-
-	if err := p.expect(TOKEN_RPAREN); err != nil {
-		return nil, err
-	}
-
-	// Тело функции
-	if err := p.expect(TOKEN_LBRACE); err != nil {
-		return nil, err
-	}
-
-	body := &ASTNode{
-		Type:     "Block",
-		Children: make([]*ASTNode, 0),
-	}
-
-	for p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
-		stmt, err := p.parseStatement()
-		if err != nil {
-			return nil, err
-		}
-		if stmt != nil {
-			body.Children = append(body.Children, stmt)
-		}
-	}
-
-	if err := p.expect(TOKEN_RBRACE); err != nil {
-		return nil, err
-	}
-
-	node.Value = map[string]interface{}{
-		"name":       name,
-		"returnType": returnType,
-		"params":     params,
-	}
-	node.Children = append(node.Children, body)
-
-	return node, nil
+	return p.parseBinary(0)
 }
 
-// parseStatement парсит выражение
-func (p *Parser) parseStatement() (*ASTNode, error) {
-	switch p.current.Type {
-	case TOKEN_RETURN:
-		return p.parseReturn()
-	case TOKEN_TYPE_INT, TOKEN_TYPE_STRING, TOKEN_TYPE_ANY,
-		TOKEN_TYPE_FLOAT, TOKEN_TYPE_DOUBLE, TOKEN_TYPE_BOOL,
-		TOKEN_TYPE_ARR, TOKEN_TYPE_DICT, TOKEN_TYPE_CHAR:
-		return p.parseVariableDeclaration()
-	case TOKEN_IF:
-		return p.parseIf()
-	case TOKEN_WHILE:
-		return p.parseWhile()
-	case TOKEN_IDENT:
-		return p.parseIdentifierStatement()
-	default:
-		// Может быть выражение
-		return p.parseExpression()
-	}
-}
-
-func (p *Parser) parseReturn() (*ASTNode, error) {
-	node := &ASTNode{
-		Type:   "Return",
-		Line:   p.current.Line,
-		Column: p.current.Column,
+func (p *Parser) parseBinary(prec int) Node {
+	if p.hasErrors || errors.HasFatal() {
+		return nil
 	}
 
-	if err := p.expect(TOKEN_RETURN); err != nil {
-		return nil, err
-	}
-
-	// Может быть возвращаемое значение
-	if p.current.Type != TOKEN_SEMICOLON && p.current.Type != TOKEN_RBRACE {
-		expr, err := p.parseExpression()
-		if err != nil {
-			return nil, err
-		}
-		node.Children = append(node.Children, expr)
-	}
-
-	// ; опциональна
-	if p.current.Type == TOKEN_SEMICOLON {
-		p.advance()
-	}
-
-	return node, nil
-}
-
-func (p *Parser) parseVariableDeclaration() (*ASTNode, error) {
-	node := &ASTNode{
-		Type:   "VariableDeclaration",
-		Line:   p.current.Line,
-		Column: p.current.Column,
-	}
-
-	varType := p.current.Literal
-	p.advance()
-
-	if p.current.Type != TOKEN_IDENT {
-		return nil, fmt.Errorf("expected variable name")
-	}
-	varName := p.current.Literal
-	p.advance()
-
-	node.Value = map[string]interface{}{
-		"type": varType,
-		"name": varName,
-	}
-
-	// Проверяем инициализацию
-	if p.current.Type == TOKEN_ASSIGN {
-		p.advance()
-		expr, err := p.parseExpression()
-		if err != nil {
-			return nil, err
-		}
-		node.Children = append(node.Children, expr)
-	}
-
-	// ; опциональна
-	if p.current.Type == TOKEN_SEMICOLON {
-		p.advance()
-	}
-
-	return node, nil
-}
-
-func (p *Parser) parseIf() (*ASTNode, error) {
-	node := &ASTNode{
-		Type:     "If",
-		Line:     p.current.Line,
-		Column:   p.current.Column,
-		Children: make([]*ASTNode, 0),
-	}
-
-	if err := p.expect(TOKEN_IF); err != nil {
-		return nil, err
-	}
-
-	if err := p.expect(TOKEN_LPAREN); err != nil {
-		return nil, err
-	}
-
-	cond, err := p.parseExpression()
-	if err != nil {
-		return nil, err
-	}
-	node.Children = append(node.Children, cond)
-
-	if err := p.expect(TOKEN_RPAREN); err != nil {
-		return nil, err
-	}
-
-	thenBlock, err := p.parseBlock()
-	if err != nil {
-		return nil, err
-	}
-	node.Children = append(node.Children, thenBlock)
-
-	// Проверяем else
-	if p.current.Type == TOKEN_ELSE {
-		p.advance()
-		elseBlock, err := p.parseBlock()
-		if err != nil {
-			return nil, err
-		}
-		elseNode := &ASTNode{
-			Type:     "Else",
-			Children: []*ASTNode{elseBlock},
-		}
-		node.Children = append(node.Children, elseNode)
-	}
-
-	return node, nil
-}
-
-func (p *Parser) parseWhile() (*ASTNode, error) {
-	node := &ASTNode{
-		Type:     "While",
-		Line:     p.current.Line,
-		Column:   p.current.Column,
-		Children: make([]*ASTNode, 0),
-	}
-
-	if err := p.expect(TOKEN_WHILE); err != nil {
-		return nil, err
-	}
-
-	if err := p.expect(TOKEN_LPAREN); err != nil {
-		return nil, err
-	}
-
-	cond, err := p.parseExpression()
-	if err != nil {
-		return nil, err
-	}
-	node.Children = append(node.Children, cond)
-
-	if err := p.expect(TOKEN_RPAREN); err != nil {
-		return nil, err
-	}
-
-	block, err := p.parseBlock()
-	if err != nil {
-		return nil, err
-	}
-	node.Children = append(node.Children, block)
-
-	return node, nil
-}
-
-func (p *Parser) parseBlock() (*ASTNode, error) {
-	if err := p.expect(TOKEN_LBRACE); err != nil {
-		return nil, err
-	}
-
-	block := &ASTNode{
-		Type:     "Block",
-		Children: make([]*ASTNode, 0),
-	}
-
-	for p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
-		stmt, err := p.parseStatement()
-		if err != nil {
-			return nil, err
-		}
-		if stmt != nil {
-			block.Children = append(block.Children, stmt)
-		}
-	}
-
-	if err := p.expect(TOKEN_RBRACE); err != nil {
-		return nil, err
-	}
-
-	return block, nil
-}
-
-func (p *Parser) parseIdentifierStatement() (*ASTNode, error) {
-	// Может быть присваивание или вызов функции
-	ident := p.current.Literal
-	p.advance()
-
-	if p.current.Type == TOKEN_ASSIGN {
-		// Присваивание
-		node := &ASTNode{
-			Type:   "Assignment",
-			Line:   p.current.Line,
-			Column: p.current.Column,
-		}
-		node.Value = map[string]interface{}{
-			"name": ident,
-		}
-		p.advance()
-
-		expr, err := p.parseExpression()
-		if err != nil {
-			return nil, err
-		}
-		node.Children = append(node.Children, expr)
-
-		if p.current.Type == TOKEN_SEMICOLON {
-			p.advance()
-		}
-		return node, nil
-	} else if p.current.Type == TOKEN_LPAREN {
-		// Вызов функции
-		node := &ASTNode{
-			Type:   "Call",
-			Line:   p.current.Line,
-			Column: p.current.Column,
-		}
-		node.Value = map[string]interface{}{
-			"name": ident,
-		}
-
-		if err := p.expect(TOKEN_LPAREN); err != nil {
-			return nil, err
-		}
-
-		args := make([]*ASTNode, 0)
-		for p.current.Type != TOKEN_RPAREN && p.current.Type != TOKEN_EOF {
-			arg, err := p.parseExpression()
-			if err != nil {
-				return nil, err
-			}
-			args = append(args, arg)
-
-			if p.current.Type == TOKEN_COMMA {
-				p.advance()
-			}
-		}
-
-		if err := p.expect(TOKEN_RPAREN); err != nil {
-			return nil, err
-		}
-
-		for _, arg := range args {
-			node.Children = append(node.Children, arg)
-		}
-
-		if p.current.Type == TOKEN_SEMICOLON {
-			p.advance()
-		}
-		return node, nil
-	}
-
-	return nil, fmt.Errorf("unexpected identifier")
-}
-
-func (p *Parser) parseExpression() (*ASTNode, error) {
-	return p.parseBinaryExpression(0)
-}
-
-func (p *Parser) parseBinaryExpression(minPrec int) (*ASTNode, error) {
-	left, err := p.parsePrimary()
-	if err != nil {
-		return nil, err
+	left := p.parsePrimary()
+	if left == nil {
+		return nil
 	}
 
 	for {
-		prec := p.getPrecedence()
-		if prec < minPrec {
+		if p.hasErrors || errors.HasFatal() {
 			break
 		}
 
-		op := p.current
+		op := p.peek.Literal
+		if p.peek.Type != TOKEN_PLUS && p.peek.Type != TOKEN_MINUS &&
+			p.peek.Type != TOKEN_STAR && p.peek.Type != TOKEN_SLASH &&
+			p.peek.Type != TOKEN_LT && p.peek.Type != TOKEN_GT &&
+			p.peek.Type != TOKEN_EQUALS {
+			break
+		}
+
+		nextPrec := 0
+		switch p.peek.Type {
+		case TOKEN_PLUS, TOKEN_MINUS:
+			nextPrec = 1
+		case TOKEN_STAR, TOKEN_SLASH:
+			nextPrec = 2
+		default:
+			nextPrec = 0
+		}
+
+		if nextPrec < prec {
+			break
+		}
+
 		p.advance()
-
-		right, err := p.parseBinaryExpression(prec + 1)
-		if err != nil {
-			return nil, err
+		right := p.parseBinary(nextPrec + 1)
+		if right == nil {
+			return nil
 		}
-
-		node := &ASTNode{
-			Type:   "BinaryOp",
-			Line:   op.Line,
-			Column: op.Column,
-		}
-		node.Value = map[string]interface{}{
-			"operator": op.Literal,
-		}
-		node.Children = []*ASTNode{left, right}
-		left = node
+		left = &BinaryExpr{Left: left, Op: op, Right: right}
 	}
-
-	return left, nil
+	return left
 }
 
-func (p *Parser) parsePrimary() (*ASTNode, error) {
-	switch p.current.Type {
+func (p *Parser) parsePrimary() Node {
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	switch p.peek.Type {
 	case TOKEN_NUMBER:
-		node := &ASTNode{
-			Type:   "NumberLiteral",
-			Value:  p.current.Literal,
-			Line:   p.current.Line,
-			Column: p.current.Column,
-		}
+		val := p.peek.Literal
 		p.advance()
-		return node, nil
+		return &Number{Value: val}
+
 	case TOKEN_STRING:
-		node := &ASTNode{
-			Type:   "StringLiteral",
-			Value:  p.current.Literal,
-			Line:   p.current.Line,
-			Column: p.current.Column,
-		}
+		val := p.peek.Literal
 		p.advance()
-		return node, nil
-	case TOKEN_CHAR:
-		node := &ASTNode{
-			Type:   "CharLiteral",
-			Value:  p.current.Literal,
-			Line:   p.current.Line,
-			Column: p.current.Column,
-		}
+		return &String{Value: val}
+
+	case TOKEN_DOLLAR:
 		p.advance()
-		return node, nil
-	case TOKEN_TRUE, TOKEN_FALSE:
-		node := &ASTNode{
-			Type:   "BoolLiteral",
-			Value:  p.current.Literal == "true",
-			Line:   p.current.Line,
-			Column: p.current.Column,
+		expr := p.parsePrimary()
+		if expr == nil {
+			return nil
 		}
-		p.advance()
-		return node, nil
+		return &UnaryExpr{Op: "$", Expr: expr}
+
 	case TOKEN_IDENT:
-		node := &ASTNode{
-			Type:   "Identifier",
-			Value:  p.current.Literal,
-			Line:   p.current.Line,
-			Column: p.current.Column,
-		}
+		name := p.peek.Literal
 		p.advance()
-		return node, nil
+		if p.peek.Type == TOKEN_LPAREN {
+			return p.parseCall(name)
+		}
+		return &Ident{Name: name}
+
+	case TOKEN_KEYWORD:
+		if p.peek.Literal == "true" || p.peek.Literal == "false" {
+			val := p.peek.Literal
+			p.advance()
+			return &Ident{Name: val}
+		}
+		if p.peek.Literal == "const" {
+			p.advance()
+			return p.parsePrimary()
+		}
+		p.hasErrors = true
+		errors.NewFatalError("0012",
+			fmt.Sprintf("Unexpected keyword in expression: '%s' (at %d:%d)", p.peek.Literal, p.peek.Line, p.peek.Column),
+			p.peek.Line, p.peek.Column, "")
+		p.advance()
+		return nil
+
 	case TOKEN_LPAREN:
 		p.advance()
-		expr, err := p.parseExpression()
-		if err != nil {
-			return nil, err
+		expr := p.parseExpression()
+		if expr == nil {
+			return nil
 		}
-		if err := p.expect(TOKEN_RPAREN); err != nil {
-			return nil, err
+		p.expect(TOKEN_RPAREN)
+		if p.hasErrors || errors.HasFatal() {
+			return nil
 		}
-		return expr, nil
-	default:
-		return nil, fmt.Errorf("unexpected token in expression: %s", p.current.Literal)
-	}
-}
+		return expr
 
-func (p *Parser) getPrecedence() int {
-	precedence := map[TokenType]int{
-		TOKEN_OR:    1,
-		TOKEN_AND:   2,
-		TOKEN_EQ:    3,
-		TOKEN_NEQ:   3,
-		TOKEN_LT:    4,
-		TOKEN_GT:    4,
-		TOKEN_LE:    4,
-		TOKEN_GE:    4,
-		TOKEN_PLUS:  5,
-		TOKEN_MINUS: 5,
-		TOKEN_MUL:   6,
-		TOKEN_DIV:   6,
-		TOKEN_MOD:   6,
+	default:
+		p.hasErrors = true
+		errors.NewFatalError("0013",
+			fmt.Sprintf("Unexpected token in expression: '%s' (at %d:%d)", p.peek.Literal, p.peek.Line, p.peek.Column),
+			p.peek.Line, p.peek.Column, "")
+		p.advance()
+		return nil
 	}
-	if prec, ok := precedence[p.current.Type]; ok {
-		return prec
-	}
-	return 0
 }

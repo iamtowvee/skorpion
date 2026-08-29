@@ -1,44 +1,32 @@
 package backend
 
 import (
-	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"skrp/res/front"
 )
 
-// GenCFromIR генерирует C код из IR
-func GenCFromIR(ir *front.ASTNode) (string, error) {
-	generator := NewCodeGenerator()
-	return generator.Generate(ir)
+type Backend struct {
+	Program *front.Program
+	IR      *IRProgram
+	Builder *Builder
 }
 
-// Builder компилирует C код в исполняемый файл
-func Builder(cFile, outFile, profile string) error {
-	// Определяем компилятор
-	compiler := "tcc" // по умолчанию TCC
-
-	// Проверяем профиль
-	if profile != "auto" {
-		// TODO: Загружать путь компилятора из профиля
-		// Пока просто используем tcc
+func NewBackend(prog *front.Program) *Backend {
+	return &Backend{
+		Program: prog,
 	}
+}
 
-	// Создаем директорию для выходного файла
-	outDir := filepath.Dir(outFile)
-	if err := os.MkdirAll(outDir, 0755); err != nil {
-		return fmt.Errorf("не удалось создать директорию: %v", err)
-	}
+func (b *Backend) Pipe(ir *IRProgram) *IRProgram {
+	b.IR = ir
+	return b.IR
+}
 
-	// Компилируем
-	cmd := exec.Command(compiler, cFile, "-o", outFile)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+func (b *Backend) GenCFromIR(ir *IRProgram) string {
+	gen := NewCodeGenerator(ir)
+	return gen.Generate()
+}
 
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("ошибка компиляции: %v", err)
-	}
-
-	return nil
+func (b *Backend) Build(ir *IRProgram, config *BuildConfig) bool {
+	builder := NewBuilder(config)
+	return builder.Build(ir)
 }

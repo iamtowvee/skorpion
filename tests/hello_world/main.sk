@@ -1,25 +1,11 @@
-includeC {
-    #include <stdio.h>
-    #include <string.h>
-}
-
-void println(string msg) {
+void print(string msg) {
     includeC {
         printf("%s\n", msg);
     }
 }
 
-int add(int a, int b) {
-    return a + b
-}
-
 void main(arr args) {
-    string msg = "Hello, Skorpion!"
-    println(msg)
-    
     int x = 10
-    int y = 20
-    int sum = add(x, y)
-    
-    println("Sum: " + intToString(sum))
+    string s = "Hello"
+    print($x)
 }

@@ -1,97 +1,41 @@
 package front
 
 import (
-	"fmt"
 	"skrp/res/errors"
+	"unicode"
 )
 
-// TokenType тип токена
-type TokenType string
+type TokenType int
 
 const (
-	// Ключевые слова
-	TOKEN_USE       TokenType = "USE"
-	TOKEN_MODULE    TokenType = "MODULE"
-	TOKEN_ALIAS     TokenType = "ALIAS"
-	TOKEN_INCLUDE_C TokenType = "INCLUDE_C"
-
-	// Типы
-	TOKEN_TYPE_VOID   TokenType = "VOID"
-	TOKEN_TYPE_INT    TokenType = "INT"
-	TOKEN_TYPE_CHAR   TokenType = "CHAR"
-	TOKEN_TYPE_STRING TokenType = "STRING"
-	TOKEN_TYPE_ARR    TokenType = "ARR"
-	TOKEN_TYPE_DICT   TokenType = "DICT"
-	TOKEN_TYPE_FLOAT  TokenType = "FLOAT"
-	TOKEN_TYPE_DOUBLE TokenType = "DOUBLE"
-	TOKEN_TYPE_BOOL   TokenType = "BOOL"
-	TOKEN_TYPE_ANY    TokenType = "ANY"
-	TOKEN_TYPE_T      TokenType = "T"
-
-	// Управляющие конструкции
-	TOKEN_IF     TokenType = "IF"
-	TOKEN_ELSE   TokenType = "ELSE"
-	TOKEN_WHILE  TokenType = "WHILE"
-	TOKEN_FOR    TokenType = "FOR"
-	TOKEN_RETURN TokenType = "RETURN"
-
-	// Значения
-	TOKEN_TRUE  TokenType = "TRUE"
-	TOKEN_FALSE TokenType = "FALSE"
-
-	// Идентификаторы и литералы
-	TOKEN_IDENT  TokenType = "IDENT"
-	TOKEN_NUMBER TokenType = "NUMBER"
-	TOKEN_STRING TokenType = "STRING_LITERAL"
-	TOKEN_CHAR   TokenType = "CHAR_LITERAL"
-
-	// Разделители
-	TOKEN_LBRACE   TokenType = "{"
-	TOKEN_RBRACE   TokenType = "}"
-	TOKEN_LPAREN   TokenType = "("
-	TOKEN_RPAREN   TokenType = ")"
-	TOKEN_LBRACKET TokenType = "["
-	TOKEN_RBRACKET TokenType = "]"
-	TOKEN_LANGLE   TokenType = "<"
-	TOKEN_RANGLE   TokenType = ">"
-
-	// Операторы
-	TOKEN_ASSIGN   TokenType = "="
-	TOKEN_PLUS     TokenType = "+"
-	TOKEN_MINUS    TokenType = "-"
-	TOKEN_MUL      TokenType = "*"
-	TOKEN_DIV      TokenType = "/"
-	TOKEN_MOD      TokenType = "%"
-	TOKEN_EQ       TokenType = "=="
-	TOKEN_NEQ      TokenType = "!="
-	TOKEN_LT       TokenType = "<"
-	TOKEN_GT       TokenType = ">"
-	TOKEN_LE       TokenType = "<="
-	TOKEN_GE       TokenType = ">="
-	TOKEN_AND      TokenType = "&&"
-	TOKEN_OR       TokenType = "||"
-	TOKEN_NOT      TokenType = "!"
-	TOKEN_INC      TokenType = "++"
-	TOKEN_DEC      TokenType = "--"
-	TOKEN_PLUS_EQ  TokenType = "+="
-	TOKEN_MINUS_EQ TokenType = "-="
-	TOKEN_MUL_EQ   TokenType = "*="
-	TOKEN_DIV_EQ   TokenType = "/="
-
-	// Специальные
-	TOKEN_SEMICOLON TokenType = ";"
-	TOKEN_COMMA     TokenType = ","
-	TOKEN_DOT       TokenType = "."
-	TOKEN_COLON     TokenType = ":"
-	TOKEN_AMP       TokenType = "&"
-	TOKEN_DOLLAR    TokenType = "$"
-	TOKEN_ARROW     TokenType = "->"
-
-	TOKEN_COMMENT TokenType = "COMMENT"
-	TOKEN_EOF     TokenType = "EOF"
+	TOKEN_EOF TokenType = iota
+	TOKEN_IDENT
+	TOKEN_NUMBER
+	TOKEN_STRING
+	TOKEN_KEYWORD
+	// Символы
+	TOKEN_LPAREN
+	TOKEN_RPAREN
+	TOKEN_LBRACE
+	TOKEN_RBRACE
+	TOKEN_LBRACKET
+	TOKEN_RBRACKET
+	TOKEN_SEMICOLON
+	TOKEN_COMMA
+	TOKEN_PLUS
+	TOKEN_MINUS
+	TOKEN_STAR
+	TOKEN_SLASH
+	TOKEN_EQUALS
+	TOKEN_LT
+	TOKEN_GT
+	TOKEN_NOT
+	TOKEN_AMPERSAND
+	TOKEN_HASH
+	TOKEN_DOLLAR
+	TOKEN_INCLUDE_C
 )
 
-// Token структура токена
 type Token struct {
 	Type    TokenType
 	Literal string
@@ -99,392 +43,289 @@ type Token struct {
 	Column  int
 }
 
-// Lexer структура лексера
 type Lexer struct {
-	input  string
-	pos    int
-	line   int
-	col    int
-	ch     rune
-	tokens []Token
+	input   string
+	pos     int
+	line    int
+	col     int
+	peekPos int
 }
 
-// NewLexer создает новый лексер
+// Единственный конструктор
 func NewLexer(input string) *Lexer {
-	l := &Lexer{
-		input:  input,
-		line:   1,
-		col:    0,
-		tokens: make([]Token, 0),
+	return &Lexer{
+		input:   input,
+		pos:     0,
+		line:    1,
+		col:     1,
+		peekPos: 0,
 	}
-	l.readChar()
-	return l
 }
 
-func (l *Lexer) readChar() {
+func (l *Lexer) NextToken() Token {
+	l.skipWhitespace()
 	if l.pos >= len(l.input) {
-		l.ch = 0
-	} else {
-		l.ch = rune(l.input[l.pos])
+		return Token{Type: TOKEN_EOF, Literal: "", Line: l.line, Column: l.col}
 	}
-	l.pos++
-	if l.ch == '\n' {
-		l.line++
-		l.col = 0
-	} else {
+
+	ch := l.input[l.pos]
+
+	// Многострочные комментарии
+	if ch == '/' && l.peek() == '*' {
+		return l.readMultilineComment()
+	}
+
+	// Однострочные комментарии
+	if ch == '/' && l.peek() == '/' {
+		l.readSingleLineComment()
+		return l.NextToken()
+	}
+
+	// Числа
+	if unicode.IsDigit(rune(ch)) || (ch == '-' && l.pos+1 < len(l.input) && unicode.IsDigit(rune(l.input[l.pos+1]))) {
+		return l.readNumber()
+	}
+
+	// Строки
+	if ch == '"' {
+		return l.readString()
+	}
+
+	// Идентификаторы и ключевые слова
+	if unicode.IsLetter(rune(ch)) || ch == '_' {
+		return l.readIdent()
+	}
+
+	// Операторы и символы
+	switch ch {
+	case '(':
+		return l.makeToken(TOKEN_LPAREN, "(")
+	case ')':
+		return l.makeToken(TOKEN_RPAREN, ")")
+	case '{':
+		return l.makeToken(TOKEN_LBRACE, "{")
+	case '}':
+		return l.makeToken(TOKEN_RBRACE, "}")
+	case '[':
+		return l.makeToken(TOKEN_LBRACKET, "[")
+	case ']':
+		return l.makeToken(TOKEN_RBRACKET, "]")
+	case ';':
+		return l.makeToken(TOKEN_SEMICOLON, ";")
+	case ',':
+		return l.makeToken(TOKEN_COMMA, ",")
+	case '+':
+		return l.makeToken(TOKEN_PLUS, "+")
+	case '-':
+		return l.makeToken(TOKEN_MINUS, "-")
+	case '*':
+		return l.makeToken(TOKEN_STAR, "*")
+	case '/':
+		return l.makeToken(TOKEN_SLASH, "/")
+	case '=':
+		return l.makeToken(TOKEN_EQUALS, "=")
+	case '<':
+		return l.makeToken(TOKEN_LT, "<")
+	case '>':
+		return l.makeToken(TOKEN_GT, ">")
+	case '!':
+		return l.makeToken(TOKEN_NOT, "!")
+	case '&':
+		return l.makeToken(TOKEN_AMPERSAND, "&")
+	case '#':
+		return l.makeToken(TOKEN_HASH, "#")
+	case '$':
+		return l.makeToken(TOKEN_DOLLAR, "$")
+	default:
+		errors.NewError("0001", "Unknown character", l.line, l.col, "")
+		l.pos++
 		l.col++
+		return l.NextToken()
 	}
 }
 
-func (l *Lexer) peekChar() rune {
-	if l.pos >= len(l.input) {
-		return 0
+func (l *Lexer) makeToken(tt TokenType, lit string) Token {
+	tok := Token{Type: tt, Literal: lit, Line: l.line, Column: l.col}
+	l.pos++
+	l.col++
+	return tok
+}
+
+func (l *Lexer) readIdent() Token {
+	start := l.pos
+	for l.pos < len(l.input) && (unicode.IsLetter(rune(l.input[l.pos])) || unicode.IsDigit(rune(l.input[l.pos])) || l.input[l.pos] == '_') {
+		l.pos++
 	}
-	return rune(l.input[l.pos])
+	literal := l.input[start:l.pos]
+	tokType := TOKEN_IDENT
+	// Ключевые слова
+	keywords := map[string]TokenType{
+		"use":      TOKEN_KEYWORD,
+		"const":    TOKEN_KEYWORD,
+		"func":     TOKEN_KEYWORD,
+		"if":       TOKEN_KEYWORD,
+		"else":     TOKEN_KEYWORD,
+		"for":      TOKEN_KEYWORD,
+		"while":    TOKEN_KEYWORD,
+		"return":   TOKEN_KEYWORD,
+		"void":     TOKEN_KEYWORD,
+		"int":      TOKEN_KEYWORD,
+		"char":     TOKEN_KEYWORD,
+		"string":   TOKEN_KEYWORD,
+		"arr":      TOKEN_KEYWORD,
+		"dict":     TOKEN_KEYWORD,
+		"float":    TOKEN_KEYWORD,
+		"double":   TOKEN_KEYWORD,
+		"bool":     TOKEN_KEYWORD,
+		"any":      TOKEN_KEYWORD,
+		"true":     TOKEN_KEYWORD,
+		"false":    TOKEN_KEYWORD,
+		"T":        TOKEN_KEYWORD,
+		"includeC": TOKEN_INCLUDE_C,
+	}
+	if kwType, ok := keywords[literal]; ok {
+		tokType = kwType
+	}
+	return Token{Type: tokType, Literal: literal, Line: l.line, Column: start - l.col + 1}
+}
+
+func (l *Lexer) readNumber() Token {
+	start := l.pos
+	if l.input[l.pos] == '-' {
+		l.pos++
+	}
+	for l.pos < len(l.input) && unicode.IsDigit(rune(l.input[l.pos])) {
+		l.pos++
+	}
+	if l.pos < len(l.input) && l.input[l.pos] == '.' {
+		l.pos++
+		for l.pos < len(l.input) && unicode.IsDigit(rune(l.input[l.pos])) {
+			l.pos++
+		}
+	}
+	literal := l.input[start:l.pos]
+	return Token{Type: TOKEN_NUMBER, Literal: literal, Line: l.line, Column: start - l.col + 1}
+}
+
+func (l *Lexer) readString() Token {
+	start := l.pos
+	l.pos++ // пропустить "
+	for l.pos < len(l.input) && l.input[l.pos] != '"' {
+		if l.input[l.pos] == '\\' && l.pos+1 < len(l.input) {
+			l.pos += 2
+		} else {
+			l.pos++
+		}
+	}
+	if l.pos >= len(l.input) {
+		errors.NewError("0002", "Unterminated string", l.line, l.col, "")
+		return Token{Type: TOKEN_STRING, Literal: "", Line: l.line, Column: l.col}
+	}
+	literal := l.input[start+1 : l.pos]
+	l.pos++ // пропустить "
+	return Token{Type: TOKEN_STRING, Literal: literal, Line: l.line, Column: start - l.col + 1}
+}
+
+func (l *Lexer) readSingleLineComment() {
+	for l.pos < len(l.input) && l.input[l.pos] != '\n' {
+		l.pos++
+	}
+}
+
+func (l *Lexer) readMultilineComment() Token {
+	l.pos += 2
+	for l.pos < len(l.input)-1 && !(l.input[l.pos] == '*' && l.input[l.pos+1] == '/') {
+		if l.input[l.pos] == '\n' {
+			l.line++
+			l.col = 1
+		}
+		l.pos++
+	}
+	if l.pos >= len(l.input)-1 {
+		errors.NewError("0003", "Unterminated multi-line comment", l.line, l.col, "")
+		return Token{Type: TOKEN_EOF, Literal: "", Line: l.line, Column: l.col}
+	}
+	l.pos += 2
+	return l.NextToken()
 }
 
 func (l *Lexer) skipWhitespace() {
-	for l.ch == ' ' || l.ch == '\t' || l.ch == '\n' || l.ch == '\r' {
-		l.readChar()
+	for l.pos < len(l.input) {
+		ch := l.input[l.pos]
+		if ch == ' ' || ch == '\t' || ch == '\r' {
+			l.pos++
+			l.col++
+		} else if ch == '\n' {
+			l.pos++
+			l.line++
+			l.col = 1
+		} else {
+			break
+		}
 	}
 }
 
-// Tokenize разбивает входной код на токены
-func (l *Lexer) Tokenize() ([]Token, error) {
-	for l.ch != 0 {
-		switch {
-		case isWhitespace(l.ch):
-			l.skipWhitespace()
-		case l.ch == '/':
-			l.handleComment()
-		case isLetter(l.ch):
-			l.handleIdentifier()
-		case isDigit(l.ch):
-			l.handleNumber()
-		case l.ch == '"':
-			l.handleString()
-		case l.ch == '\'':
-			l.handleChar()
-		default:
-			l.handleOperator()
-		}
+func (l *Lexer) peek() byte {
+	if l.pos+1 < len(l.input) {
+		return l.input[l.pos+1]
 	}
-
-	l.tokens = append(l.tokens, Token{TOKEN_EOF, "EOF", l.line, l.col})
-	return l.tokens, nil
+	return 0
 }
 
-func (l *Lexer) handleComment() {
-	l.readChar()
-	if l.ch == '/' {
-		// Однострочный комментарий
-		for l.ch != '\n' && l.ch != 0 {
-			l.readChar()
-		}
-	} else if l.ch == '*' {
-		// Многострочный комментарий
-		l.readChar()
-		for !(l.ch == '*' && l.peekChar() == '/') && l.ch != 0 {
-			l.readChar()
-		}
-		if l.ch == '*' {
-			l.readChar()
-			l.readChar() // пропускаем '/'
-		}
-	} else {
-		// Это оператор деления
-		l.tokens = append(l.tokens, Token{TOKEN_DIV, "/", l.line, l.col})
-	}
-}
-
-func (l *Lexer) handleIdentifier() {
-	startLine := l.line
-	startCol := l.col
-	var ident string
-
-	for isLetter(l.ch) || isDigit(l.ch) || l.ch == '_' {
-		ident += string(l.ch)
-		l.readChar()
-	}
-
-	// Проверяем ключевые слова
-	tokenType := l.lookupKeyword(ident)
-	l.tokens = append(l.tokens, Token{tokenType, ident, startLine, startCol})
-}
-
-func (l *Lexer) lookupKeyword(ident string) TokenType {
-	keywords := map[string]TokenType{
-		"use":      TOKEN_USE,
-		"module":   TOKEN_MODULE,
-		"alias":    TOKEN_ALIAS,
-		"includeC": TOKEN_INCLUDE_C,
-		"void":     TOKEN_TYPE_VOID,
-		"int":      TOKEN_TYPE_INT,
-		"char":     TOKEN_TYPE_CHAR,
-		"string":   TOKEN_TYPE_STRING,
-		"arr":      TOKEN_TYPE_ARR,
-		"dict":     TOKEN_TYPE_DICT,
-		"float":    TOKEN_TYPE_FLOAT,
-		"double":   TOKEN_TYPE_DOUBLE,
-		"bool":     TOKEN_TYPE_BOOL,
-		"any":      TOKEN_TYPE_ANY,
-		"T":        TOKEN_TYPE_T,
-		"if":       TOKEN_IF,
-		"else":     TOKEN_ELSE,
-		"while":    TOKEN_WHILE,
-		"for":      TOKEN_FOR,
-		"return":   TOKEN_RETURN,
-		"true":     TOKEN_TRUE,
-		"false":    TOKEN_FALSE,
-	}
-
-	if token, ok := keywords[ident]; ok {
-		return token
-	}
-	return TOKEN_IDENT
-}
-
-func (l *Lexer) handleNumber() {
-	startLine := l.line
-	startCol := l.col
-	num := ""
-	isFloat := false
-
-	for isDigit(l.ch) || l.ch == '.' {
-		if l.ch == '.' {
-			if isFloat {
-				errors.NewErrorWithPosition(
-					errors.ERR_INVALID_NUMBER,
-					"Некорректное число: несколько точек",
-					startLine, startCol, "",
-				)
-				return
-			}
-			isFloat = true
-		}
-		num += string(l.ch)
-		l.readChar()
-	}
-
-	l.tokens = append(l.tokens, Token{TOKEN_NUMBER, num, startLine, startCol})
-}
-
-func (l *Lexer) handleString() {
-	startLine := l.line
-	startCol := l.col
-	l.readChar() // пропускаем открывающую кавычку
-
-	var str string
-	for l.ch != '"' && l.ch != 0 {
-		if l.ch == '\\' {
-			l.readChar()
-			switch l.ch {
-			case 'n':
-				str += "\n"
-			case 't':
-				str += "\t"
-			case '"':
-				str += "\""
-			case '\\':
-				str += "\\"
-			default:
-				str += string(l.ch)
-			}
-		} else {
-			str += string(l.ch)
-		}
-		l.readChar()
-	}
-
-	if l.ch == 0 {
-		errors.NewErrorWithPosition(
-			errors.ERR_UNTERMINATED_STRING,
-			"Незакрытая строка",
-			startLine, startCol, "",
-		)
-		return
-	}
-
-	l.readChar() // пропускаем закрывающую кавычку
-	l.tokens = append(l.tokens, Token{TOKEN_STRING, str, startLine, startCol})
-}
-
-func (l *Lexer) handleChar() {
-	startLine := l.line
-	startCol := l.col
-	l.readChar() // пропускаем открывающую кавычку
-
-	if l.ch == '\'' {
-		errors.NewErrorWithPosition(
-			errors.ERR_INVALID_SYNTAX,
-			"Пустой символ",
-			startLine, startCol, "",
-		)
-		return
-	}
-
-	char := string(l.ch)
-	l.readChar()
-
-	if l.ch != '\'' {
-		errors.NewErrorWithPosition(
-			errors.ERR_INVALID_SYNTAX,
-			"Некорректный символ",
-			startLine, startCol, "",
-		)
-		return
-	}
-
-	l.readChar()
-	l.tokens = append(l.tokens, Token{TOKEN_CHAR, char, startLine, startCol})
-}
-
-func (l *Lexer) handleOperator() {
-	startLine := l.line
-	startCol := l.col
-
-	switch l.ch {
-	case '{':
-		l.tokens = append(l.tokens, Token{TOKEN_LBRACE, "{", startLine, startCol})
-		l.readChar()
-	case '}':
-		l.tokens = append(l.tokens, Token{TOKEN_RBRACE, "}", startLine, startCol})
-		l.readChar()
-	case '(':
-		l.tokens = append(l.tokens, Token{TOKEN_LPAREN, "(", startLine, startCol})
-		l.readChar()
-	case ')':
-		l.tokens = append(l.tokens, Token{TOKEN_RPAREN, ")", startLine, startCol})
-		l.readChar()
-	case '[':
-		l.tokens = append(l.tokens, Token{TOKEN_LBRACKET, "[", startLine, startCol})
-		l.readChar()
-	case ']':
-		l.tokens = append(l.tokens, Token{TOKEN_RBRACKET, "]", startLine, startCol})
-		l.readChar()
-	case '<':
-		if l.peekChar() == '=' {
-			l.readChar()
-			l.tokens = append(l.tokens, Token{TOKEN_LE, "<=", startLine, startCol})
-		} else {
-			l.tokens = append(l.tokens, Token{TOKEN_LANGLE, "<", startLine, startCol})
-		}
-		l.readChar()
-	case '>':
-		if l.peekChar() == '=' {
-			l.readChar()
-			l.tokens = append(l.tokens, Token{TOKEN_GE, ">=", startLine, startCol})
-		} else {
-			l.tokens = append(l.tokens, Token{TOKEN_RANGLE, ">", startLine, startCol})
-		}
-		l.readChar()
-	case '=':
-		if l.peekChar() == '=' {
-			l.readChar()
-			l.tokens = append(l.tokens, Token{TOKEN_EQ, "==", startLine, startCol})
-		} else {
-			l.tokens = append(l.tokens, Token{TOKEN_ASSIGN, "=", startLine, startCol})
-		}
-		l.readChar()
-	case '!':
-		if l.peekChar() == '=' {
-			l.readChar()
-			l.tokens = append(l.tokens, Token{TOKEN_NEQ, "!=", startLine, startCol})
-		} else {
-			l.tokens = append(l.tokens, Token{TOKEN_NOT, "!", startLine, startCol})
-		}
-		l.readChar()
-	case '+':
-		if l.peekChar() == '=' {
-			l.readChar()
-			l.tokens = append(l.tokens, Token{TOKEN_PLUS_EQ, "+=", startLine, startCol})
-		} else if l.peekChar() == '+' {
-			l.readChar()
-			l.tokens = append(l.tokens, Token{TOKEN_INC, "++", startLine, startCol})
-		} else {
-			l.tokens = append(l.tokens, Token{TOKEN_PLUS, "+", startLine, startCol})
-		}
-		l.readChar()
-	case '-':
-		if l.peekChar() == '=' {
-			l.readChar()
-			l.tokens = append(l.tokens, Token{TOKEN_MINUS_EQ, "-=", startLine, startCol})
-		} else if l.peekChar() == '-' {
-			l.readChar()
-			l.tokens = append(l.tokens, Token{TOKEN_DEC, "--", startLine, startCol})
-		} else if l.peekChar() == '>' {
-			l.readChar()
-			l.tokens = append(l.tokens, Token{TOKEN_ARROW, "->", startLine, startCol})
-		} else {
-			l.tokens = append(l.tokens, Token{TOKEN_MINUS, "-", startLine, startCol})
-		}
-		l.readChar()
-	case '*':
-		if l.peekChar() == '=' {
-			l.readChar()
-			l.tokens = append(l.tokens, Token{TOKEN_MUL_EQ, "*=", startLine, startCol})
-		} else {
-			l.tokens = append(l.tokens, Token{TOKEN_MUL, "*", startLine, startCol})
-		}
-		l.readChar()
-	case '/':
-		if l.peekChar() == '=' {
-			l.readChar()
-			l.tokens = append(l.tokens, Token{TOKEN_DIV_EQ, "/=", startLine, startCol})
-		} else {
-			l.tokens = append(l.tokens, Token{TOKEN_DIV, "/", startLine, startCol})
-		}
-		l.readChar()
-	case '%':
-		l.tokens = append(l.tokens, Token{TOKEN_MOD, "%", startLine, startCol})
-		l.readChar()
-	case '&':
-		if l.peekChar() == '&' {
-			l.readChar()
-			l.tokens = append(l.tokens, Token{TOKEN_AND, "&&", startLine, startCol})
-		} else {
-			l.tokens = append(l.tokens, Token{TOKEN_AMP, "&", startLine, startCol})
-		}
-		l.readChar()
-	case '|':
-		if l.peekChar() == '|' {
-			l.readChar()
-			l.tokens = append(l.tokens, Token{TOKEN_OR, "||", startLine, startCol})
-		}
-		l.readChar()
-	case ';':
-		l.tokens = append(l.tokens, Token{TOKEN_SEMICOLON, ";", startLine, startCol})
-		l.readChar()
-	case ',':
-		l.tokens = append(l.tokens, Token{TOKEN_COMMA, ",", startLine, startCol})
-		l.readChar()
-	case '.':
-		l.tokens = append(l.tokens, Token{TOKEN_DOT, ".", startLine, startCol})
-		l.readChar()
-	case ':':
-		l.tokens = append(l.tokens, Token{TOKEN_COLON, ":", startLine, startCol})
-		l.readChar()
-	case '$':
-		l.tokens = append(l.tokens, Token{TOKEN_DOLLAR, "$", startLine, startCol})
-		l.readChar()
+// String возвращает строковое представление TokenType
+func (tt TokenType) String() string {
+	switch tt {
+	case TOKEN_EOF:
+		return "EOF"
+	case TOKEN_IDENT:
+		return "IDENT"
+	case TOKEN_NUMBER:
+		return "NUMBER"
+	case TOKEN_STRING:
+		return "STRING"
+	case TOKEN_KEYWORD:
+		return "KEYWORD"
+	case TOKEN_LPAREN:
+		return "("
+	case TOKEN_RPAREN:
+		return ")"
+	case TOKEN_LBRACE:
+		return "{"
+	case TOKEN_RBRACE:
+		return "}"
+	case TOKEN_LBRACKET:
+		return "["
+	case TOKEN_RBRACKET:
+		return "]"
+	case TOKEN_SEMICOLON:
+		return ";"
+	case TOKEN_COMMA:
+		return ","
+	case TOKEN_PLUS:
+		return "+"
+	case TOKEN_MINUS:
+		return "-"
+	case TOKEN_STAR:
+		return "*"
+	case TOKEN_SLASH:
+		return "/"
+	case TOKEN_EQUALS:
+		return "="
+	case TOKEN_LT:
+		return "<"
+	case TOKEN_GT:
+		return ">"
+	case TOKEN_NOT:
+		return "!"
+	case TOKEN_AMPERSAND:
+		return "&"
+	case TOKEN_HASH:
+		return "#"
+	case TOKEN_DOLLAR:
+		return "$"
+	case TOKEN_INCLUDE_C:
+		return "includeC"
 	default:
-		errors.NewErrorWithPosition(
-			errors.ERR_UNEXPECTED_CHAR,
-			fmt.Sprintf("Неожиданный символ: '%c'", l.ch),
-			startLine, startCol, "",
-		)
-		l.readChar()
+		return "UNKNOWN"
 	}
-}
-
-func isWhitespace(ch rune) bool {
-	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r'
-}
-
-func isLetter(ch rune) bool {
-	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_'
-}
-
-func isDigit(ch rune) bool {
-	return ch >= '0' && ch <= '9'
 }

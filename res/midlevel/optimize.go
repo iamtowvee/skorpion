@@ -4,35 +4,78 @@ import (
 	"skrp/res/front"
 )
 
-// Optimizer оптимизирует IR
-type Optimizer struct{}
-
-// NewOptimizer создает новый оптимизатор
-func NewOptimizer() *Optimizer {
-	return &Optimizer{}
+type Optimizer struct {
+	Program *front.Program
 }
 
-// Optimize оптимизирует AST
-func (o *Optimizer) Optimize(ast *front.ASTNode) *front.ASTNode {
-	// Простая оптимизация: удаляем мертвый код
-	return o.removeDeadCode(ast)
+func NewOptimizer(prog *front.Program) *Optimizer {
+	return &Optimizer{Program: prog}
 }
 
-func (o *Optimizer) removeDeadCode(node *front.ASTNode) *front.ASTNode {
-	if node == nil {
-		return nil
-	}
-
-	// Рекурсивно обрабатываем детей
-	for i := 0; i < len(node.Children); i++ {
-		child := node.Children[i]
-		if child.Type == "Return" {
-			// Удаляем все узлы после return
-			node.Children = node.Children[:i+1]
-			break
+func (o *Optimizer) Optimize() *front.Program {
+	// Оптимизация на уровне AST
+	for _, fn := range o.Program.Functions {
+		if fn.Body != nil {
+			o.optimizeBlock(fn.Body)
 		}
-		o.removeDeadCode(child)
+	}
+	return o.Program
+}
+
+func (o *Optimizer) optimizeBlock(block *front.Block) {
+	// Удаляем недостижимый код (после return)
+	newStatements := []front.Node{}
+	deadCode := false
+
+	for _, stmt := range block.Statements {
+		if deadCode {
+			// Пропускаем все последующие операторы
+			continue
+		}
+
+		if _, ok := stmt.(*front.ReturnStmt); ok {
+			deadCode = true
+		}
+
+		newStatements = append(newStatements, stmt)
 	}
 
-	return node
+	block.Statements = newStatements
+
+	// Оптимизация внутри каждого оператора
+	for _, stmt := range block.Statements {
+		o.optimizeNode(stmt)
+	}
+}
+
+func (o *Optimizer) optimizeNode(node front.Node) {
+	switch n := node.(type) {
+	case *front.Block:
+		o.optimizeBlock(n)
+	case *front.IfStmt:
+		if n.Then != nil {
+			o.optimizeBlock(n.Then)
+		}
+		if n.Else != nil {
+			o.optimizeBlock(n.Else)
+		}
+	case *front.WhileStmt:
+		if n.Body != nil {
+			o.optimizeBlock(n.Body)
+		}
+	case *front.ForStmt:
+		if n.Body != nil {
+			o.optimizeBlock(n.Body)
+		}
+	case *front.BinaryExpr:
+		// Константная свёртка для арифметических операций
+		o.foldConstants(n)
+	}
+}
+
+func (o *Optimizer) foldConstants(bin *front.BinaryExpr) {
+
+	// Вычисляем результат
+	// Пока просто помечаем, что можно свернуть
+	// Реализуем вычисления позже, когда будет интерпретатор
 }

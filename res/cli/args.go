@@ -1,75 +1,61 @@
 package cli
 
 import (
-	"os"
+	"fmt"
+	"strings"
 )
 
-// CLI аргументы
-type Args struct {
-	Help    bool
-	Version bool
-	Colors  bool
-	Updates bool
-	Path    string
-	Profile string
-}
-
-// ParseArgs парсит аргументы командной строки
-func ParseArgs() *Args {
-	args := &Args{
-		Colors:  true, // По умолчанию
-		Updates: true, // По умолчанию
+func ParseAddProfile(args []string) (string, string, error) {
+	if len(args) < 4 {
+		return "", "", fmt.Errorf("usage: skorpion add-profile NAME : PATH")
 	}
 
-	// Проверяем флаги
-	for i := 0; i < len(os.Args); i++ {
-		arg := os.Args[i]
-		switch arg {
-		case "--help", "-h":
-			args.Help = true
-		case "--version", "-v":
-			args.Version = true
-		case "--colors":
-			if i+1 < len(os.Args) {
-				args.Colors = os.Args[i+1] == "true"
-				i++
-			}
-		case "--updates":
-			if i+1 < len(os.Args) {
-				args.Updates = os.Args[i+1] == "true"
-				i++
-			}
-		case "--path":
-			if i+1 < len(os.Args) {
-				args.Path = os.Args[i+1]
-				i++
-			}
-		case "--current-profile", "--profile-list":
-			// Обрабатываются в actions.go
+	// Ищем разделитель ":"
+	separatorIdx := -1
+	for i, arg := range args {
+		if arg == ":" {
+			separatorIdx = i
+			break
 		}
 	}
 
-	return args
-}
-
-// GetCurrentProfile возвращает текущий профиль компилятора
-func GetCurrentProfile() string {
-	// Читаем из конфига или возвращаем "auto"
-	config := loadConfig()
-	if config.CurrentProfile != "" {
-		return config.CurrentProfile
+	if separatorIdx == -1 || separatorIdx == 0 || separatorIdx == len(args)-1 {
+		return "", "", fmt.Errorf("invalid format. Usage: skorpion add-profile NAME : PATH")
 	}
-	return "auto"
+
+	// Имя профиля (все аргументы до ":")
+	nameParts := args[1:separatorIdx]
+	name := strings.Join(nameParts, " ")
+
+	// Путь (все аргументы после ":")
+	pathParts := args[separatorIdx+1:]
+	path := strings.Join(pathParts, " ")
+
+	return name, path, nil
 }
 
-// GetColors возвращает настройку цветов
-func GetColors() bool {
-	config := loadConfig()
-	return config.Colors
-}
+func ParseEditProfile(args []string) (string, string, error) {
+	if len(args) < 4 {
+		return "", "", fmt.Errorf("usage: skorpion edit-profile NAME : NEW_PATH")
+	}
 
-// GetUpdates возвращает настройку проверки обновлений
-func GetUpdates() bool {
-	config := loadConfig()
-	return config.Updates
+	separatorIdx := -1
+	for i, arg := range args {
+		if arg == ":" {
+			separatorIdx = i
+			break
+		}
+	}
+
+	if separatorIdx == -1 || separatorIdx == 0 || separatorIdx == len(args)-1 {
+		return "", "", fmt.Errorf("invalid format. Usage: skorpion edit-profile NAME : NEW_PATH")
+	}
+
+	nameParts := args[1:separatorIdx]
+	name := strings.Join(nameParts, " ")
+
+	pathParts := args[separatorIdx+1:]
+	path := strings.Join(pathParts, " ")
+
+	return name, path, nil
 }

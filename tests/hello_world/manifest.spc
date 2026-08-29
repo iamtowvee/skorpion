@@ -1,4 +1,6 @@
-name["Example"]
+name["MyProject"]
 version["1.0.0"]
 target[<"win", "linux">]
 main["./main.sk"]
+buildOutName["myapp"]
+buildOutPath["bin/"]

@@ -75,3 +75,10 @@ use path/module
 use path/module_same &ms
 use other/module_same &oms
 ```
+
+If need use C code. then use:
+```c
+includeC {
+    // There raw C code
+}
+```
