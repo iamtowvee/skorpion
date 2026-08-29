@@ -92,11 +92,8 @@ func (p *Pipeline) processNode(node front.Node, irFn *IRFunction) {
 	case *front.UnaryExpr:
 		p.processUnary(n, irFn)
 	case *front.Number:
-		// Числа обрабатываются как выражения в других узлах
 	case *front.String:
-		// Строки обрабатываются как выражения в других узлах
 	case *front.Ident:
-		// Идентификаторы обрабатываются как выражения в других узлах
 	case *front.ReturnStmt:
 		p.processReturn(n, irFn)
 	case *front.CallExpr:
@@ -108,8 +105,11 @@ func (p *Pipeline) processNode(node front.Node, irFn *IRFunction) {
 	case *front.ForStmt:
 		p.processFor(n, irFn)
 	case *front.IncludeC:
-		// Сохраняем C код в IR
-		p.IR.InlineC += n.Code + "\n"
+		// Вставляем C код как инструкцию в функцию
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:   "inline_c",
+			Arg1: n.Code,
+		})
 	}
 }
 
@@ -117,8 +117,6 @@ func (p *Pipeline) processUnary(unary *front.UnaryExpr, irFn *IRFunction) string
 	if unary.Op == "$" {
 		// Преобразование в строку
 		expr := p.processExpression(unary.Expr, irFn)
-
-		// В C используем snprintf для преобразования
 		result := p.newTemp()
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:     "$",
@@ -206,6 +204,8 @@ func (p *Pipeline) processExpression(expr front.Node, irFn *IRFunction) string {
 	case *front.Number:
 		return n.Value
 	case *front.String:
+		// Строка уже содержит кавычки из лексера, но нужно экранировать
+		// В лексере строка читается без кавычек, добавляем их здесь
 		return fmt.Sprintf(`"%s"`, n.Value)
 	case *front.Ident:
 		return n.Name
@@ -213,6 +213,11 @@ func (p *Pipeline) processExpression(expr front.Node, irFn *IRFunction) string {
 		return p.processBinary(n, irFn)
 	case *front.CallExpr:
 		return p.processCallExpr(n, irFn)
+	case *front.UnaryExpr:
+		if n.Op == "$" {
+			return p.processUnary(n, irFn)
+		}
+		return "0"
 	default:
 		return "0"
 	}
@@ -256,7 +261,9 @@ func (p *Pipeline) processCall(call *front.CallExpr, irFn *IRFunction) {
 func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) string {
 	args := []string{}
 	for _, arg := range call.Args {
-		args = append(args, p.processExpression(arg, irFn))
+		exprResult := p.processExpression(arg, irFn)
+		// Если это строка, она уже содержит кавычки
+		args = append(args, exprResult)
 	}
 
 	argsStr := ""

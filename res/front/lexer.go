@@ -2,6 +2,7 @@ package front
 
 import (
 	"skrp/res/errors"
+	"strings"
 	"unicode"
 )
 
@@ -34,6 +35,7 @@ const (
 	TOKEN_HASH
 	TOKEN_DOLLAR
 	TOKEN_INCLUDE_C
+	TOKEN_BACKTICK // Новый токен для ```
 )
 
 type Token struct {
@@ -81,6 +83,11 @@ func (l *Lexer) NextToken() Token {
 		return l.NextToken()
 	}
 
+	// Бэктики для includeC — ДО ВСЕГО!
+	if ch == '`' {
+		return l.readBackticks()
+	}
+
 	// Числа
 	if unicode.IsDigit(rune(ch)) || (ch == '-' && l.pos+1 < len(l.input) && unicode.IsDigit(rune(l.input[l.pos+1]))) {
 		return l.readNumber()
@@ -96,7 +103,7 @@ func (l *Lexer) NextToken() Token {
 		return l.readIdent()
 	}
 
-	// Операторы и символы
+	// Остальные символы...
 	switch ch {
 	case '(':
 		return l.makeToken(TOKEN_LPAREN, "(")
@@ -210,20 +217,28 @@ func (l *Lexer) readNumber() Token {
 func (l *Lexer) readString() Token {
 	start := l.pos
 	l.pos++ // пропустить "
+	var result strings.Builder
+
 	for l.pos < len(l.input) && l.input[l.pos] != '"' {
 		if l.input[l.pos] == '\\' && l.pos+1 < len(l.input) {
-			l.pos += 2
+			// Сохраняем экранирование как есть для includeC
+			result.WriteByte('\\')
+			l.pos++
+			result.WriteByte(l.input[l.pos])
+			l.pos++
 		} else {
+			result.WriteByte(l.input[l.pos])
 			l.pos++
 		}
 	}
+
 	if l.pos >= len(l.input) {
 		errors.NewError("0002", "Unterminated string", l.line, l.col, "")
 		return Token{Type: TOKEN_STRING, Literal: "", Line: l.line, Column: l.col}
 	}
-	literal := l.input[start+1 : l.pos]
+
 	l.pos++ // пропустить "
-	return Token{Type: TOKEN_STRING, Literal: literal, Line: l.line, Column: start - l.col + 1}
+	return Token{Type: TOKEN_STRING, Literal: result.String(), Line: l.line, Column: start - l.col + 1}
 }
 
 func (l *Lexer) readSingleLineComment() {
@@ -247,6 +262,43 @@ func (l *Lexer) readMultilineComment() Token {
 	}
 	l.pos += 2
 	return l.NextToken()
+}
+
+func (l *Lexer) readBackticks() Token {
+	start := l.pos
+	l.pos++ // пропускаем первый `
+
+	// Пропускаем следующие два ` (всего ```)
+	if l.pos < len(l.input) && l.input[l.pos] == '`' {
+		l.pos++
+	}
+	if l.pos < len(l.input) && l.input[l.pos] == '`' {
+		l.pos++
+	}
+
+	// Собираем код до закрывающих ```
+	var code strings.Builder
+	for l.pos < len(l.input) {
+		// Проверяем, не встретили ли закрывающие ```
+		if l.pos+2 < len(l.input) && l.input[l.pos] == '`' && l.input[l.pos+1] == '`' && l.input[l.pos+2] == '`' {
+			// Нашли закрывающие ```, выходим
+			l.pos += 3 // пропускаем ```
+			return Token{
+				Type:    TOKEN_BACKTICK,
+				Literal: strings.TrimSpace(code.String()),
+				Line:    l.line,
+				Column:  start - l.col + 1,
+			}
+		}
+		if l.input[l.pos] == '\n' {
+			l.line++
+		}
+		code.WriteByte(l.input[l.pos])
+		l.pos++
+	}
+
+	errors.NewError("0002", "Unterminated backticks (```)", l.line, l.col, "")
+	return Token{Type: TOKEN_BACKTICK, Literal: "", Line: l.line, Column: l.col}
 }
 
 func (l *Lexer) skipWhitespace() {

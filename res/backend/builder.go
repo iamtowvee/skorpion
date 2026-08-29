@@ -36,7 +36,7 @@ func (b *Builder) Build(ir *IRProgram) bool {
 	b.CSource = gen.Generate()
 
 	// 2. Сохраняем C файл
-	cFile := filepath.Join(b.Config.OutputDir, "temp_skorpion.c")
+	cFile := filepath.Join(b.Config.OutputDir, "temp.c")
 	if err := os.WriteFile(cFile, []byte(b.CSource), 0644); err != nil {
 		errors.NewError("2001", fmt.Sprintf("Cannot write C file: %v", err), 0, 0, "")
 		return false

@@ -3,7 +3,6 @@ package front
 import (
 	"fmt"
 	"skrp/res/errors"
-	"strings"
 )
 
 type Parser struct {
@@ -13,12 +12,13 @@ type Parser struct {
 	hasErrors bool
 }
 
+// Конструктор без advance()
 func NewParserInternal(input string) *Parser {
 	p := &Parser{
 		lexer:     NewLexer(input),
 		hasErrors: false,
 	}
-	p.advance()
+	// Не вызываем advance() здесь!
 	return p
 }
 
@@ -48,20 +48,27 @@ func (p *Parser) expect(tt TokenType) Token {
 }
 
 func (p *Parser) isType(token Token) bool {
+	result := false
 	switch token.Literal {
 	case "void", "int", "string", "float", "double", "bool", "char", "arr", "dict", "any":
-		return true
+		result = true
 	}
-	return false
+	fmt.Printf("[DEBUG] isType(%s) = %v\n", token.Literal, result)
+	return result
 }
 
 func (p *Parser) Parse() *Program {
+	// Инициализируем первый токен
+	p.advance()
+
 	// Проверяем, были ли ошибки в лексере
 	if errors.HasFatal() {
 		return &Program{Imports: []*Import{}, Functions: []*Function{}}
 	}
 
 	prog := &Program{Imports: []*Import{}, Functions: []*Function{}}
+
+	fmt.Println("[DEBUG] Starting parse, first token:", p.peek.Literal, "type:", p.peek.Type)
 
 	// Сначала импорты
 	for p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "use" {
@@ -77,32 +84,30 @@ func (p *Parser) Parse() *Program {
 		}
 	}
 
+	fmt.Println("[DEBUG] After imports, current token:", p.peek.Literal, "type:", p.peek.Type)
+
 	// Затем функции
+	funcCount := 0
 	for p.peek.Type != TOKEN_EOF {
+		fmt.Printf("[DEBUG] Loop iteration %d: token='%s', type=%d\n", funcCount, p.peek.Literal, p.peek.Type)
+
 		if p.hasErrors || errors.HasFatal() {
 			break
 		}
 
-		// Отладочный вывод
-		fmt.Printf("[DEBUG] Parse loop: token='%s', type=%d, isType=%v\n",
-			p.peek.Literal, p.peek.Type, p.isType(p.peek))
-
 		// Проверяем, что это функция (тип возврата)
 		if p.isType(p.peek) {
-			fmt.Printf("[DEBUG] Found function type: '%s'\n", p.peek.Literal)
+			fmt.Printf("[DEBUG] Found type: '%s', parsing function...\n", p.peek.Literal)
 			fn := p.parseFunction()
 			if fn != nil {
 				prog.Functions = append(prog.Functions, fn)
-				fmt.Printf("[DEBUG] Added function: %s\n", fn.Name)
+				funcCount++
+				fmt.Printf("[DEBUG] Function parsed: %s\n", fn.Name)
 			}
 		} else {
 			// Если не функция, пропускаем
 			fmt.Printf("[DEBUG] Skipping token: '%s'\n", p.peek.Literal)
 			p.advance()
-		}
-
-		if errors.HasFatal() {
-			break
 		}
 	}
 
@@ -152,14 +157,11 @@ func (p *Parser) parseFunction() *Function {
 		return nil
 	}
 
-	fmt.Printf("[DEBUG] parseFunction: starting\n")
-
-	// Тип возврата
+	// Тип возврата (уже считан в Parse)
 	retType := p.peek.Literal
-	fmt.Printf("[DEBUG] Return type: '%s'\n", retType)
 	p.advance()
 
-	// Имя
+	// Проверяем, что следующий токен - имя функции
 	if p.peek.Type != TOKEN_IDENT {
 		p.hasErrors = true
 		errors.NewFatalError("0006",
@@ -168,10 +170,9 @@ func (p *Parser) parseFunction() *Function {
 		return nil
 	}
 	name := p.peek.Literal
-	fmt.Printf("[DEBUG] Function name: '%s'\n", name)
 	p.advance()
 
-	// Открывающая скобка
+	// Проверяем открывающую скобку
 	if p.peek.Type != TOKEN_LPAREN {
 		p.hasErrors = true
 		errors.NewFatalError("0014",
@@ -179,9 +180,9 @@ func (p *Parser) parseFunction() *Function {
 			p.peek.Line, p.peek.Column, "")
 		return nil
 	}
-	p.advance()
+	p.advance() // пропускаем (
 
-	// Параметры
+	// Парсим параметры
 	params := []*Param{}
 	if p.peek.Type != TOKEN_RPAREN {
 		for {
@@ -226,16 +227,16 @@ func (p *Parser) parseFunction() *Function {
 			p.peek.Line, p.peek.Column, "")
 		return nil
 	}
-	p.advance()
+	p.advance() // пропускаем )
 
-	// Экспорт (звездочка)
+	// Экспорт (звездочка после скобок)
 	isExport := true
 	if p.peek.Type == TOKEN_STAR {
 		isExport = false
 		p.advance()
 	}
 
-	// Тело функции
+	// Тело функции - должно быть {
 	if p.peek.Type != TOKEN_LBRACE {
 		p.hasErrors = true
 		errors.NewFatalError("0016",
@@ -248,8 +249,6 @@ func (p *Parser) parseFunction() *Function {
 	if body == nil {
 		return nil
 	}
-
-	fmt.Printf("[DEBUG] Function parsed successfully: %s\n", name)
 
 	return &Function{
 		Name:       name,
@@ -326,36 +325,21 @@ func (p *Parser) parseIncludeC() *IncludeC {
 	}
 
 	p.advance() // includeC
-	p.expect(TOKEN_LBRACE)
-	if p.hasErrors || errors.HasFatal() {
+
+	// Ожидаем ```
+	if p.peek.Type != TOKEN_BACKTICK {
+		p.hasErrors = true
+		errors.NewFatalError("0017",
+			fmt.Sprintf("Expected ``` after includeC, got '%s' (at %d:%d)", p.peek.Literal, p.peek.Line, p.peek.Column),
+			p.peek.Line, p.peek.Column, "")
 		return nil
 	}
 
-	code := ""
-	braceCount := 1
-	p.advance()
+	// Берем код из токена
+	code := p.peek.Literal
+	p.advance() // пропускаем TOKEN_BACKTICK
 
-	for braceCount > 0 && p.peek.Type != TOKEN_EOF {
-		if p.peek.Type == TOKEN_LBRACE {
-			braceCount++
-			code += "{"
-		} else if p.peek.Type == TOKEN_RBRACE {
-			braceCount--
-			if braceCount == 0 {
-				break
-			}
-			code += "}"
-		} else {
-			code += p.peek.Literal
-		}
-		p.advance()
-	}
-
-	if p.peek.Type == TOKEN_RBRACE {
-		p.advance()
-	}
-
-	return &IncludeC{Code: strings.TrimSpace(code)}
+	return &IncludeC{Code: code}
 }
 
 func (p *Parser) parseIf() Node {

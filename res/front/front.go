@@ -6,10 +6,13 @@ import (
 
 // Фасад для парсера
 func NewParser(input string) *Parser {
-	return &Parser{
+	p := &Parser{
 		lexer:     NewLexer(input),
 		hasErrors: false,
 	}
+	// Не вызываем advance() здесь!
+	// Первый токен будет прочитан в Parse()
+	return p
 }
 
 // Фасад для AST
