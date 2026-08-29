@@ -114,13 +114,23 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction) {
 		cg.writeLine(fmt.Sprintf("%s:", ins.Result))
 
 	case "inline_c":
-		// Вставляем сырой C код с отступом
 		lines := strings.Split(ins.Arg1, "\n")
 		for _, line := range lines {
 			if strings.TrimSpace(line) != "" {
 				cg.writeLine(fmt.Sprintf("%s%s", indent, line))
 			}
 		}
+
+	case "strcat":
+		// Конкатенация строк: выделяем память и копируем
+		cg.writeLine(fmt.Sprintf("%schar %s[256];", indent, ins.Result))
+		cg.writeLine(fmt.Sprintf("%sstrcpy(%s, %s);", indent, ins.Result, ins.Arg1))
+		cg.writeLine(fmt.Sprintf("%sstrcat(%s, %s);", indent, ins.Result, ins.Arg2))
+
+	case "to_string":
+		// Преобразование числа в строку
+		cg.writeLine(fmt.Sprintf("%schar %s[32];", indent, ins.Result))
+		cg.writeLine(fmt.Sprintf("%ssnprintf(%s, 32, \"%%d\", %s);", indent, ins.Result, ins.Arg1))
 
 	case "ret":
 		if ins.Arg1 != "" {

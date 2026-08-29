@@ -24,7 +24,9 @@ void main(void* args) {
     s = "Hello";
     char t1[32];
     snprintf(t1, 32, "%d", x);
-    int t2 = t1 + s;
+    char t2[256];
+    strcpy(t2, t1);
+    strcat(t2, s);
     print(t2);
     return;
 }

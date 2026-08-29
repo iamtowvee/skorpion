@@ -3,6 +3,7 @@ package backend
 import (
 	"fmt"
 	"skrp/res/front"
+	"strings"
 )
 
 type Pipeline struct {
@@ -119,7 +120,7 @@ func (p *Pipeline) processUnary(unary *front.UnaryExpr, irFn *IRFunction) string
 		expr := p.processExpression(unary.Expr, irFn)
 		result := p.newTemp()
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:     "$",
+			Op:     "to_string",
 			Result: result,
 			Arg1:   expr,
 		})
@@ -188,6 +189,24 @@ func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string
 	left := p.processExpression(bin.Left, irFn)
 	right := p.processExpression(bin.Right, irFn)
 
+	// Проверяем, не конкатенация ли это строк
+	// Если оба операнда - строки или один из них строка
+	leftIsString := strings.HasPrefix(left, "\"") || strings.HasPrefix(left, "t") && p.isStringTemp(left, irFn)
+	rightIsString := strings.HasPrefix(right, "\"") || strings.HasPrefix(right, "t") && p.isStringTemp(right, irFn)
+
+	if bin.Op == "+" && (leftIsString || rightIsString) {
+		// Конкатенация строк
+		result := p.newTemp()
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "strcat",
+			Result: result,
+			Arg1:   left,
+			Arg2:   right,
+		})
+		return result
+	}
+
+	// Обычная арифметика
 	result := p.newTemp()
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:     bin.Op,
@@ -416,6 +435,30 @@ func (p *Pipeline) processFor(forStmt *front.ForStmt, irFn *IRFunction) {
 		Op:     "label",
 		Result: endLabel,
 	})
+}
+
+// isStringTemp проверяет, является ли временная переменная строкой
+func (p *Pipeline) isStringTemp(name string, irFn *IRFunction) bool {
+	// Проверяем, не является ли это строковой константой
+	if strings.HasPrefix(name, "\"") && strings.HasSuffix(name, "\"") {
+		return true
+	}
+
+	// Проверяем инструкции, которые создают строки
+	for _, ins := range irFn.Instructions {
+		if ins.Result == name {
+			switch ins.Op {
+			case "to_string", "strcat":
+				return true
+			case "=":
+				// Если присваивается строковая константа
+				if strings.HasPrefix(ins.Arg1, "\"") && strings.HasSuffix(ins.Arg1, "\"") {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func (p *Pipeline) newTemp() string {
