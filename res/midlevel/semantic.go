@@ -62,23 +62,22 @@ func (sa *SemanticAnalyzer) registerImportedFunctions() {
 }
 
 func (sa *SemanticAnalyzer) resolveFunction(name string) *front.Function {
-	fmt.Printf("[DEBUG] resolveFunction: %s\n", name)
-
 	// Сначала ищем в текущем файле
 	for _, fn := range sa.Program.Functions {
 		if fn.Name == name {
-			fmt.Printf("[DEBUG] Found in main: %s\n", name)
+			// В текущем файле все функции доступны
 			return fn
 		}
 	}
 
-	// Потом в импортированных
+	// Потом в импортированных (только экспортируемые)
 	if fn, ok := sa.ImportedFuncs[name]; ok {
-		fmt.Printf("[DEBUG] Found in imports: %s\n", name)
-		return fn
+		// Проверяем, что функция экспортируемая
+		if fn.IsExport {
+			return fn
+		}
 	}
 
-	fmt.Printf("[DEBUG] Function %s not found\n", name)
 	return nil
 }
 

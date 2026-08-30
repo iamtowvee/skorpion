@@ -1,11 +1,9 @@
-void sendln(string msg, bool newline = false) {
-    if (newline) {
-        includeC ```
-            printf("%s\n", msg);
-        ```
-    } else {
-        includeC ```
-            printf("%s", msg);
-        ```
-    }
+use std/io
+
+void *called() {
+    io.sendln("DON'T EXIST IN THIS CONTEXT")
+}
+
+void call() {
+    called()
 }

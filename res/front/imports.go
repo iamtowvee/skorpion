@@ -32,7 +32,6 @@ func NewImportManager(baseDir string) *ImportManager {
 	}
 }
 
-// LoadMain загружает главный файл (не как модуль, а как entry point)
 func (im *ImportManager) LoadMain(path string) (*Program, error) {
 	// Сбрасываем кеш для новой сборки
 	im.loaded = make(map[string]*LoadedModule)
@@ -55,25 +54,33 @@ func (im *ImportManager) LoadMain(path string) (*Program, error) {
 		return nil, fmt.Errorf("failed to parse main file: %s", path)
 	}
 
-	// Загружаем импорты из главного файла
+	mainProg.AllFunctions = []*Function{}
+	mainProg.AllFunctions = append(mainProg.AllFunctions, mainProg.Functions...)
+
+	// Загружаем импорты
 	visited := make(map[string]bool)
 	for _, imp := range mainProg.Imports {
-		subProg, err := im.loadModule(imp.Path, visited)
+		subProg, err := im.loadModuleInternal(imp.Path, visited)
 		if err != nil {
 			return nil, err
 		}
-		// Сохраняем функции из импорта отдельно
-		im.importedFuncs = append(im.importedFuncs, subProg.Functions...)
+
+		// Добавляем ВСЕ функции из модуля (включая неэкспортируемые)
+		mainProg.AllFunctions = append(mainProg.AllFunctions, subProg.Functions...)
+
+		// Добавляем ТОЛЬКО экспортируемые в список импортированных
+		for _, fn := range subProg.Functions {
+			if fn.IsExport {
+				im.importedFuncs = append(im.importedFuncs, fn)
+			}
+		}
 	}
 
 	return mainProg, nil
 }
 
-// loadModule загружает модуль (внутренний метод)
-func (im *ImportManager) loadModule(path string, visited map[string]bool) (*Program, error) {
-	im.mu.Lock()
-	defer im.mu.Unlock()
-
+// loadModuleInternal - внутренняя загрузка без мьютекса
+func (im *ImportManager) loadModuleInternal(path string, visited map[string]bool) (*Program, error) {
 	if visited[path] {
 		return nil, fmt.Errorf("circular import detected: %s", path)
 	}
@@ -82,7 +89,6 @@ func (im *ImportManager) loadModule(path string, visited map[string]bool) (*Prog
 		return loaded.Program, nil
 	}
 
-	// Резолвим путь - теперь 3 значения!
 	fullPath, found, builtin := im.resolver.Resolve(path)
 	if !found {
 		return nil, fmt.Errorf("module not found: %s", path)
@@ -91,10 +97,12 @@ func (im *ImportManager) loadModule(path string, visited map[string]bool) (*Prog
 	var content string
 
 	if builtin {
-		// Встроенный модуль — берём из памяти
-		content, _ = stdlib.GetModule(path)
+		var ok bool
+		content, ok = stdlib.GetModule(path)
+		if !ok {
+			return nil, fmt.Errorf("builtin module not found: %s", path)
+		}
 	} else {
-		// Обычный файл — читаем с диска
 		data, err := os.ReadFile(fullPath)
 		if err != nil {
 			return nil, fmt.Errorf("cannot read module %s: %v", path, err)
@@ -102,7 +110,6 @@ func (im *ImportManager) loadModule(path string, visited map[string]bool) (*Prog
 		content = string(data)
 	}
 
-	// Парсим
 	parser := NewParser(content)
 	prog := parser.Parse()
 
@@ -110,14 +117,18 @@ func (im *ImportManager) loadModule(path string, visited map[string]bool) (*Prog
 		return nil, fmt.Errorf("failed to parse module: %s", path)
 	}
 
-	// Загружаем вложенные импорты
 	visited[path] = true
 	for _, imp := range prog.Imports {
-		subProg, err := im.loadModule(imp.Path, visited)
+		subProg, err := im.loadModuleInternal(imp.Path, visited)
 		if err != nil {
 			return nil, err
 		}
-		prog.Functions = append(prog.Functions, subProg.Functions...)
+		// Добавляем ТОЛЬКО экспортируемые функции
+		for _, fn := range subProg.Functions {
+			if fn.IsExport {
+				prog.Functions = append(prog.Functions, fn)
+			}
+		}
 	}
 	delete(visited, path)
 
@@ -130,10 +141,13 @@ func (im *ImportManager) loadModule(path string, visited map[string]bool) (*Prog
 	return prog, nil
 }
 
-// LoadModule публичный метод для загрузки модуля
+// LoadModule публичный метод с мьютексом для внешних вызовов
 func (im *ImportManager) LoadModule(path string) (*Program, error) {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+
 	visited := make(map[string]bool)
-	return im.loadModule(path, visited)
+	return im.loadModuleInternal(path, visited)
 }
 
 func (im *ImportManager) GetModule(path string) (*LoadedModule, bool) {
@@ -143,7 +157,6 @@ func (im *ImportManager) GetModule(path string) (*LoadedModule, bool) {
 	return mod, ok
 }
 
-// GetAllFunctions возвращает функции из импортированных модулей
 func (im *ImportManager) GetAllFunctions() []*Function {
 	im.mu.Lock()
 	defer im.mu.Unlock()
@@ -158,7 +171,6 @@ func getImportPaths(prog *Program) []string {
 	return paths
 }
 
-// Получение имени модуля из пути
 func GetModuleName(path string) string {
 	parts := strings.Split(path, "/")
 	if len(parts) > 0 {
@@ -167,7 +179,6 @@ func GetModuleName(path string) string {
 	return path
 }
 
-// Проверка, экспортируемая ли функция
 func IsExportable(fn *Function) bool {
 	return fn.IsExport
 }

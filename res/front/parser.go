@@ -161,6 +161,12 @@ func (p *Parser) parseFunction() *Function {
 	retType := p.peek.Literal
 	p.advance()
 
+	isExport := true
+	if p.peek.Type == TOKEN_STAR {
+		isExport = false
+		p.advance()
+	}
+
 	// Имя
 	if p.peek.Type != TOKEN_IDENT {
 		p.hasErrors = true
@@ -242,13 +248,6 @@ func (p *Parser) parseFunction() *Function {
 		return nil
 	}
 	p.advance()
-
-	// Экспорт (звездочка)
-	isExport := true
-	if p.peek.Type == TOKEN_STAR {
-		isExport = false
-		p.advance()
-	}
 
 	// Тело функции
 	if p.peek.Type != TOKEN_LBRACE {

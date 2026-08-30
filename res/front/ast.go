@@ -35,8 +35,9 @@ type TypedNode interface {
 }
 
 type Program struct {
-	Imports   []*Import
-	Functions []*Function
+	Imports      []*Import
+	Functions    []*Function
+	AllFunctions []*Function
 }
 
 func (p *Program) GetType() NodeType { return NODE_PROGRAM }

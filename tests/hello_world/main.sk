@@ -1,6 +1,6 @@
+use imp
 use std/io
 
 void main(arr args) {
-    string x = io.input()
-    io.sendln(x)
+    imp.call()
 }

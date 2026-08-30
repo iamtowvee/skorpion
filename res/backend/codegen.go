@@ -167,26 +167,28 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction) {
 
 	case "call":
 		if ins.Result != "" {
-			// Вызов с сохранением результата — нужно объявить переменную
-			// Определяем тип возвращаемого значения (по умолчанию sk_string)
-			returnType := "sk_string"
-			// Пытаемся определить тип по имени функции
-			if strings.Contains(ins.Arg1, "to_int") || strings.Contains(ins.Arg1, "input_int") {
-				returnType = "int"
-			} else if strings.Contains(ins.Arg1, "to_float") || strings.Contains(ins.Arg1, "input_float") {
-				returnType = "float"
-			} else if strings.Contains(ins.Arg1, "to_double") || strings.Contains(ins.Arg1, "input_double") {
-				returnType = "double"
+			// Используем тип из IR
+			returnType := ins.ReturnType
+			if returnType == "" {
+				returnType = "sk_string" // по умолчанию
 			}
 
-			// Если результат начинается с t, это временная переменная
-			if strings.HasPrefix(ins.Result, "t") {
-				cg.writeLine(fmt.Sprintf("%s%s %s = %s(%s);", indent, returnType, ins.Result, ins.Arg1, ins.Arg2))
+			if returnType == "void" {
+				// void функция
+				cg.writeLine(fmt.Sprintf("%s%s(%s);", indent, ins.Arg1, ins.Arg2))
+				if strings.HasPrefix(ins.Result, "t") {
+					cg.writeLine(fmt.Sprintf("%sint %s = 0;", indent, ins.Result))
+				}
 			} else {
-				cg.writeLine(fmt.Sprintf("%s%s = %s(%s);", indent, ins.Result, ins.Arg1, ins.Arg2))
+				// Обычная функция с возвращаемым значением
+				if strings.HasPrefix(ins.Result, "t") {
+					cg.writeLine(fmt.Sprintf("%s%s %s = %s(%s);", indent, returnType, ins.Result, ins.Arg1, ins.Arg2))
+				} else {
+					cg.writeLine(fmt.Sprintf("%s%s = %s(%s);", indent, ins.Result, ins.Arg1, ins.Arg2))
+				}
 			}
 		} else {
-			// Вызов без сохранения результата (void)
+			// Вызов без сохранения результата
 			cg.writeLine(fmt.Sprintf("%s%s(%s);", indent, ins.Arg1, ins.Arg2))
 		}
 

@@ -23,7 +23,7 @@ func NewPipeline(prog *front.Program) *Pipeline {
 }
 
 func (p *Pipeline) Process() *IRProgram {
-	// 1. Обрабатываем импорты
+	// Обрабатываем импорты
 	for _, imp := range p.Program.Imports {
 		p.IR.Imports = append(p.IR.Imports, IRImport{
 			Path:  imp.Path,
@@ -32,10 +32,10 @@ func (p *Pipeline) Process() *IRProgram {
 		})
 	}
 
-	// 2. Обрабатываем функции
+	// Обрабатываем ВСЕ функции (и экспортируемые, и неэкспортируемые)
+	// Неэкспортируемые нужны для внутренних вызовов внутри модуля
 	processed := make(map[string]bool)
 	for _, fn := range p.Program.Functions {
-		// Пропускаем дубликаты
 		if processed[fn.Name] {
 			continue
 		}
@@ -365,61 +365,54 @@ func (p *Pipeline) processCall(call *front.CallExpr, irFn *IRFunction) {
 }
 
 func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) string {
-	// Находим целевую функцию
-	var targetFunc *front.Function
+	args := []string{}
+	for _, arg := range call.Args {
+		args = append(args, p.processExpression(arg, irFn))
+	}
+
+	argsStr := ""
+	if len(args) > 0 {
+		argsStr = args[0]
+		for i := 1; i < len(args); i++ {
+			argsStr += ", " + args[i]
+		}
+	}
+
+	// Находим функцию и её тип возврата
+	returnType := "sk_string" // по умолчанию
+	funcName := call.Name
+
+	// Убираем префикс модуля для поиска
+	simpleName := funcName
+	if strings.Contains(funcName, ".") {
+		parts := strings.Split(funcName, ".")
+		simpleName = parts[len(parts)-1]
+	}
+
+	// Ищем функцию в программе
 	for _, fn := range p.Program.Functions {
-		if fn.Name == call.Name {
-			targetFunc = fn
+		if fn.Name == simpleName || fn.Name == funcName {
+			switch fn.ReturnType {
+			case "int":
+				returnType = "int"
+			case "string":
+				returnType = "sk_string"
+			case "float":
+				returnType = "float"
+			case "double":
+				returnType = "double"
+			case "bool":
+				returnType = "sk_bool"
+			case "void":
+				returnType = "void"
+			default:
+				returnType = "sk_string"
+			}
 			break
 		}
 	}
 
-	// Если функция не найдена, пробуем убрать префикс модуля
-	if targetFunc == nil && strings.Contains(call.Name, ".") {
-		parts := strings.Split(call.Name, ".")
-		simpleName := parts[len(parts)-1]
-		for _, fn := range p.Program.Functions {
-			if fn.Name == simpleName {
-				targetFunc = fn
-				break
-			}
-		}
-	}
-
-	// Подготавливаем аргументы с учётом значений по умолчанию
-	args := []string{}
-	argIndex := 0
-
-	if targetFunc != nil {
-		for _, param := range targetFunc.Params {
-			var argExpr front.Node
-
-			// Если есть переданный аргумент
-			if argIndex < len(call.Args) {
-				argExpr = call.Args[argIndex]
-				argIndex++
-			} else if param.DefaultValue != nil {
-				// Используем значение по умолчанию
-				argExpr = param.DefaultValue
-			} else {
-				// Ошибка: нет аргумента и нет значения по умолчанию
-				args = append(args, "0") // fallback
-				continue
-			}
-
-			args = append(args, p.processExpression(argExpr, irFn))
-		}
-	} else {
-		// Если функция не найдена, просто передаём все аргументы как есть
-		for _, arg := range call.Args {
-			args = append(args, p.processExpression(arg, irFn))
-		}
-	}
-
-	argsStr := strings.Join(args, ", ")
-
-	// Убираем префикс модуля
-	funcName := call.Name
+	// Убираем префикс модуля для вызова
 	if strings.Contains(funcName, ".") {
 		parts := strings.Split(funcName, ".")
 		funcName = parts[len(parts)-1]
@@ -427,10 +420,11 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 
 	result := p.newTemp()
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
-		Op:     "call",
-		Result: result,
-		Arg1:   funcName,
-		Arg2:   argsStr,
+		Op:         "call",
+		Result:     result,
+		Arg1:       funcName,
+		Arg2:       argsStr,
+		ReturnType: returnType,
 	})
 
 	return result

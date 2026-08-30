@@ -190,9 +190,10 @@ func buildProject() {
 	importedFuncs := im.GetAllFunctions()
 	allFunctions = append(allFunctions, importedFuncs...)
 
+	// ОПТИМИЗАЦИЯ — используем ВСЕ функции
 	mergedProg := &front.Program{
 		Imports:   mainProg.Imports,
-		Functions: allFunctions,
+		Functions: mainProg.AllFunctions, // ← Все функции!
 	}
 
 	mid := midlevel.NewMidLevel(mergedProg)

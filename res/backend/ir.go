@@ -6,11 +6,12 @@ import (
 )
 
 type IRInstruction struct {
-	Op       string
-	Result   string
-	Arg1     string
-	Arg2     string
-	Metadata map[string]interface{}
+	Op         string
+	Result     string
+	Arg1       string
+	Arg2       string
+	ReturnType string
+	Metadata   map[string]interface{}
 }
 
 type IRFunction struct {

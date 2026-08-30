@@ -12,16 +12,24 @@ typedef int sk_bool;
 #define false 0
 
 // Function prototypes
+void called(void);
+void call(void);
 void sendln(sk_string msg);
 void sendf(sk_string msg);
 sk_string input(sk_string prompt);
 
 void main(void* args) {
-    sk_string x;
+    call();
+    return;
+}
 
-    sk_string t1 = input("");
-    x = t1;
-    sendln(x);
+void called(void) {
+    sendln("DON'T EXIST IN THIS CONTEXT");
+    return;
+}
+
+void call(void) {
+    called();
     return;
 }
 
