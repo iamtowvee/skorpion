@@ -53,8 +53,14 @@ func (o *Optimizer) optimizeNode(node front.Node) {
 	case *front.Block:
 		o.optimizeBlock(n)
 	case *front.IfStmt:
+		// Оптимизируем if
 		if n.Then != nil {
 			o.optimizeBlock(n.Then)
+		}
+		for _, elsif := range n.Elsifs {
+			if elsif.Then != nil {
+				o.optimizeBlock(elsif.Then)
+			}
 		}
 		if n.Else != nil {
 			o.optimizeBlock(n.Else)
@@ -68,7 +74,6 @@ func (o *Optimizer) optimizeNode(node front.Node) {
 			o.optimizeBlock(n.Body)
 		}
 	case *front.BinaryExpr:
-		// Константная свёртка для арифметических операций
 		o.foldConstants(n)
 	}
 }

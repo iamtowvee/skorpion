@@ -157,11 +157,11 @@ func (p *Parser) parseFunction() *Function {
 		return nil
 	}
 
-	// Тип возврата (уже считан в Parse)
+	// Тип возврата
 	retType := p.peek.Literal
 	p.advance()
 
-	// Проверяем, что следующий токен - имя функции
+	// Имя
 	if p.peek.Type != TOKEN_IDENT {
 		p.hasErrors = true
 		errors.NewFatalError("0006",
@@ -172,7 +172,7 @@ func (p *Parser) parseFunction() *Function {
 	name := p.peek.Literal
 	p.advance()
 
-	// Проверяем открывающую скобку
+	// Открывающая скобка
 	if p.peek.Type != TOKEN_LPAREN {
 		p.hasErrors = true
 		errors.NewFatalError("0014",
@@ -180,9 +180,9 @@ func (p *Parser) parseFunction() *Function {
 			p.peek.Line, p.peek.Column, "")
 		return nil
 	}
-	p.advance() // пропускаем (
+	p.advance()
 
-	// Парсим параметры
+	// Параметры
 	params := []*Param{}
 	if p.peek.Type != TOKEN_RPAREN {
 		for {
@@ -208,7 +208,21 @@ func (p *Parser) parseFunction() *Function {
 			paramName := p.peek.Literal
 			p.advance()
 
-			params = append(params, &Param{Name: paramName, Type: paramType})
+			// Проверяем значение по умолчанию
+			var defaultValue Node
+			if p.peek.Type == TOKEN_EQUALS {
+				p.advance() // пропускаем =
+				defaultValue = p.parseExpression()
+				if defaultValue == nil {
+					return nil
+				}
+			}
+
+			params = append(params, &Param{
+				Name:         paramName,
+				Type:         paramType,
+				DefaultValue: defaultValue,
+			})
 
 			if p.peek.Type == TOKEN_COMMA {
 				p.advance()
@@ -227,16 +241,16 @@ func (p *Parser) parseFunction() *Function {
 			p.peek.Line, p.peek.Column, "")
 		return nil
 	}
-	p.advance() // пропускаем )
+	p.advance()
 
-	// Экспорт (звездочка после скобок)
+	// Экспорт (звездочка)
 	isExport := true
 	if p.peek.Type == TOKEN_STAR {
 		isExport = false
 		p.advance()
 	}
 
-	// Тело функции - должно быть {
+	// Тело функции
 	if p.peek.Type != TOKEN_LBRACE {
 		p.hasErrors = true
 		errors.NewFatalError("0016",
@@ -358,6 +372,28 @@ func (p *Parser) parseIf() Node {
 		return nil
 	}
 
+	elsifs := []*Elsif{}
+
+	// Парсим все elsif
+	for p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "elsif" {
+		p.advance() // elsif
+
+		elsifCond := p.parseExpression()
+		if elsifCond == nil {
+			return nil
+		}
+
+		elsifThen := p.parseBlock()
+		if elsifThen == nil {
+			return nil
+		}
+
+		elsifs = append(elsifs, &Elsif{
+			Condition: elsifCond,
+			Then:      elsifThen,
+		})
+	}
+
 	var elseBlock *Block
 	if p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "else" {
 		p.advance()
@@ -367,7 +403,12 @@ func (p *Parser) parseIf() Node {
 		}
 	}
 
-	return &IfStmt{Condition: cond, Then: then, Else: elseBlock}
+	return &IfStmt{
+		Condition: cond,
+		Then:      then,
+		Elsifs:    elsifs,
+		Else:      elseBlock,
+	}
 }
 
 func (p *Parser) parseWhile() Node {

@@ -12,25 +12,73 @@ typedef int sk_bool;
 #define false 0
 
 // Function prototypes
-void println(sk_string msg);
+void sendln(sk_string msg, sk_bool newline);
 
 void main(void* args) {
     int x;
-    sk_string s;
+    int y;
 
     x = 10;
-    s = "Hello";
-    char t1[32];
-    snprintf(t1, 32, "%d", x);
-    char t2[256];
-    strcpy(t2, t1);
-    strcat(t2, s);
-    println(t2);
+    y = 5;
+    int t1 = x + y;
+    char t2[32];
+    snprintf(t2, 32, "%d", t1);
+    char t3[256];
+    strcpy(t3, "x + y = ");
+    strcat(t3, t2);
+    sendln(t3, true);
+    int t4 = x - y;
+    char t5[32];
+    snprintf(t5, 32, "%d", t4);
+    char t6[256];
+    strcpy(t6, "x - y = ");
+    strcat(t6, t5);
+    sendln(t6, true);
+    int t7 = x * y;
+    char t8[32];
+    snprintf(t8, 32, "%d", t7);
+    char t9[256];
+    strcpy(t9, "x * y = ");
+    strcat(t9, t8);
+    sendln(t9, false);
+    int t10 = x / y;
+    char t11[32];
+    snprintf(t11, 32, "%d", t10);
+    char t12[256];
+    strcpy(t12, "x / y = ");
+    strcat(t12, t11);
+    sendln(t12, true);
+    int t13 = y * 2;
+    int t14 = x + t13;
+    char t15[32];
+    snprintf(t15, 32, "%d", t14);
+    char t16[256];
+    strcpy(t16, "x + y * 2 = ");
+    strcat(t16, t15);
+    sendln(t16, true);
+    int t17 = x + y;
+    int t18 = t17 * 2;
+    char t19[32];
+    snprintf(t19, 32, "%d", t18);
+    char t20[256];
+    strcpy(t20, "(x + y) * 2 = ");
+    strcat(t20, t19);
+    sendln(t20, true);
     return;
 }
 
-void println(sk_string msg) {
+void sendln(sk_string msg, sk_bool newline) {
+    if (newline) {
+        goto L1;
+    } else {
+        goto L2;
+    }
+L1:
     printf("%s\n", msg);
+    goto L3;
+L2:
+    printf("%s", msg);
+L3:
     return;
 }
 

@@ -190,8 +190,29 @@ func (sa *SemanticAnalyzer) analyzeFunction(fn *front.Function) {
 		sa.CurrentScope = sa.CurrentScope.Parent
 	}()
 
+	// Регистрируем параметры с проверкой значений по умолчанию
+	hasDefault := false
 	for _, param := range fn.Params {
-		fmt.Printf("[DEBUG] Adding parameter: %s %s\n", param.Name, param.Type)
+		// Если у параметра есть значение по умолчанию
+		if param.DefaultValue != nil {
+			hasDefault = true
+			// Проверяем тип значения по умолчанию
+			defaultType := sa.getNodeType(param.DefaultValue)
+			if defaultType != param.Type && param.Type != "any" {
+				sa.addError("1029",
+					fmt.Sprintf("Default value type mismatch for parameter '%s': expected '%s', got '%s'",
+						param.Name, param.Type, defaultType),
+					0, 0, "")
+			}
+		} else if hasDefault {
+			// Если у предыдущего параметра было значение по умолчанию,
+			// а у этого нет - ошибка
+			sa.addError("1030",
+				fmt.Sprintf("Parameter '%s' without default value cannot follow parameter with default value",
+					param.Name),
+				0, 0, "")
+		}
+
 		sa.CurrentScope.Define(param.Name, SYM_VARIABLE, param.Type, false)
 	}
 
@@ -398,7 +419,7 @@ func (sa *SemanticAnalyzer) analyzeReturn(ret *front.ReturnStmt) front.Node {
 func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
 	fmt.Printf("[DEBUG] analyzeCall: %s\n", call.Name)
 
-	// Проверяем, что функция существует
+	// Находим целевую функцию
 	targetFunc := sa.resolveFunction(call.Name)
 	if targetFunc == nil {
 		sa.addError("1021", fmt.Sprintf("Undefined function '%s'", call.Name), 0, 0, "")
@@ -407,24 +428,51 @@ func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
 	}
 	fmt.Printf("[DEBUG] Function %s found\n", call.Name)
 
-	// Проверяем параметры
-	if len(call.Args) != len(targetFunc.Params) {
-		sa.addError("1023", fmt.Sprintf("Function '%s' expects %d arguments, got %d",
-			call.Name, len(targetFunc.Params), len(call.Args)), 0, 0, "")
-		fmt.Printf("[DEBUG] Argument count mismatch: expected %d, got %d\n", len(targetFunc.Params), len(call.Args))
+	// Проверяем количество аргументов с учётом значений по умолчанию
+	minArgs := 0
+	maxArgs := len(targetFunc.Params)
+
+	// Считаем, сколько параметров ОБЯЗАТЕЛЬНЫ (без значений по умолчанию)
+	for _, param := range targetFunc.Params {
+		if param.DefaultValue == nil {
+			minArgs++
+		}
+	}
+
+	argCount := len(call.Args)
+
+	// Проверяем, что аргументов достаточно (не меньше обязательных)
+	if argCount < minArgs {
+		sa.addError("1023",
+			fmt.Sprintf("Function '%s' expects at least %d arguments, got %d",
+				call.Name, minArgs, argCount),
+			0, 0, "")
+		fmt.Printf("[DEBUG] Argument count mismatch: expected at least %d, got %d\n", minArgs, argCount)
 		return call
 	}
 
-	// Проверяем типы аргументов
-	for i, arg := range call.Args {
-		argType := sa.getNodeType(arg)
+	// Проверяем, что аргументов не больше максимума
+	if argCount > maxArgs {
+		sa.addError("1023",
+			fmt.Sprintf("Function '%s' expects at most %d arguments, got %d",
+				call.Name, maxArgs, argCount),
+			0, 0, "")
+		fmt.Printf("[DEBUG] Argument count mismatch: expected at most %d, got %d\n", maxArgs, argCount)
+		return call
+	}
+
+	// Проверяем типы аргументов (только для переданных)
+	for i := 0; i < argCount; i++ {
+		argType := sa.getNodeType(call.Args[i])
 		paramType := targetFunc.Params[i].Type
 
 		fmt.Printf("[DEBUG] Arg %d: type=%s, expected=%s\n", i, argType, paramType)
 
 		if argType != paramType && argType != "" && paramType != "any" {
-			sa.addError("1024", fmt.Sprintf("Argument %d type mismatch: expected '%s', got '%s'",
-				i+1, paramType, argType), 0, 0, "")
+			sa.addError("1024",
+				fmt.Sprintf("Argument %d type mismatch: expected '%s', got '%s'",
+					i+1, paramType, argType),
+				0, 0, "")
 		}
 	}
 
@@ -432,7 +480,7 @@ func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
 }
 
 func (sa *SemanticAnalyzer) analyzeIf(ifStmt *front.IfStmt) front.Node {
-	// Анализируем условие
+	// Проверяем условие if
 	condType := sa.getNodeType(ifStmt.Condition)
 	if condType != "bool" && condType != "" {
 		sa.addError("1025", fmt.Sprintf("If condition must be boolean, got '%s'", condType), 0, 0, "")
@@ -441,6 +489,17 @@ func (sa *SemanticAnalyzer) analyzeIf(ifStmt *front.IfStmt) front.Node {
 	// Анализируем блок then
 	if ifStmt.Then != nil {
 		sa.analyzeBlock(ifStmt.Then, false)
+	}
+
+	// Анализируем все elsif
+	for _, elsif := range ifStmt.Elsifs {
+		condType = sa.getNodeType(elsif.Condition)
+		if condType != "bool" && condType != "" {
+			sa.addError("1028", fmt.Sprintf("Elsif condition must be boolean, got '%s'", condType), 0, 0, "")
+		}
+		if elsif.Then != nil {
+			sa.analyzeBlock(elsif.Then, false)
+		}
 	}
 
 	// Анализируем блок else

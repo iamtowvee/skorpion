@@ -1,7 +1,13 @@
-use #imp
+use imp &io
 
 void main(arr args) {
     int x = 10
-    string s = "Hello"
-    println($x + s)
+    int y = 5
+    
+    io.sendln("x + y = " + $(x + y), true)
+    io.sendln("x - y = " + $(x - y), true)
+    io.sendln("x * y = " + $(x * y))
+    io.sendln("x / y = " + $(x / y), true)
+    io.sendln("x + y * 2 = " + $(x + y * 2), true)
+    io.sendln("(x + y) * 2 = " + $((x + y) * 2), true)
 }

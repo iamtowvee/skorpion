@@ -1,0 +1,5 @@
+void sendln(string msg) {
+    includeC ```
+        printf("%s\n", msg);
+    ```
+}

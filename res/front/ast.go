@@ -18,6 +18,7 @@ const (
 	NODE_NUMBER    NodeType = "Number"
 	NODE_STRING    NodeType = "String"
 	NODE_IF        NodeType = "If"
+	NODE_ELSIF     NodeType = "Elsif"
 	NODE_WHILE     NodeType = "While"
 	NODE_FOR       NodeType = "For"
 	NODE_IMPORT    NodeType = "Import"
@@ -59,8 +60,9 @@ type Function struct {
 func (f *Function) GetType() NodeType { return NODE_FUNCTION }
 
 type Param struct {
-	Name string
-	Type string
+	Name         string
+	Type         string
+	DefaultValue Node
 }
 
 type Block struct {
@@ -148,10 +150,17 @@ func (s *String) GetTypeString() string { return "string" }
 type IfStmt struct {
 	Condition Node
 	Then      *Block
+	Elsifs    []*Elsif
 	Else      *Block
 }
 
+type Elsif struct {
+	Condition Node
+	Then      *Block
+}
+
 func (i *IfStmt) GetType() NodeType { return NODE_IF }
+func (e *Elsif) GetType() NodeType  { return NODE_ELSIF }
 
 type WhileStmt struct {
 	Condition Node

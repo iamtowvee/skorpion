@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"skrp/res/stdlib"
 	"strings"
 	"sync"
 )
@@ -73,30 +74,36 @@ func (im *ImportManager) loadModule(path string, visited map[string]bool) (*Prog
 	im.mu.Lock()
 	defer im.mu.Unlock()
 
-	// Проверяем циклические импорты
 	if visited[path] {
 		return nil, fmt.Errorf("circular import detected: %s", path)
 	}
 
-	// Проверяем, загружен ли уже модуль
 	if loaded, ok := im.loaded[path]; ok {
 		return loaded.Program, nil
 	}
 
-	// Резолвим путь
-	fullPath, found := im.resolver.Resolve(path)
+	// Резолвим путь - теперь 3 значения!
+	fullPath, found, builtin := im.resolver.Resolve(path)
 	if !found {
-		return nil, fmt.Errorf("module not found: %s (searched in %s)", path, im.baseDir)
+		return nil, fmt.Errorf("module not found: %s", path)
 	}
 
-	// Читаем файл
-	content, err := os.ReadFile(fullPath)
-	if err != nil {
-		return nil, fmt.Errorf("cannot read module %s: %v", path, err)
+	var content string
+
+	if builtin {
+		// Встроенный модуль — берём из памяти
+		content, _ = stdlib.GetModule(path)
+	} else {
+		// Обычный файл — читаем с диска
+		data, err := os.ReadFile(fullPath)
+		if err != nil {
+			return nil, fmt.Errorf("cannot read module %s: %v", path, err)
+		}
+		content = string(data)
 	}
 
 	// Парсим
-	parser := NewParser(string(content))
+	parser := NewParser(content)
 	prog := parser.Parse()
 
 	if prog == nil {
@@ -110,12 +117,10 @@ func (im *ImportManager) loadModule(path string, visited map[string]bool) (*Prog
 		if err != nil {
 			return nil, err
 		}
-		// Мержим функции из вложенных импортов
 		prog.Functions = append(prog.Functions, subProg.Functions...)
 	}
 	delete(visited, path)
 
-	// Сохраняем в кеш
 	im.loaded[path] = &LoadedModule{
 		Path:    fullPath,
 		Program: prog,

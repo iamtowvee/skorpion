@@ -144,6 +144,9 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction) {
 			}
 		}
 
+	case "comment":
+		cg.writeLine(fmt.Sprintf("%s// %s", indent, ins.Arg1))
+
 	case "strcat":
 		// Конкатенация строк: выделяем память и копируем
 		cg.writeLine(fmt.Sprintf("%schar %s[256];", indent, ins.Result))

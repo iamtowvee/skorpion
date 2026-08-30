@@ -174,6 +174,7 @@ func (l *Lexer) readIdent() Token {
 		"const":    TOKEN_KEYWORD,
 		"func":     TOKEN_KEYWORD,
 		"if":       TOKEN_KEYWORD,
+		"elsif":    TOKEN_KEYWORD,
 		"else":     TOKEN_KEYWORD,
 		"for":      TOKEN_KEYWORD,
 		"while":    TOKEN_KEYWORD,
@@ -325,6 +326,10 @@ func (l *Lexer) peek() byte {
 		return l.input[l.pos+1]
 	}
 	return 0
+}
+
+func (p *Param) HasDefault() bool {
+	return p.DefaultValue != nil
 }
 
 // String возвращает строковое представление TokenType

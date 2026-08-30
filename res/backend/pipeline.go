@@ -298,20 +298,77 @@ func (p *Pipeline) processReturn(ret *front.ReturnStmt, irFn *IRFunction) {
 }
 
 func (p *Pipeline) processCall(call *front.CallExpr, irFn *IRFunction) {
-	args := []string{}
-	for _, arg := range call.Args {
-		args = append(args, p.processExpression(arg, irFn))
-	}
-
-	argsStr := ""
-	if len(args) > 0 {
-		argsStr = args[0]
-		for i := 1; i < len(args); i++ {
-			argsStr += ", " + args[i]
+	// Находим целевую функцию
+	var targetFunc *front.Function
+	for _, fn := range p.Program.Functions {
+		if fn.Name == call.Name {
+			targetFunc = fn
+			break
 		}
 	}
 
-	// Убираем префикс модуля для вызова импортированной функции
+	// Если функция не найдена, пробуем убрать префикс модуля
+	if targetFunc == nil && strings.Contains(call.Name, ".") {
+		parts := strings.Split(call.Name, ".")
+		simpleName := parts[len(parts)-1]
+		for _, fn := range p.Program.Functions {
+			if fn.Name == simpleName {
+				targetFunc = fn
+				break
+			}
+		}
+	}
+
+	if targetFunc == nil {
+		// Если функция не найдена, генерируем обычный вызов
+		args := []string{}
+		for _, arg := range call.Args {
+			args = append(args, p.processExpression(arg, irFn))
+		}
+		argsStr := strings.Join(args, ", ")
+
+		funcName := call.Name
+		if strings.Contains(funcName, ".") {
+			parts := strings.Split(funcName, ".")
+			funcName = parts[len(parts)-1]
+		}
+
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:   "call",
+			Arg1: funcName,
+			Arg2: argsStr,
+		})
+		return
+	}
+
+	// Подготавливаем аргументы с учётом значений по умолчанию
+	args := []string{}
+	argIndex := 0
+
+	for _, param := range targetFunc.Params {
+		var argExpr front.Node
+
+		// Если есть переданный аргумент
+		if argIndex < len(call.Args) {
+			argExpr = call.Args[argIndex]
+			argIndex++
+		} else if param.DefaultValue != nil {
+			// Используем значение по умолчанию
+			argExpr = param.DefaultValue
+		} else {
+			// Ошибка: нет аргумента и нет значения по умолчанию
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:   "comment",
+				Arg1: fmt.Sprintf("ERROR: Missing argument for parameter '%s'", param.Name),
+			})
+			continue
+		}
+
+		args = append(args, p.processExpression(argExpr, irFn))
+	}
+
+	argsStr := strings.Join(args, ", ")
+
 	funcName := call.Name
 	if strings.Contains(funcName, ".") {
 		parts := strings.Split(funcName, ".")
@@ -353,44 +410,89 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 }
 
 func (p *Pipeline) processIf(ifStmt *front.IfStmt, irFn *IRFunction) {
+	// Генерируем условие для if
 	condResult := p.processExpression(ifStmt.Condition, irFn)
 
-	thenLabel := p.newLabel()
-	endLabel := p.newLabel()
+	ifLabel := p.newLabel()
+	nextLabel := p.newLabel()
 
+	// Проверяем условие if
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:     "if",
 		Result: condResult,
-		Arg1:   thenLabel,
-		Arg2:   endLabel,
+		Arg1:   ifLabel,
+		Arg2:   nextLabel,
 	})
 
+	// Блок then
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:     "label",
-		Result: thenLabel,
+		Result: ifLabel,
 	})
-
 	if ifStmt.Then != nil {
 		p.processBlock(ifStmt.Then, irFn)
 	}
 
+	// Пропускаем все elsif и else
+	endLabel := p.newLabel()
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:     "goto",
 		Result: endLabel,
 	})
 
+	// Обрабатываем elsif
+	currentLabel := nextLabel
+	for _, elsif := range ifStmt.Elsifs {
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "label",
+			Result: currentLabel,
+		})
+
+		condResult = p.processExpression(elsif.Condition, irFn)
+		elsifLabel := p.newLabel()
+		nextLabel = p.newLabel()
+
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "if",
+			Result: condResult,
+			Arg1:   elsifLabel,
+			Arg2:   nextLabel,
+		})
+
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "label",
+			Result: elsifLabel,
+		})
+		if elsif.Then != nil {
+			p.processBlock(elsif.Then, irFn)
+		}
+
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "goto",
+			Result: endLabel,
+		})
+
+		currentLabel = nextLabel
+	}
+
+	// Обрабатываем else
 	if ifStmt.Else != nil {
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:     "label",
-			Result: endLabel,
+			Result: currentLabel,
 		})
 		p.processBlock(ifStmt.Else, irFn)
 	} else {
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:     "label",
-			Result: endLabel,
+			Result: currentLabel,
 		})
 	}
+
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:     "label",
+		Result: endLabel,
+	})
 }
 
 func (p *Pipeline) processWhile(while *front.WhileStmt, irFn *IRFunction) {
