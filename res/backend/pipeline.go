@@ -23,7 +23,7 @@ func NewPipeline(prog *front.Program) *Pipeline {
 }
 
 func (p *Pipeline) Process() *IRProgram {
-	// Обрабатываем импорты
+	// 1. Обрабатываем импорты
 	for _, imp := range p.Program.Imports {
 		p.IR.Imports = append(p.IR.Imports, IRImport{
 			Path:  imp.Path,
@@ -32,8 +32,7 @@ func (p *Pipeline) Process() *IRProgram {
 		})
 	}
 
-	// Обрабатываем ВСЕ функции (и экспортируемые, и неэкспортируемые)
-	// Неэкспортируемые нужны для внутренних вызовов внутри модуля
+	// 2. Обрабатываем ВСЕ функции
 	processed := make(map[string]bool)
 	for _, fn := range p.Program.Functions {
 		if processed[fn.Name] {
@@ -42,6 +41,10 @@ func (p *Pipeline) Process() *IRProgram {
 		processed[fn.Name] = true
 		p.processFunction(fn)
 	}
+
+	// 3. ЗАПУСКАЕМ GC!
+	gc := NewGCAnalyzer(p.Program)
+	gc.Analyze(p.IR)
 
 	return p.IR
 }

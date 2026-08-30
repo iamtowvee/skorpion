@@ -2,5 +2,6 @@ use imp
 use std/io
 
 void main(arr args) {
-    imp.call()
+    string x = "Hello"
+    imp.call(x)
 }

@@ -136,6 +136,9 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction) {
 	case "label":
 		cg.writeLine(fmt.Sprintf("%s:", ins.Result))
 
+	case "free":
+		cg.writeLine(fmt.Sprintf("%sfree(%s);", indent, ins.Arg1))
+
 	case "inline_c":
 		lines := strings.Split(ins.Arg1, "\n")
 		for _, line := range lines {
