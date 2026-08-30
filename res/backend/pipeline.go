@@ -264,14 +264,13 @@ func (p *Pipeline) processExpression(expr front.Node, irFn *IRFunction) string {
 	case *front.Number:
 		return n.Value
 	case *front.String:
-		// Строка уже содержит кавычки из лексера, но нужно экранировать
-		// В лексере строка читается без кавычек, добавляем их здесь
 		return fmt.Sprintf(`"%s"`, n.Value)
 	case *front.Ident:
 		return n.Name
 	case *front.BinaryExpr:
 		return p.processBinary(n, irFn)
 	case *front.CallExpr:
+		// Для вызова функции как выражения (с возвращаемым значением)
 		return p.processCallExpr(n, irFn)
 	case *front.UnaryExpr:
 		if n.Op == "$" {
@@ -319,56 +318,39 @@ func (p *Pipeline) processCall(call *front.CallExpr, irFn *IRFunction) {
 		}
 	}
 
-	if targetFunc == nil {
-		// Если функция не найдена, генерируем обычный вызов
-		args := []string{}
-		for _, arg := range call.Args {
-			args = append(args, p.processExpression(arg, irFn))
-		}
-		argsStr := strings.Join(args, ", ")
-
-		funcName := call.Name
-		if strings.Contains(funcName, ".") {
-			parts := strings.Split(funcName, ".")
-			funcName = parts[len(parts)-1]
-		}
-
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:   "call",
-			Arg1: funcName,
-			Arg2: argsStr,
-		})
-		return
-	}
-
 	// Подготавливаем аргументы с учётом значений по умолчанию
 	args := []string{}
 	argIndex := 0
 
-	for _, param := range targetFunc.Params {
-		var argExpr front.Node
+	if targetFunc != nil {
+		for _, param := range targetFunc.Params {
+			var argExpr front.Node
 
-		// Если есть переданный аргумент
-		if argIndex < len(call.Args) {
-			argExpr = call.Args[argIndex]
-			argIndex++
-		} else if param.DefaultValue != nil {
-			// Используем значение по умолчанию
-			argExpr = param.DefaultValue
-		} else {
-			// Ошибка: нет аргумента и нет значения по умолчанию
-			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:   "comment",
-				Arg1: fmt.Sprintf("ERROR: Missing argument for parameter '%s'", param.Name),
-			})
-			continue
+			// Если есть переданный аргумент
+			if argIndex < len(call.Args) {
+				argExpr = call.Args[argIndex]
+				argIndex++
+			} else if param.DefaultValue != nil {
+				// Используем значение по умолчанию
+				argExpr = param.DefaultValue
+			} else {
+				// Ошибка: нет аргумента и нет значения по умолчанию
+				args = append(args, "0") // fallback
+				continue
+			}
+
+			args = append(args, p.processExpression(argExpr, irFn))
 		}
-
-		args = append(args, p.processExpression(argExpr, irFn))
+	} else {
+		// Если функция не найдена, просто передаём все аргументы как есть
+		for _, arg := range call.Args {
+			args = append(args, p.processExpression(arg, irFn))
+		}
 	}
 
 	argsStr := strings.Join(args, ", ")
 
+	// Убираем префикс модуля
 	funcName := call.Name
 	if strings.Contains(funcName, ".") {
 		parts := strings.Split(funcName, ".")
@@ -383,26 +365,71 @@ func (p *Pipeline) processCall(call *front.CallExpr, irFn *IRFunction) {
 }
 
 func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) string {
-	args := []string{}
-	for _, arg := range call.Args {
-		exprResult := p.processExpression(arg, irFn)
-		// Если это строка, она уже содержит кавычки
-		args = append(args, exprResult)
+	// Находим целевую функцию
+	var targetFunc *front.Function
+	for _, fn := range p.Program.Functions {
+		if fn.Name == call.Name {
+			targetFunc = fn
+			break
+		}
 	}
 
-	argsStr := ""
-	if len(args) > 0 {
-		argsStr = args[0]
-		for i := 1; i < len(args); i++ {
-			argsStr += ", " + args[i]
+	// Если функция не найдена, пробуем убрать префикс модуля
+	if targetFunc == nil && strings.Contains(call.Name, ".") {
+		parts := strings.Split(call.Name, ".")
+		simpleName := parts[len(parts)-1]
+		for _, fn := range p.Program.Functions {
+			if fn.Name == simpleName {
+				targetFunc = fn
+				break
+			}
 		}
+	}
+
+	// Подготавливаем аргументы с учётом значений по умолчанию
+	args := []string{}
+	argIndex := 0
+
+	if targetFunc != nil {
+		for _, param := range targetFunc.Params {
+			var argExpr front.Node
+
+			// Если есть переданный аргумент
+			if argIndex < len(call.Args) {
+				argExpr = call.Args[argIndex]
+				argIndex++
+			} else if param.DefaultValue != nil {
+				// Используем значение по умолчанию
+				argExpr = param.DefaultValue
+			} else {
+				// Ошибка: нет аргумента и нет значения по умолчанию
+				args = append(args, "0") // fallback
+				continue
+			}
+
+			args = append(args, p.processExpression(argExpr, irFn))
+		}
+	} else {
+		// Если функция не найдена, просто передаём все аргументы как есть
+		for _, arg := range call.Args {
+			args = append(args, p.processExpression(arg, irFn))
+		}
+	}
+
+	argsStr := strings.Join(args, ", ")
+
+	// Убираем префикс модуля
+	funcName := call.Name
+	if strings.Contains(funcName, ".") {
+		parts := strings.Split(funcName, ".")
+		funcName = parts[len(parts)-1]
 	}
 
 	result := p.newTemp()
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:     "call",
 		Result: result,
-		Arg1:   call.Name,
+		Arg1:   funcName,
 		Arg2:   argsStr,
 	})
 

@@ -3,3 +3,22 @@ void sendln(string msg) {
         printf("%s\n", msg);
     ```
 }
+
+void sendf(string msg) {
+    includeC ```
+        printf("%s", msg);
+    ```
+}
+
+string input(string prompt = "") {
+    includeC ```
+        printf("%s", prompt);
+        char buffer[256];
+        fgets(buffer, sizeof(buffer), stdin);
+        size_t len = strlen(buffer);
+        if (len > 0 && buffer[len-1] == '\n') {
+            buffer[len-1] = '\0';
+        }
+        return strdup(buffer);
+    ```
+}

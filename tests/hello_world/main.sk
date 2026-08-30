@@ -1,13 +1,6 @@
-use imp &io
+use std/io
 
 void main(arr args) {
-    int x = 10
-    int y = 5
-    
-    io.sendln("x + y = " + $(x + y), true)
-    io.sendln("x - y = " + $(x - y), true)
-    io.sendln("x * y = " + $(x * y))
-    io.sendln("x / y = " + $(x / y), true)
-    io.sendln("x + y * 2 = " + $(x + y * 2), true)
-    io.sendln("(x + y) * 2 = " + $((x + y) * 2), true)
+    string x = io.input()
+    io.sendln(x)
 }
