@@ -319,6 +319,8 @@ func (p *Parser) parseStatement() Node {
 			return p.parseFor()
 		case "return":
 			return p.parseReturn()
+		case "case":
+			return p.parseCase()
 		case "int", "string", "float", "double", "bool", "char", "arr", "dict", "any":
 			return p.parseVarDecl()
 		}
@@ -408,6 +410,85 @@ func (p *Parser) parseIf() Node {
 		Then:      then,
 		Elsifs:    elsifs,
 		Else:      elseBlock,
+	}
+}
+
+func (p *Parser) parseCase() Node {
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	p.advance() // case
+	p.expect(TOKEN_LPAREN)
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	value := p.parseExpression()
+	if value == nil {
+		return nil
+	}
+
+	p.expect(TOKEN_RPAREN)
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	p.expect(TOKEN_LBRACE)
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	branches := []*CaseBranch{}
+	var defaultBlock *Block
+
+	for p.peek.Type != TOKEN_RBRACE && p.peek.Type != TOKEN_EOF {
+		if p.hasErrors || errors.HasFatal() {
+			break
+		}
+
+		// Парсим паттерн
+		pattern := p.parseExpression()
+		if pattern == nil {
+			return nil
+		}
+
+		// Проверяем, не _ ли это (дефолт)
+		if ident, ok := pattern.(*Ident); ok && ident.Name == "_" {
+			// Это default блок — просто парсим блок
+			defaultBlock = p.parseBlock()
+			if defaultBlock == nil {
+				return nil
+			}
+			break
+		}
+
+		// Обычная ветка — парсим блок
+		body := p.parseBlock()
+		if body == nil {
+			return nil
+		}
+
+		branches = append(branches, &CaseBranch{
+			Pattern: pattern,
+			Body:    body,
+		})
+
+		// Проверяем запятую между ветками
+		if p.peek.Type == TOKEN_COMMA {
+			p.advance()
+		}
+	}
+
+	p.expect(TOKEN_RBRACE)
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	return &CaseStmt{
+		Value:    value,
+		Branches: branches,
+		Default:  defaultBlock,
 	}
 }
 

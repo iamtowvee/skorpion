@@ -278,6 +278,8 @@ func (sa *SemanticAnalyzer) analyzeNode(node front.Node) front.Node {
 		return n
 	case *front.IfStmt:
 		return sa.analyzeIf(n)
+	case *front.CaseStmt:
+		return sa.analyzeCase(n)
 	case *front.WhileStmt:
 		return sa.analyzeWhile(n)
 	case *front.ForStmt:
@@ -516,6 +518,40 @@ func (sa *SemanticAnalyzer) analyzeIf(ifStmt *front.IfStmt) front.Node {
 	}
 
 	return ifStmt
+}
+
+func (sa *SemanticAnalyzer) analyzeCase(caseStmt *front.CaseStmt) front.Node {
+	fmt.Printf("[DEBUG] analyzeCase: checking value\n")
+
+	// Проверяем значение
+	valueType := sa.getNodeType(caseStmt.Value)
+	fmt.Printf("[DEBUG] Case value type: %s\n", valueType)
+
+	// Проверяем каждую ветку
+	for _, branch := range caseStmt.Branches {
+		patternType := sa.getNodeType(branch.Pattern)
+		fmt.Printf("[DEBUG] Pattern type: %s\n", patternType)
+
+		// Паттерн должен совпадать по типу со значением
+		if patternType != valueType && patternType != "" {
+			sa.addError("1031",
+				fmt.Sprintf("Pattern type mismatch: expected '%s', got '%s'",
+					valueType, patternType),
+				0, 0, "")
+		}
+
+		// Анализируем тело ветки
+		if branch.Body != nil {
+			sa.analyzeBlock(branch.Body, false)
+		}
+	}
+
+	// Проверяем default блок
+	if caseStmt.Default != nil {
+		sa.analyzeBlock(caseStmt.Default, false)
+	}
+
+	return caseStmt
 }
 
 func (sa *SemanticAnalyzer) analyzeWhile(while *front.WhileStmt) front.Node {

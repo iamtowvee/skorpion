@@ -110,6 +110,8 @@ func (p *Pipeline) processNode(node front.Node, irFn *IRFunction) {
 		p.processCall(n, irFn)
 	case *front.IfStmt:
 		p.processIf(n, irFn)
+	case *front.CaseStmt:
+		p.processCase(n, irFn)
 	case *front.WhileStmt:
 		p.processWhile(n, irFn)
 	case *front.ForStmt:
@@ -514,6 +516,62 @@ func (p *Pipeline) processIf(ifStmt *front.IfStmt, irFn *IRFunction) {
 			Op:     "label",
 			Result: currentLabel,
 		})
+	}
+
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:     "label",
+		Result: endLabel,
+	})
+}
+
+func (p *Pipeline) processCase(caseStmt *front.CaseStmt, irFn *IRFunction) {
+	value := p.processExpression(caseStmt.Value, irFn)
+
+	endLabel := p.newLabel()
+
+	for _, branch := range caseStmt.Branches {
+		pattern := p.processExpression(branch.Pattern, irFn)
+		branchLabel := p.newLabel()
+		nextLabel := p.newLabel()
+
+		// Сравнение value == pattern
+		cmp := fmt.Sprintf("(%s == %s)", value, pattern)
+
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "if",
+			Result: cmp,
+			Arg1:   branchLabel,
+			Arg2:   nextLabel,
+		})
+
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "label",
+			Result: branchLabel,
+		})
+
+		if branch.Body != nil {
+			p.processBlock(branch.Body, irFn)
+		}
+
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "goto",
+			Result: endLabel,
+		})
+
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "label",
+			Result: nextLabel,
+		})
+	}
+
+	// Default блок
+	if caseStmt.Default != nil {
+		defaultLabel := p.newLabel()
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "label",
+			Result: defaultLabel,
+		})
+		p.processBlock(caseStmt.Default, irFn)
 	}
 
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{

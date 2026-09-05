@@ -20,8 +20,7 @@ void main(void* args) {
     int i;
 
     i = 0;
-L1:
-    if (i < 5) {
+    if (i == 0) {
         goto L2;
     } else {
         goto L3;
@@ -29,14 +28,14 @@ L1:
 L2:
     char t1[32];
     snprintf(t1, 32, "%d", i);
-    char t2[256];
-    strcpy(t2, "i = ");
-    strcat(t2, t1);
-    sendln(t2);
-    int t3 = i + 1;
-    i = t3;
+    sendln(t1);
     goto L1;
 L3:
+L4:
+    char t2[32];
+    snprintf(t2, 32, "%d", i);
+    sendln(t2);
+L1:
     return;
 }
 

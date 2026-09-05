@@ -1,9 +1,7 @@
 int toInt(any value) {
   case (type(value)) {
     "string" {
-      includeC ```
-        
-      ```
+      // ...
     },
     "int" {
       return value

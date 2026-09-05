@@ -5,24 +5,26 @@ import "strings"
 type NodeType string
 
 const (
-	NODE_PROGRAM   NodeType = "Program"
-	NODE_FUNCTION  NodeType = "Function"
-	NODE_VAR_DECL  NodeType = "VarDecl"
-	NODE_ASSIGN    NodeType = "Assign"
-	NODE_BINARY    NodeType = "Binary"
-	NODE_UNARY     NodeType = "Unary"
-	NODE_CALL      NodeType = "Call"
-	NODE_RETURN    NodeType = "Return"
-	NODE_BLOCK     NodeType = "Block"
-	NODE_IDENT     NodeType = "Ident"
-	NODE_NUMBER    NodeType = "Number"
-	NODE_STRING    NodeType = "String"
-	NODE_IF        NodeType = "If"
-	NODE_ELSIF     NodeType = "Elsif"
-	NODE_WHILE     NodeType = "While"
-	NODE_FOR       NodeType = "For"
-	NODE_IMPORT    NodeType = "Import"
-	NODE_INCLUDE_C NodeType = "IncludeC"
+	NODE_PROGRAM     NodeType = "Program"
+	NODE_FUNCTION    NodeType = "Function"
+	NODE_VAR_DECL    NodeType = "VarDecl"
+	NODE_ASSIGN      NodeType = "Assign"
+	NODE_BINARY      NodeType = "Binary"
+	NODE_UNARY       NodeType = "Unary"
+	NODE_CALL        NodeType = "Call"
+	NODE_RETURN      NodeType = "Return"
+	NODE_BLOCK       NodeType = "Block"
+	NODE_IDENT       NodeType = "Ident"
+	NODE_NUMBER      NodeType = "Number"
+	NODE_STRING      NodeType = "String"
+	NODE_IF          NodeType = "If"
+	NODE_ELSIF       NodeType = "Elsif"
+	NODE_CASE        NodeType = "Case"
+	NODE_CASE_BRANCH NodeType = "CaseBranch"
+	NODE_WHILE       NodeType = "While"
+	NODE_FOR         NodeType = "For"
+	NODE_IMPORT      NodeType = "Import"
+	NODE_INCLUDE_C   NodeType = "IncludeC"
 )
 
 type Node interface {
@@ -162,6 +164,20 @@ type Elsif struct {
 
 func (i *IfStmt) GetType() NodeType { return NODE_IF }
 func (e *Elsif) GetType() NodeType  { return NODE_ELSIF }
+
+type CaseStmt struct {
+	Value    Node
+	Branches []*CaseBranch
+	Default  *Block
+}
+
+type CaseBranch struct {
+	Pattern Node
+	Body    *Block
+}
+
+func (c *CaseStmt) GetType() NodeType   { return NODE_CASE }
+func (c *CaseBranch) GetType() NodeType { return NODE_CASE_BRANCH }
 
 type WhileStmt struct {
 	Condition Node

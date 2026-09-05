@@ -2,8 +2,12 @@ use std/io
 
 void main(arr args) {
     int i = 0
-    while (i < 5) {
-        io.sendln("i = " + $i)
-        i = i + 1
+    case (i) {
+        0 {
+            io.sendln($i)
+        },
+        _ {
+            io.sendln($i)
+        }
     }
 }
