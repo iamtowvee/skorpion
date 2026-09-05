@@ -1,7 +1,9 @@
-use imp
 use std/io
 
 void main(arr args) {
-    string x = "Hello"
-    imp.call(x)
+    int i = 0
+    while (i < 5) {
+        io.sendln("i = " + $i)
+        i = i + 1
+    }
 }

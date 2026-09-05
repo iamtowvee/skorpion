@@ -62,50 +62,67 @@ func (sa *SemanticAnalyzer) registerImportedFunctions() {
 }
 
 func (sa *SemanticAnalyzer) resolveFunction(name string) *front.Function {
+	fmt.Printf("[DEBUG] resolveFunction: %s\n", name)
+
 	// Сначала ищем в текущем файле
 	for _, fn := range sa.Program.Functions {
 		if fn.Name == name {
-			// В текущем файле все функции доступны
+			fmt.Printf("[DEBUG] Found in current file: %s\n", name)
 			return fn
 		}
 	}
 
-	// Потом в импортированных (только экспортируемые)
+	// Потом в импортированных
 	if fn, ok := sa.ImportedFuncs[name]; ok {
-		// Проверяем, что функция экспортируемая
-		if fn.IsExport {
+		fmt.Printf("[DEBUG] Found in imports: %s\n", name)
+		return fn
+	}
+
+	// Проверяем с префиксом модуля (io.sendln → sendln)
+	if strings.Contains(name, ".") {
+		parts := strings.Split(name, ".")
+		simpleName := parts[len(parts)-1]
+		fmt.Printf("[DEBUG] Trying simple name: %s\n", simpleName)
+
+		// Ищем в текущем файле
+		for _, fn := range sa.Program.Functions {
+			if fn.Name == simpleName {
+				fmt.Printf("[DEBUG] Found in current file (simple): %s\n", simpleName)
+				return fn
+			}
+		}
+
+		// Ищем в импортированных
+		if fn, ok := sa.ImportedFuncs[simpleName]; ok {
+			fmt.Printf("[DEBUG] Found in imports (simple): %s\n", simpleName)
 			return fn
 		}
 	}
 
+	fmt.Printf("[DEBUG] Function %s not found\n", name)
 	return nil
 }
 
 func (sa *SemanticAnalyzer) Analyze() bool {
-	fmt.Println("[DEBUG] SemanticAnalyzer.Analyze() started")
+	fmt.Printf("[DEBUG] SemanticAnalyzer.Analyze() started\n")
 
-	// Инициализация встроенных типов
 	sa.initBuiltinTypes()
-	fmt.Println("[DEBUG] Built-in types initialized")
+	fmt.Printf("[DEBUG] Built-in types initialized\n")
 
-	// Регистрация функций из main
 	fmt.Printf("[DEBUG] Registering %d functions from main\n", len(sa.Program.Functions))
 	for _, fn := range sa.Program.Functions {
 		sa.registerFunction(fn)
 		fmt.Printf("[DEBUG] Registered function: %s\n", fn.Name)
 	}
 
-	// Проверка наличия main()
 	if !sa.checkMain() {
-		fmt.Println("[DEBUG] checkMain() failed")
+		fmt.Printf("[DEBUG] checkMain() failed\n")
 		return false
 	}
-	fmt.Println("[DEBUG] checkMain() passed")
+	fmt.Printf("[DEBUG] checkMain() passed\n")
 
-	// Анализируем ТОЛЬКО функции из main
 	fmt.Printf("[DEBUG] Analyzing %d functions\n", len(sa.Program.Functions))
 	for _, fn := range sa.Program.Functions {
-		// Проверяем, не является ли функция импортированной
 		if sa.isImportedFunction(fn.Name) {
 			fmt.Printf("[DEBUG] Skipping imported function: %s\n", fn.Name)
 			continue
@@ -116,24 +133,41 @@ func (sa *SemanticAnalyzer) Analyze() bool {
 		sa.CurrentScope = NewScope(sa.GlobalScope, false)
 		sa.analyzeFunction(fn)
 
-		// Если есть ошибки, сразу выходим
 		if len(sa.Errors) > 0 {
-			fmt.Printf("[DEBUG] Errors found: %d\n", len(sa.Errors))
+			fmt.Printf("[DEBUG] Errors found after analyzing %s: %d\n", fn.Name, len(sa.Errors))
+			// Выводим все ошибки
+			for _, err := range sa.Errors {
+				fmt.Printf("[DEBUG] Error: %s: %s\n", err.Code, err.Message)
+			}
 			return false
 		}
 	}
 
-	fmt.Printf("[DEBUG] Semantic analysis complete, errors: %d\n", len(sa.Errors))
+	fmt.Printf("[DEBUG] All functions analyzed, checking for errors...\n")
+
+	// Здесь может быть ошибка!
+	fmt.Printf("[DEBUG] Total errors: %d\n", len(sa.Errors))
+
+	if len(sa.Errors) > 0 {
+		fmt.Printf("[DEBUG] Errors found at the end: %d\n", len(sa.Errors))
+		for _, err := range sa.Errors {
+			fmt.Printf("[DEBUG] Final Error: %s: %s\n", err.Code, err.Message)
+		}
+	}
+
 	return len(sa.Errors) == 0
 }
 
 func (sa *SemanticAnalyzer) isImportedFunction(name string) bool {
+	fmt.Printf("[DEBUG] isImportedFunction: checking %s\n", name)
 	// Проверяем по всем импортированным функциям
 	for _, fn := range sa.ImportedFuncs {
 		if fn.Name == name {
+			fmt.Printf("[DEBUG] isImportedFunction: %s is imported\n", name)
 			return true
 		}
 	}
+	fmt.Printf("[DEBUG] isImportedFunction: %s is NOT imported\n", name)
 	return false
 }
 
@@ -186,49 +220,35 @@ func (sa *SemanticAnalyzer) analyzeFunction(fn *front.Function) {
 
 	sa.CurrentScope = NewScope(sa.GlobalScope, false)
 	defer func() {
+		fmt.Printf("[DEBUG] analyzeFunction: exiting %s\n", fn.Name)
 		sa.CurrentScope = sa.CurrentScope.Parent
 	}()
 
-	// Регистрируем параметры с проверкой значений по умолчанию
-	hasDefault := false
+	// Регистрируем параметры
 	for _, param := range fn.Params {
-		// Если у параметра есть значение по умолчанию
-		if param.DefaultValue != nil {
-			hasDefault = true
-			// Проверяем тип значения по умолчанию
-			defaultType := sa.getNodeType(param.DefaultValue)
-			if defaultType != param.Type && param.Type != "any" {
-				sa.addError("1029",
-					fmt.Sprintf("Default value type mismatch for parameter '%s': expected '%s', got '%s'",
-						param.Name, param.Type, defaultType),
-					0, 0, "")
-			}
-		} else if hasDefault {
-			// Если у предыдущего параметра было значение по умолчанию,
-			// а у этого нет - ошибка
-			sa.addError("1030",
-				fmt.Sprintf("Parameter '%s' without default value cannot follow parameter with default value",
-					param.Name),
-				0, 0, "")
-		}
-
+		fmt.Printf("[DEBUG] Adding parameter: %s %s\n", param.Name, param.Type)
 		sa.CurrentScope.Define(param.Name, SYM_VARIABLE, param.Type, false)
 	}
 
 	if fn.Body != nil {
 		fmt.Printf("[DEBUG] Analyzing body of %s\n", fn.Name)
 		sa.analyzeBlock(fn.Body, true)
+		fmt.Printf("[DEBUG] Body of %s analyzed\n", fn.Name)
 	} else {
 		fmt.Printf("[DEBUG] Function %s has no body\n", fn.Name)
 	}
+
+	fmt.Printf("[DEBUG] analyzeFunction %s completed\n", fn.Name)
 }
 
 func (sa *SemanticAnalyzer) analyzeBlock(block *front.Block, isFunctionBody bool) {
-	fmt.Printf("[DEBUG] analyzeBlock: %d statements\n", len(block.Statements))
+	fmt.Printf("[DEBUG] analyzeBlock: %d statements, isFunctionBody=%v\n", len(block.Statements), isFunctionBody)
 	for i, stmt := range block.Statements {
 		fmt.Printf("[DEBUG] Statement %d: %T\n", i, stmt)
 		sa.analyzeNode(stmt)
+		fmt.Printf("[DEBUG] Statement %d processed\n", i)
 	}
+	fmt.Printf("[DEBUG] analyzeBlock completed\n")
 }
 
 func (sa *SemanticAnalyzer) analyzeNode(node front.Node) front.Node {
@@ -311,15 +331,20 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 }
 
 func (sa *SemanticAnalyzer) analyzeAssign(assign *front.Assign) front.Node {
+	fmt.Printf("[DEBUG] analyzeAssign: %s\n", assign.Name)
+
 	// Проверяем, что переменная существует
 	sym := sa.CurrentScope.Resolve(assign.Name)
 	if sym == nil {
+		fmt.Printf("[DEBUG] Variable %s not found\n", assign.Name)
 		sa.addError("1011", fmt.Sprintf("Undefined variable '%s'", assign.Name), 0, 0, "")
 		return assign
 	}
+	fmt.Printf("[DEBUG] Variable %s found, type=%s\n", assign.Name, sym.Type)
 
 	// Проверяем, что переменная не константа
 	if sym.IsConst {
+		fmt.Printf("[DEBUG] Variable %s is const\n", assign.Name)
 		sa.addError("1012", fmt.Sprintf("Cannot assign to constant '%s'", assign.Name), 0, 0, "")
 		return assign
 	}
@@ -327,17 +352,24 @@ func (sa *SemanticAnalyzer) analyzeAssign(assign *front.Assign) front.Node {
 	// Анализируем выражение
 	if assign.Expr != nil {
 		exprType := sa.getNodeType(assign.Expr)
+		fmt.Printf("[DEBUG] Expression type: %s\n", exprType)
 
 		// Проверка соответствия типов
 		if sym.Type == "any" {
-			// any принимает любой тип
+			fmt.Printf("[DEBUG] any type, accepting any value\n")
 		} else if sym.Type != exprType && exprType != "" {
+			fmt.Printf("[DEBUG] Type mismatch: %s vs %s\n", exprType, sym.Type)
 			sa.addError("1013", fmt.Sprintf("Type mismatch: cannot assign '%s' to '%s' (variable '%s')",
 				exprType, sym.Type, assign.Name), 0, 0, "")
 			return assign
+		} else {
+			fmt.Printf("[DEBUG] Types match: %s == %s\n", exprType, sym.Type)
 		}
+	} else {
+		fmt.Printf("[DEBUG] No expression to analyze\n")
 	}
 
+	fmt.Printf("[DEBUG] analyzeAssign completed successfully\n")
 	return assign
 }
 
@@ -418,63 +450,39 @@ func (sa *SemanticAnalyzer) analyzeReturn(ret *front.ReturnStmt) front.Node {
 func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
 	fmt.Printf("[DEBUG] analyzeCall: %s\n", call.Name)
 
-	// Находим целевую функцию
+	// Проверяем, что функция существует
 	targetFunc := sa.resolveFunction(call.Name)
 	if targetFunc == nil {
-		sa.addError("1021", fmt.Sprintf("Undefined function '%s'", call.Name), 0, 0, "")
 		fmt.Printf("[DEBUG] Function %s not found\n", call.Name)
+		sa.addError("1021", fmt.Sprintf("Undefined function '%s'", call.Name), 0, 0, "")
 		return call
 	}
-	fmt.Printf("[DEBUG] Function %s found\n", call.Name)
+	fmt.Printf("[DEBUG] Function %s found, params=%d\n", call.Name, len(targetFunc.Params))
 
-	// Проверяем количество аргументов с учётом значений по умолчанию
-	minArgs := 0
-	maxArgs := len(targetFunc.Params)
-
-	// Считаем, сколько параметров ОБЯЗАТЕЛЬНЫ (без значений по умолчанию)
-	for _, param := range targetFunc.Params {
-		if param.DefaultValue == nil {
-			minArgs++
-		}
-	}
-
-	argCount := len(call.Args)
-
-	// Проверяем, что аргументов достаточно (не меньше обязательных)
-	if argCount < minArgs {
-		sa.addError("1023",
-			fmt.Sprintf("Function '%s' expects at least %d arguments, got %d",
-				call.Name, minArgs, argCount),
-			0, 0, "")
-		fmt.Printf("[DEBUG] Argument count mismatch: expected at least %d, got %d\n", minArgs, argCount)
+	// Проверяем количество аргументов
+	if len(call.Args) != len(targetFunc.Params) {
+		fmt.Printf("[DEBUG] Argument count mismatch: expected %d, got %d\n", len(targetFunc.Params), len(call.Args))
+		sa.addError("1023", fmt.Sprintf("Function '%s' expects %d arguments, got %d",
+			call.Name, len(targetFunc.Params), len(call.Args)), 0, 0, "")
 		return call
 	}
 
-	// Проверяем, что аргументов не больше максимума
-	if argCount > maxArgs {
-		sa.addError("1023",
-			fmt.Sprintf("Function '%s' expects at most %d arguments, got %d",
-				call.Name, maxArgs, argCount),
-			0, 0, "")
-		fmt.Printf("[DEBUG] Argument count mismatch: expected at most %d, got %d\n", maxArgs, argCount)
-		return call
-	}
-
-	// Проверяем типы аргументов (только для переданных)
-	for i := 0; i < argCount; i++ {
-		argType := sa.getNodeType(call.Args[i])
+	// Проверяем типы аргументов
+	for i, arg := range call.Args {
+		argType := sa.getNodeType(arg)
 		paramType := targetFunc.Params[i].Type
 
 		fmt.Printf("[DEBUG] Arg %d: type=%s, expected=%s\n", i, argType, paramType)
 
 		if argType != paramType && argType != "" && paramType != "any" {
-			sa.addError("1024",
-				fmt.Sprintf("Argument %d type mismatch: expected '%s', got '%s'",
-					i+1, paramType, argType),
-				0, 0, "")
+			fmt.Printf("[DEBUG] Type mismatch in argument %d\n", i)
+			sa.addError("1024", fmt.Sprintf("Argument %d type mismatch: expected '%s', got '%s'",
+				i+1, paramType, argType), 0, 0, "")
+			return call
 		}
 	}
 
+	fmt.Printf("[DEBUG] analyzeCall completed successfully\n")
 	return call
 }
 
@@ -510,10 +518,12 @@ func (sa *SemanticAnalyzer) analyzeIf(ifStmt *front.IfStmt) front.Node {
 }
 
 func (sa *SemanticAnalyzer) analyzeWhile(while *front.WhileStmt) front.Node {
-	// Анализируем условие
-	condType := sa.getNodeType(while.Condition)
-	if condType != "bool" && condType != "" {
-		sa.addError("1026", fmt.Sprintf("While condition must be boolean, got '%s'", condType), 0, 0, "")
+	// Проверяем условие
+	if while.Condition != nil {
+		condType := sa.getNodeType(while.Condition)
+		if condType != "bool" && condType != "" {
+			sa.addError("1026", fmt.Sprintf("While condition must be boolean, got '%s'", condType), 0, 0, "")
+		}
 	}
 
 	// Анализируем тело
@@ -584,27 +594,94 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 		}
 		return ""
 	case *front.BinaryExpr:
+		fmt.Printf("[DEBUG] getNodeType BinaryExpr: op=%s\n", n.Op)
 		leftType := sa.getNodeType(n.Left)
 		rightType := sa.getNodeType(n.Right)
-		// Для простоты возвращаем тип левой части
-		if leftType != "" {
-			return leftType
+		fmt.Printf("[DEBUG]   leftType=%s, rightType=%s\n", leftType, rightType)
+
+		// СРАВНЕНИЯ ВОЗВРАЩАЮТ BOOL!
+		if n.Op == "<" || n.Op == ">" || n.Op == "==" || n.Op == "!=" || n.Op == "<=" || n.Op == ">=" {
+			fmt.Printf("[DEBUG]   comparison operator, returning bool\n")
+			return "bool"
 		}
-		return rightType
+
+		// Для арифметических операций
+		isLeftNumeric := leftType == "int" || leftType == "float" || leftType == "double"
+		isRightNumeric := rightType == "int" || rightType == "float" || rightType == "double"
+
+		if isLeftNumeric && isRightNumeric {
+			if leftType == "float" || rightType == "float" {
+				return "float"
+			}
+			if leftType == "double" || rightType == "double" {
+				return "double"
+			}
+			return "int"
+		}
+
+		if n.Op == "+" && (leftType == "string" || rightType == "string") {
+			return "string"
+		}
+
+		return "int"
+
 	case *front.CallExpr:
-		sym := sa.CurrentScope.Resolve(n.Name)
-		if sym != nil {
-			return sym.Type
+		fmt.Printf("[DEBUG] getNodeType CallExpr: %s\n", n.Name)
+
+		// Проверяем в текущем файле
+		for _, fn := range sa.Program.Functions {
+			if fn.Name == n.Name {
+				fmt.Printf("[DEBUG]   found in current file: %s -> %s\n", fn.Name, fn.ReturnType)
+				return fn.ReturnType
+			}
 		}
+
+		// Проверяем в импортированных функциях (по полному имени)
+		if fn, ok := sa.ImportedFuncs[n.Name]; ok {
+			fmt.Printf("[DEBUG]   found in imports: %s -> %s\n", n.Name, fn.ReturnType)
+			return fn.ReturnType
+		}
+
+		// Проверяем с префиксом модуля (io.to_string → to_string)
+		if strings.Contains(n.Name, ".") {
+			parts := strings.Split(n.Name, ".")
+			simpleName := parts[len(parts)-1]
+			fmt.Printf("[DEBUG]   checking simple name: %s\n", simpleName)
+
+			// Ищем в текущем файле
+			for _, fn := range sa.Program.Functions {
+				if fn.Name == simpleName {
+					fmt.Printf("[DEBUG]   found in current file (simple): %s -> %s\n", simpleName, fn.ReturnType)
+					return fn.ReturnType
+				}
+			}
+
+			// Ищем в импортированных
+			if fn, ok := sa.ImportedFuncs[simpleName]; ok {
+				fmt.Printf("[DEBUG]   found in imports (simple): %s -> %s\n", simpleName, fn.ReturnType)
+				return fn.ReturnType
+			}
+		}
+
+		fmt.Printf("[DEBUG]   function %s not found\n", n.Name)
 		return ""
+
+	case *front.UnaryExpr:
+		if n.Op == "$" {
+			return "string"
+		}
+		return sa.getNodeType(n.Expr)
+
 	case *front.VarDecl:
 		return n.Type
+
 	case *front.Assign:
 		sym := sa.CurrentScope.Resolve(n.Name)
 		if sym != nil {
 			return sym.Type
 		}
 		return ""
+
 	default:
 		return ""
 	}

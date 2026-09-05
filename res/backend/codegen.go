@@ -201,7 +201,7 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction) {
 		cg.writeLine(fmt.Sprintf("%ssnprintf(%s, 32, \"%%d\", %s);", indent, ins.Result, ins.Arg1))
 
 	case "if":
-		cg.writeLine(fmt.Sprintf("%sif (%s) {", indent, ins.Result))
+		cg.writeLine(fmt.Sprintf("%sif %s {", indent, ins.Result))
 		cg.writeLine(fmt.Sprintf("%s    goto %s;", indent, ins.Arg1))
 		cg.writeLine(fmt.Sprintf("%s} else {", indent))
 		cg.writeLine(fmt.Sprintf("%s    goto %s;", indent, ins.Arg2))

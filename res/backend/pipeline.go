@@ -198,13 +198,11 @@ func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string
 	left := p.processExpression(bin.Left, irFn)
 	right := p.processExpression(bin.Right, irFn)
 
-	// Проверяем, не конкатенация ли это строк
-	// Просто проверяем, если один из операндов - строка
+	// Проверяем конкатенацию строк
 	leftIsString := p.isStringValue(left, irFn)
 	rightIsString := p.isStringValue(right, irFn)
 
 	if bin.Op == "+" && (leftIsString || rightIsString) {
-		// Конкатенация строк
 		result := p.newTemp()
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:     "strcat",
@@ -215,7 +213,13 @@ func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string
 		return result
 	}
 
-	// Обычная арифметика
+	// Для сравнений возвращаем выражение целиком, а не temp
+	if bin.Op == "<" || bin.Op == ">" || bin.Op == "==" || bin.Op == "!=" || bin.Op == "<=" || bin.Op == ">=" {
+		// Возвращаем выражение как строку для использования в if
+		return fmt.Sprintf("(%s %s %s)", left, bin.Op, right)
+	}
+
+	// Арифметика
 	result := p.newTemp()
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:     bin.Op,
@@ -434,16 +438,16 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 }
 
 func (p *Pipeline) processIf(ifStmt *front.IfStmt, irFn *IRFunction) {
-	// Генерируем условие для if
+	// Генерируем условие
 	condResult := p.processExpression(ifStmt.Condition, irFn)
 
 	ifLabel := p.newLabel()
 	nextLabel := p.newLabel()
 
-	// Проверяем условие if
+	// Проверяем условие
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:     "if",
-		Result: condResult,
+		Result: condResult, // Это уже выражение вида (i < 5)
 		Arg1:   ifLabel,
 		Arg2:   nextLabel,
 	})
@@ -457,7 +461,6 @@ func (p *Pipeline) processIf(ifStmt *front.IfStmt, irFn *IRFunction) {
 		p.processBlock(ifStmt.Then, irFn)
 	}
 
-	// Пропускаем все elsif и else
 	endLabel := p.newLabel()
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:     "goto",
@@ -524,13 +527,14 @@ func (p *Pipeline) processWhile(while *front.WhileStmt, irFn *IRFunction) {
 	bodyLabel := p.newLabel()
 	endLabel := p.newLabel()
 
+	// start:
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:     "label",
 		Result: startLabel,
 	})
 
+	// if !cond goto end
 	condResult := p.processExpression(while.Condition, irFn)
-
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:     "if",
 		Result: condResult,
@@ -538,6 +542,7 @@ func (p *Pipeline) processWhile(while *front.WhileStmt, irFn *IRFunction) {
 		Arg2:   endLabel,
 	})
 
+	// body:
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:     "label",
 		Result: bodyLabel,
@@ -547,11 +552,13 @@ func (p *Pipeline) processWhile(while *front.WhileStmt, irFn *IRFunction) {
 		p.processBlock(while.Body, irFn)
 	}
 
+	// goto start
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:     "goto",
 		Result: startLabel,
 	})
 
+	// end:
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:     "label",
 		Result: endLabel,

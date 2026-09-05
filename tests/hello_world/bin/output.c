@@ -12,30 +12,31 @@ typedef int sk_bool;
 #define false 0
 
 // Function prototypes
-void called(void* b);
-void call(void* a);
 void sendln(sk_string msg);
 void sendf(sk_string msg);
 sk_string input(sk_string prompt);
 
 void main(void* args) {
-    sk_string x;
+    int i;
 
-    x = "Hello";
-    call(x);
-    return;
-}
-
-void called(void* b) {
-    char t1[256];
-    strcpy(t1, "DON'T EXIST IN THIS CONTEXT");
-    strcat(t1, b);
-    sendln(t1);
-    return;
-}
-
-void call(void* a) {
-    called(a);
+    i = 0;
+L1:
+    if (i < 5) {
+        goto L2;
+    } else {
+        goto L3;
+    }
+L2:
+    char t1[32];
+    snprintf(t1, 32, "%d", i);
+    char t2[256];
+    strcpy(t2, "i = ");
+    strcat(t2, t1);
+    sendln(t2);
+    int t3 = i + 1;
+    i = t3;
+    goto L1;
+L3:
     return;
 }
 
