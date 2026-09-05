@@ -2,6 +2,7 @@ package front
 
 import (
 	"fmt"
+	"skrp/res/debug"
 	"skrp/res/errors"
 )
 
@@ -53,7 +54,7 @@ func (p *Parser) isType(token Token) bool {
 	case "void", "int", "string", "float", "double", "bool", "char", "arr", "dict", "any":
 		result = true
 	}
-	fmt.Printf("[DEBUG] isType(%s) = %v\n", token.Literal, result)
+	debug.Debug("isType(%s) = %v\n", token.Literal, result)
 	return result
 }
 
@@ -68,7 +69,7 @@ func (p *Parser) Parse() *Program {
 
 	prog := &Program{Imports: []*Import{}, Functions: []*Function{}}
 
-	fmt.Println("[DEBUG] Starting parse, first token:", p.peek.Literal, "type:", p.peek.Type)
+	debug.Debug("Starting parse, first token:", p.peek.Literal, "type:", p.peek.Type)
 
 	// Сначала импорты
 	for p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "use" {
@@ -84,12 +85,12 @@ func (p *Parser) Parse() *Program {
 		}
 	}
 
-	fmt.Println("[DEBUG] After imports, current token:", p.peek.Literal, "type:", p.peek.Type)
+	debug.Debug("After imports, current token:", p.peek.Literal, "type:", p.peek.Type)
 
 	// Затем функции
 	funcCount := 0
 	for p.peek.Type != TOKEN_EOF {
-		fmt.Printf("[DEBUG] Loop iteration %d: token='%s', type=%d\n", funcCount, p.peek.Literal, p.peek.Type)
+		debug.Debug("Loop iteration %d: token='%s', type=%d\n", funcCount, p.peek.Literal, p.peek.Type)
 
 		if p.hasErrors || errors.HasFatal() {
 			break
@@ -97,21 +98,21 @@ func (p *Parser) Parse() *Program {
 
 		// Проверяем, что это функция (тип возврата)
 		if p.isType(p.peek) {
-			fmt.Printf("[DEBUG] Found type: '%s', parsing function...\n", p.peek.Literal)
+			debug.Debug("Found type: '%s', parsing function...\n", p.peek.Literal)
 			fn := p.parseFunction()
 			if fn != nil {
 				prog.Functions = append(prog.Functions, fn)
 				funcCount++
-				fmt.Printf("[DEBUG] Function parsed: %s\n", fn.Name)
+				debug.Debug("Function parsed: %s\n", fn.Name)
 			}
 		} else {
 			// Если не функция, пропускаем
-			fmt.Printf("[DEBUG] Skipping token: '%s'\n", p.peek.Literal)
+			debug.Debug("Skipping token: '%s'\n", p.peek.Literal)
 			p.advance()
 		}
 	}
 
-	fmt.Printf("[DEBUG] Total functions parsed: %d\n", len(prog.Functions))
+	debug.Debug("Total functions parsed: %d\n", len(prog.Functions))
 
 	return prog
 }
