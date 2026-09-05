@@ -179,6 +179,7 @@ func (l *Lexer) readIdent() Token {
 		"case":     TOKEN_KEYWORD,
 		"for":      TOKEN_KEYWORD,
 		"while":    TOKEN_KEYWORD,
+		"type":     TOKEN_KEYWORD,
 		"return":   TOKEN_KEYWORD,
 		"void":     TOKEN_KEYWORD,
 		"int":      TOKEN_KEYWORD,

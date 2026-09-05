@@ -89,6 +89,8 @@ func (p *Pipeline) processNode(node front.Node, irFn *IRFunction) {
 	switch n := node.(type) {
 	case *front.VarDecl:
 		p.processVarDecl(n, irFn)
+	case *front.TypeOf:
+		p.processTypeOf(n, irFn)
 	case *front.Assign:
 		p.processAssign(n, irFn)
 	case *front.BinaryExpr:
@@ -116,6 +118,42 @@ func (p *Pipeline) processNode(node front.Node, irFn *IRFunction) {
 			Arg1: n.Code,
 		})
 	}
+}
+
+func (p *Pipeline) processTypeOf(typeOf *front.TypeOf, irFn *IRFunction) string {
+	expr := p.processExpression(typeOf.Expr, irFn)
+	result := p.newTemp()
+
+	// Проверяем, является ли выражение any
+	if p.isAnyValue(expr, irFn) {
+		// Для any нужно проверить type поле
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "typeof_any",
+			Result: result,
+			Arg1:   expr,
+		})
+	} else {
+		// Для конкретных типов — просто возвращаем строку
+		var varType string
+		if p.isStringValue(expr, irFn) || strings.HasPrefix(expr, "\"") {
+			varType = "string"
+		} else if p.isIntValue(expr, irFn) {
+			varType = "int"
+		} else if p.isFloatValue(expr, irFn) {
+			varType = "float"
+		} else if p.isBoolValue(expr, irFn) {
+			varType = "bool"
+		} else {
+			varType = "unknown"
+		}
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "=",
+			Result: result,
+			Arg1:   fmt.Sprintf(`"%s"`, varType),
+		})
+	}
+
+	return result
 }
 
 func (p *Pipeline) processUnary(unary *front.UnaryExpr, irFn *IRFunction) string {
@@ -381,6 +419,8 @@ func (p *Pipeline) processExpression(expr front.Node, irFn *IRFunction) string {
 		return n.Name
 	case *front.BinaryExpr:
 		return p.processBinary(n, irFn)
+	case *front.TypeOf:
+		return p.processTypeOf(n, irFn)
 	case *front.CallExpr:
 		return p.processCallExpr(n, irFn)
 	case *front.UnaryExpr:
@@ -932,4 +972,70 @@ func (p *Pipeline) inferType(value string) string {
 		return "int"
 	}
 	return "int"
+}
+
+// isIntValue проверяет, является ли значение int
+func (p *Pipeline) isIntValue(value string, irFn *IRFunction) bool {
+	// Проверяем локальные переменные
+	for _, local := range irFn.Locals {
+		// local это "int i" или "sk_string s"
+		parts := strings.Fields(local)
+		if len(parts) >= 2 && parts[1] == value {
+			if parts[0] == "int" {
+				return true
+			}
+		}
+	}
+
+	// Проверяем, что это числовой литерал (не строка, не bool)
+	if len(value) > 0 && (value[0] >= '0' && value[0] <= '9' || value[0] == '-') {
+		if strings.Contains(value, ".") {
+			return false
+		}
+		return true
+	}
+
+	return false
+}
+
+// isFloatValue проверяет, является ли значение float/double
+func (p *Pipeline) isFloatValue(value string, irFn *IRFunction) bool {
+	// Проверяем локальные переменные
+	for _, local := range irFn.Locals {
+		parts := strings.Fields(local)
+		if len(parts) >= 2 && parts[1] == value {
+			if parts[0] == "float" || parts[0] == "double" {
+				return true
+			}
+		}
+	}
+
+	// Проверяем, что это числовой литерал с точкой
+	if len(value) > 0 && (value[0] >= '0' && value[0] <= '9' || value[0] == '-') {
+		if strings.Contains(value, ".") {
+			return true
+		}
+	}
+
+	return false
+}
+
+// isBoolValue проверяет, является ли значение bool
+func (p *Pipeline) isBoolValue(value string, irFn *IRFunction) bool {
+	// Проверяем локальные переменные
+	for _, local := range irFn.Locals {
+		parts := strings.Fields(local)
+		if len(parts) >= 2 && parts[1] == value {
+			if parts[0] == "sk_bool" || parts[0] == "bool" {
+				return true
+			}
+		}
+	}
+
+	// Проверяем литералы true/false
+	if value == "true" || value == "false" {
+		return true
+	}
+
+	return false
 }

@@ -182,6 +182,20 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 			}
 		}
 
+	case "typeof_any":
+		cg.writeLine(fmt.Sprintf("%ssk_string %s;", indent, ins.Result))
+		cg.writeLine(fmt.Sprintf("%schar buf[32];", indent))
+		cg.writeLine(fmt.Sprintf("%sswitch (%s.type) {", indent, ins.Arg1))
+		cg.writeLine(fmt.Sprintf("%s    case 0: strcpy(buf, \"int\"); break;", indent))
+		cg.writeLine(fmt.Sprintf("%s    case 1: strcpy(buf, \"string\"); break;", indent))
+		cg.writeLine(fmt.Sprintf("%s    case 2: strcpy(buf, \"float\"); break;", indent))
+		cg.writeLine(fmt.Sprintf("%s    case 3: strcpy(buf, \"double\"); break;", indent))
+		cg.writeLine(fmt.Sprintf("%s    case 4: strcpy(buf, \"bool\"); break;", indent))
+		cg.writeLine(fmt.Sprintf("%s    case 5: strcpy(buf, \"ptr\"); break;", indent))
+		cg.writeLine(fmt.Sprintf("%s    default: strcpy(buf, \"unknown\"); break;", indent))
+		cg.writeLine(fmt.Sprintf("%s}", indent))
+		cg.writeLine(fmt.Sprintf("%s%s = strdup(buf);", indent, ins.Result))
+
 	case "comment":
 		cg.writeLine(fmt.Sprintf("%s// %s", indent, ins.Arg1))
 

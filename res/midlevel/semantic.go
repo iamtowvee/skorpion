@@ -273,6 +273,8 @@ func (sa *SemanticAnalyzer) analyzeNode(node front.Node) front.Node {
 		return sa.analyzeReturn(n)
 	case *front.CallExpr:
 		return sa.analyzeCall(n)
+	case *front.TypeOf:
+		return sa.analyzeTypeOf(n)
 	case *front.Block:
 		sa.analyzeBlock(n, false)
 		return n
@@ -374,6 +376,13 @@ func (sa *SemanticAnalyzer) analyzeAssign(assign *front.Assign) front.Node {
 
 	debug.Debug("analyzeAssign completed successfully\n")
 	return assign
+}
+
+func (sa *SemanticAnalyzer) analyzeTypeOf(typeOf *front.TypeOf) front.Node {
+	// Проверяем выражение
+	sa.analyzeNode(typeOf.Expr)
+	// type() всегда возвращает string
+	return typeOf
 }
 
 func (sa *SemanticAnalyzer) analyzeBinary(bin *front.BinaryExpr) front.Node {
@@ -623,6 +632,8 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 		}
 		return "int"
 	case *front.String:
+		return "string"
+	case *front.TypeOf:
 		return "string"
 	case *front.Ident:
 		sym := sa.CurrentScope.Resolve(n.Name)

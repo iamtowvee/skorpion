@@ -721,6 +721,30 @@ func (p *Parser) parseCall(name string) Node {
 	return &CallExpr{Name: name, Args: args}
 }
 
+func (p *Parser) parseTypeOf() Node {
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	p.advance() // type
+	p.expect(TOKEN_LPAREN)
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	expr := p.parseExpression()
+	if expr == nil {
+		return nil
+	}
+
+	p.expect(TOKEN_RPAREN)
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	return &TypeOf{Expr: expr}
+}
+
 func (p *Parser) parseExpression() Node {
 	if p.hasErrors || errors.HasFatal() {
 		return nil
@@ -833,6 +857,9 @@ func (p *Parser) parsePrimary() Node {
 		if p.peek.Literal == "const" {
 			p.advance()
 			return p.parsePrimary()
+		}
+		if p.peek.Literal == "type" { // <-- НОВОЕ
+			return p.parseTypeOf()
 		}
 		p.hasErrors = true
 		errors.NewFatalError("0012",

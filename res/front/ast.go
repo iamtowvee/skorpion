@@ -23,6 +23,7 @@ const (
 	NODE_CASE_BRANCH NodeType = "CaseBranch"
 	NODE_WHILE       NodeType = "While"
 	NODE_FOR         NodeType = "For"
+	NODE_TYPEOF      NodeType = "TypeOf"
 	NODE_IMPORT      NodeType = "Import"
 	NODE_INCLUDE_C   NodeType = "IncludeC"
 )
@@ -73,6 +74,12 @@ type Block struct {
 }
 
 func (b *Block) GetType() NodeType { return NODE_BLOCK }
+
+type TypeOf struct {
+	Expr Node
+}
+
+func (t *TypeOf) GetType() NodeType { return NODE_TYPEOF }
 
 type VarDecl struct {
 	Name string

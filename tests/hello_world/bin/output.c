@@ -73,8 +73,7 @@ void main(void* args) {
         goto L3;
     }
 L2:
-    char t2[32];
-    snprintf(t2, 32, "%d", i);
+    sk_string t2 = "int";
     sendln(t2);
     goto L1;
 L3:

@@ -6,7 +6,7 @@ void main(arr args) {
     int i = 0
     case (i) {
         0 {
-            io.sendln($i);
+            io.sendln(type(i));
         },
     }
 }
