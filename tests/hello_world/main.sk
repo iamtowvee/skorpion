@@ -8,8 +8,5 @@ void main(arr args) {
         0 {
             io.sendln($i);
         },
-        _ {
-            io.sendln($i)
-        }
     }
 }

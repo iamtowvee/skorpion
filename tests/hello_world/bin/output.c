@@ -78,10 +78,6 @@ L2:
     sendln(t2);
     goto L1;
 L3:
-L4:
-    char t3[32];
-    snprintf(t3, 32, "%d", i);
-    sendln(t3);
 L1:
     return;
 }
@@ -108,16 +104,16 @@ sk_string input(sk_string prompt) {
 }
 
 void called(sk_string b) {
-    char t4[256];
-    strcpy(t4, "DON'T EXIST IN THIS CONTEXT");
-    strcat(t4, b);
-    sendln(t4);
+    char t3[256];
+    strcpy(t3, "DON'T EXIST IN THIS CONTEXT");
+    strcat(t3, b);
+    sendln(t3);
     return;
 }
 
 void call(sk_any a) {
-    sk_string t5 = any_to_string(a);
-    called(t5);
+    sk_string t4 = any_to_string(a);
+    called(t4);
     return;
 }
 

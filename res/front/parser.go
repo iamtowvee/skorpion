@@ -456,16 +456,23 @@ func (p *Parser) parseCase() Node {
 
 		// Проверяем, не _ ли это (дефолт)
 		if ident, ok := pattern.(*Ident); ok && ident.Name == "_" {
-			// Default блок
 			defaultBlock = p.parseBlock()
 			if defaultBlock == nil {
 				return nil
 			}
-			// После default запятая не нужна, выходим
+			// После default запятая обязательна!
+			if p.peek.Type != TOKEN_COMMA {
+				p.hasErrors = true
+				errors.NewFatalError("0019",
+					fmt.Sprintf("Expected ',' after default branch (at %d:%d)", p.peek.Line, p.peek.Column),
+					p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			p.advance() // съедаем запятую
 			break
 		}
 
-		// Обычная ветка — парсим блок
+		// Обычная ветка
 		body := p.parseBlock()
 		if body == nil {
 			return nil
@@ -479,17 +486,12 @@ func (p *Parser) parseCase() Node {
 		// ЗАПЯТАЯ ОБЯЗАТЕЛЬНА ПОСЛЕ КАЖДОЙ ВЕТКИ
 		if p.peek.Type == TOKEN_COMMA {
 			p.advance()
-			continue
 		} else {
-			// Если нет запятой и это не конец блока — ошибка
-			if p.peek.Type != TOKEN_RBRACE {
-				p.hasErrors = true
-				errors.NewFatalError("0019",
-					fmt.Sprintf("Expected ',' after case branch"),
-					p.peek.Line, p.peek.Column, p.FileName)
-				return nil
-			}
-			break
+			p.hasErrors = true
+			errors.NewFatalError("0019",
+				fmt.Sprintf("Expected ',' after case branch (at %d:%d)", p.peek.Line, p.peek.Column),
+				p.peek.Line, p.peek.Column, p.FileName)
+			return nil
 		}
 	}
 
