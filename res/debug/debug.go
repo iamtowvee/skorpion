@@ -3,6 +3,7 @@ package debug
 import (
 	"fmt"
 	"os"
+	"skrp/res/cli"
 )
 
 // Единственный флаг дебага
@@ -27,7 +28,7 @@ func Debug(format string, args ...interface{}) {
 	if !IsDevMode {
 		return
 	}
-	fmt.Printf("[DEBUG] "+format+"\n", args...)
+	fmt.Printf(cli.Colors.Colorize(cli.BRIGHT_BLACK, "[DEBUG] "+format), args...)
 }
 
 // Или просто проверка

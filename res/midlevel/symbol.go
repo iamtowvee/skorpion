@@ -17,6 +17,7 @@ type Symbol struct {
 	Name       string
 	Kind       SymbolKind
 	Type       string
+	RealType   string
 	IsExported bool
 	IsConst    bool
 	Value      interface{} // для констант

@@ -11,6 +11,7 @@ type Parser struct {
 	current   Token
 	peek      Token
 	hasErrors bool
+	FileName  string
 }
 
 // Конструктор без advance()
@@ -18,8 +19,8 @@ func NewParserInternal(input string) *Parser {
 	p := &Parser{
 		lexer:     NewLexer(input),
 		hasErrors: false,
+		FileName:  "<input>",
 	}
-	// Не вызываем advance() здесь!
 	return p
 }
 
@@ -43,8 +44,8 @@ func (p *Parser) expect(tt TokenType) Token {
 	}
 	p.hasErrors = true
 	errors.NewFatalError("0004",
-		fmt.Sprintf("Expected '%s', got '%s' (at %d:%d)", tt.String(), p.peek.Literal, p.peek.Line, p.peek.Column),
-		p.peek.Line, p.peek.Column, "")
+		fmt.Sprintf("Expected '%s', got '%s'", tt.String(), p.peek.Literal),
+		p.peek.Line, p.peek.Column, p.FileName)
 	return p.current
 }
 
@@ -54,7 +55,7 @@ func (p *Parser) isType(token Token) bool {
 	case "void", "int", "string", "float", "double", "bool", "char", "arr", "dict", "any":
 		result = true
 	}
-	debug.Debug("isType(%s) = %v\n", token.Literal, result)
+	debug.Debug("isType(%s) = %v", token.Literal, result)
 	return result
 }
 
@@ -69,7 +70,7 @@ func (p *Parser) Parse() *Program {
 
 	prog := &Program{Imports: []*Import{}, Functions: []*Function{}}
 
-	debug.Debug("Starting parse, first token:", p.peek.Literal, "type:", p.peek.Type)
+	debug.Debug("Starting parse, first token: %s type: %s", p.peek.Literal, p.peek.Type.String())
 
 	// Сначала импорты
 	for p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "use" {
@@ -85,12 +86,12 @@ func (p *Parser) Parse() *Program {
 		}
 	}
 
-	debug.Debug("After imports, current token:", p.peek.Literal, "type:", p.peek.Type)
+	debug.Debug("After imports, current token: %s type: %s", p.peek.Literal, p.peek.Type.String())
 
 	// Затем функции
 	funcCount := 0
 	for p.peek.Type != TOKEN_EOF {
-		debug.Debug("Loop iteration %d: token='%s', type=%d\n", funcCount, p.peek.Literal, p.peek.Type)
+		debug.Debug("Loop iteration %d: token='%s', type=%d", funcCount, p.peek.Literal, p.peek.Type)
 
 		if p.hasErrors || errors.HasFatal() {
 			break
@@ -98,21 +99,21 @@ func (p *Parser) Parse() *Program {
 
 		// Проверяем, что это функция (тип возврата)
 		if p.isType(p.peek) {
-			debug.Debug("Found type: '%s', parsing function...\n", p.peek.Literal)
+			debug.Debug("Found type: '%s', parsing function...", p.peek.Literal)
 			fn := p.parseFunction()
 			if fn != nil {
 				prog.Functions = append(prog.Functions, fn)
 				funcCount++
-				debug.Debug("Function parsed: %s\n", fn.Name)
+				debug.Debug("Function parsed: %s", fn.Name)
 			}
 		} else {
 			// Если не функция, пропускаем
-			debug.Debug("Skipping token: '%s'\n", p.peek.Literal)
+			debug.Debug("Skipping token: '%s'", p.peek.Literal)
 			p.advance()
 		}
 	}
 
-	debug.Debug("Total functions parsed: %d\n", len(prog.Functions))
+	debug.Debug("Total functions parsed: %d", len(prog.Functions))
 
 	return prog
 }
@@ -172,8 +173,8 @@ func (p *Parser) parseFunction() *Function {
 	if p.peek.Type != TOKEN_IDENT {
 		p.hasErrors = true
 		errors.NewFatalError("0006",
-			fmt.Sprintf("Expected function name, got '%s' (at %d:%d)", p.peek.Literal, p.peek.Line, p.peek.Column),
-			p.peek.Line, p.peek.Column, "")
+			fmt.Sprintf("Expected function name, got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
 	}
 	name := p.peek.Literal
@@ -183,8 +184,8 @@ func (p *Parser) parseFunction() *Function {
 	if p.peek.Type != TOKEN_LPAREN {
 		p.hasErrors = true
 		errors.NewFatalError("0014",
-			fmt.Sprintf("Expected '(', got '%s' (at %d:%d)", p.peek.Literal, p.peek.Line, p.peek.Column),
-			p.peek.Line, p.peek.Column, "")
+			fmt.Sprintf("Expected '(', got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
 	}
 	p.advance()
@@ -197,8 +198,8 @@ func (p *Parser) parseFunction() *Function {
 			if !p.isType(p.peek) {
 				p.hasErrors = true
 				errors.NewFatalError("0008",
-					fmt.Sprintf("Expected parameter type, got '%s' (at %d:%d)", p.peek.Literal, p.peek.Line, p.peek.Column),
-					p.peek.Line, p.peek.Column, "")
+					fmt.Sprintf("Expected parameter type, got '%s'", p.peek.Literal),
+					p.peek.Line, p.peek.Column, p.FileName)
 				return nil
 			}
 			paramType := p.peek.Literal
@@ -208,8 +209,8 @@ func (p *Parser) parseFunction() *Function {
 			if p.peek.Type != TOKEN_IDENT {
 				p.hasErrors = true
 				errors.NewFatalError("0009",
-					fmt.Sprintf("Expected parameter name, got '%s' (at %d:%d)", p.peek.Literal, p.peek.Line, p.peek.Column),
-					p.peek.Line, p.peek.Column, "")
+					fmt.Sprintf("Expected parameter name, got '%s'", p.peek.Literal),
+					p.peek.Line, p.peek.Column, p.FileName)
 				return nil
 			}
 			paramName := p.peek.Literal
@@ -244,8 +245,8 @@ func (p *Parser) parseFunction() *Function {
 	if p.peek.Type != TOKEN_RPAREN {
 		p.hasErrors = true
 		errors.NewFatalError("0015",
-			fmt.Sprintf("Expected ')', got '%s' (at %d:%d)", p.peek.Literal, p.peek.Line, p.peek.Column),
-			p.peek.Line, p.peek.Column, "")
+			fmt.Sprintf("Expected ')', got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
 	}
 	p.advance()
@@ -254,8 +255,8 @@ func (p *Parser) parseFunction() *Function {
 	if p.peek.Type != TOKEN_LBRACE {
 		p.hasErrors = true
 		errors.NewFatalError("0016",
-			fmt.Sprintf("Expected '{', got '%s' (at %d:%d)", p.peek.Literal, p.peek.Line, p.peek.Column),
-			p.peek.Line, p.peek.Column, "")
+			fmt.Sprintf("Expected '{', got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
 	}
 
@@ -346,8 +347,8 @@ func (p *Parser) parseIncludeC() *IncludeC {
 	if p.peek.Type != TOKEN_BACKTICK {
 		p.hasErrors = true
 		errors.NewFatalError("0017",
-			fmt.Sprintf("Expected ``` after includeC, got '%s' (at %d:%d)", p.peek.Literal, p.peek.Line, p.peek.Column),
-			p.peek.Line, p.peek.Column, "")
+			fmt.Sprintf("Expected ``` after includeC, got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
 	}
 
@@ -455,11 +456,12 @@ func (p *Parser) parseCase() Node {
 
 		// Проверяем, не _ ли это (дефолт)
 		if ident, ok := pattern.(*Ident); ok && ident.Name == "_" {
-			// Это default блок — просто парсим блок
+			// Default блок
 			defaultBlock = p.parseBlock()
 			if defaultBlock == nil {
 				return nil
 			}
+			// После default запятая не нужна, выходим
 			break
 		}
 
@@ -474,9 +476,20 @@ func (p *Parser) parseCase() Node {
 			Body:    body,
 		})
 
-		// Проверяем запятую между ветками
+		// ЗАПЯТАЯ ОБЯЗАТЕЛЬНА ПОСЛЕ КАЖДОЙ ВЕТКИ
 		if p.peek.Type == TOKEN_COMMA {
 			p.advance()
+			continue
+		} else {
+			// Если нет запятой и это не конец блока — ошибка
+			if p.peek.Type != TOKEN_RBRACE {
+				p.hasErrors = true
+				errors.NewFatalError("0019",
+					fmt.Sprintf("Expected ',' after case branch"),
+					p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			break
 		}
 	}
 
@@ -599,8 +612,8 @@ func (p *Parser) parseVarDecl() Node {
 	if p.peek.Type != TOKEN_IDENT {
 		p.hasErrors = true
 		errors.NewFatalError("0011",
-			fmt.Sprintf("Expected variable name, got '%s' (at %d:%d)", p.peek.Literal, p.peek.Line, p.peek.Column),
-			p.peek.Line, p.peek.Column, "")
+			fmt.Sprintf("Expected variable name, got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
 	}
 	name := p.peek.Literal
@@ -647,8 +660,8 @@ func (p *Parser) parseAssignmentOrCall() Node {
 			// Если после точки не вызов, то это ошибка
 			p.hasErrors = true
 			errors.NewFatalError("0018",
-				fmt.Sprintf("Expected function call after '.', got '%s' (at %d:%d)", p.peek.Literal, p.peek.Line, p.peek.Column),
-				p.peek.Line, p.peek.Column, "")
+				fmt.Sprintf("Expected function call after '.', got '%s'", p.peek.Literal),
+				p.peek.Line, p.peek.Column, p.FileName)
 			return nil
 		}
 	}
@@ -821,8 +834,8 @@ func (p *Parser) parsePrimary() Node {
 		}
 		p.hasErrors = true
 		errors.NewFatalError("0012",
-			fmt.Sprintf("Unexpected keyword in expression: '%s' (at %d:%d)", p.peek.Literal, p.peek.Line, p.peek.Column),
-			p.peek.Line, p.peek.Column, "")
+			fmt.Sprintf("Unexpected keyword in expression: '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
 		p.advance()
 		return nil
 
@@ -841,8 +854,8 @@ func (p *Parser) parsePrimary() Node {
 	default:
 		p.hasErrors = true
 		errors.NewFatalError("0013",
-			fmt.Sprintf("Unexpected token in expression: '%s' (at %d:%d)", p.peek.Literal, p.peek.Line, p.peek.Column),
-			p.peek.Line, p.peek.Column, "")
+			fmt.Sprintf("Unexpected token in expression: '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
 		p.advance()
 		return nil
 	}

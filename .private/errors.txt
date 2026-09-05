@@ -1,0 +1,15 @@
+[2026-09-05T14:29 > Err+1043]: Type mismatch (got "string", expected "int")
+   >>> F:\path\to\project\dir | L: 33, C: 15
+    |
+ 31 | func main(arr args) {
+ 32 |     let inputted = io.input()
+ 33 |     something(inputted)
+    |               ~~~~~~~~
+ 34 |     case (inputted) {
+ 35 |         "0" {
+    |
+   >>> TIP
+    | If you don't understand where problem then you may use "skorpion --explain Err+1043" or "skorpion --explain E1043"
+    |
+
+Failed in 3 seconds (3072ms) with errors (count 1).

@@ -11,14 +11,61 @@ typedef int sk_bool;
 #define true 1
 #define false 0
 
+// Skorpion any type
+typedef struct {
+    int type;
+    union {
+        int i;
+        float f;
+        double d;
+        sk_string s;
+        sk_bool b;
+        void* p;
+    } data;
+} sk_any;
+
+// Any constructors
+sk_any any_int(int v) { sk_any a; a.type=0; a.data.i=v; return a; }
+sk_any any_string(sk_string v) { sk_any a; a.type=1; a.data.s=v; return a; }
+sk_any any_float(float v) { sk_any a; a.type=2; a.data.f=v; return a; }
+sk_any any_double(double v) { sk_any a; a.type=3; a.data.d=v; return a; }
+sk_any any_bool(sk_bool v) { sk_any a; a.type=4; a.data.b=v; return a; }
+sk_any any_ptr(void* v) { sk_any a; a.type=5; a.data.p=v; return a; }
+
+// Any getters
+int any_get_int(sk_any a) { return a.data.i; }
+sk_string any_get_string(sk_any a) { return a.data.s; }
+float any_get_float(sk_any a) { return a.data.f; }
+double any_get_double(sk_any a) { return a.data.d; }
+sk_bool any_get_bool(sk_any a) { return a.data.b; }
+void* any_get_ptr(sk_any a) { return a.data.p; }
+
+// Any to string
+sk_string any_to_string(sk_any a) {
+    char buf[64];
+    switch (a.type) {
+        case 0: snprintf(buf, 64, "%d", a.data.i); return strdup(buf);
+        case 1: return strdup(a.data.s);
+        case 2: snprintf(buf, 64, "%f", a.data.f); return strdup(buf);
+        case 3: snprintf(buf, 64, "%f", a.data.d); return strdup(buf);
+        case 4: return strdup(a.data.b ? "true" : "false");
+        case 5: snprintf(buf, 64, "%p", a.data.p); return strdup(buf);
+        default: return strdup("unknown");
+    }
+}
+
 // Function prototypes
 void sendln(sk_string msg);
 void sendf(sk_string msg);
 sk_string input(sk_string prompt);
+void called(sk_string b);
+void call(sk_any a);
 
 void main(void* args) {
     int i;
 
+    sk_any t1 = any_int(3);
+    call(t1);
     i = 0;
     if (i == 0) {
         goto L2;
@@ -26,15 +73,15 @@ void main(void* args) {
         goto L3;
     }
 L2:
-    char t1[32];
-    snprintf(t1, 32, "%d", i);
-    sendln(t1);
-    goto L1;
-L3:
-L4:
     char t2[32];
     snprintf(t2, 32, "%d", i);
     sendln(t2);
+    goto L1;
+L3:
+L4:
+    char t3[32];
+    snprintf(t3, 32, "%d", i);
+    sendln(t3);
 L1:
     return;
 }
@@ -58,5 +105,19 @@ sk_string input(sk_string prompt) {
                 buffer[len-1] = '\0';
             }
             return strdup(buffer);
+}
+
+void called(sk_string b) {
+    char t4[256];
+    strcpy(t4, "DON'T EXIST IN THIS CONTEXT");
+    strcat(t4, b);
+    sendln(t4);
+    return;
+}
+
+void call(sk_any a) {
+    sk_string t5 = any_to_string(a);
+    called(t5);
+    return;
 }
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"skrp/res/cli"
 	"sync"
+	"time"
 )
 
 var (
@@ -13,12 +14,24 @@ var (
 )
 
 type SkorpionError struct {
-	Code    string // "0001"
+	Code    string
 	Message string
 	Line    int
 	Column  int
 	File    string
-	Fatal   bool // Фатальная ошибка, после которой нужно остановиться
+	Fatal   bool
+}
+
+func (e *SkorpionError) GetCodeInfo() ErrorCode {
+	if info, ok := ErrorCodes[e.Code]; ok {
+		return info
+	}
+	return ErrorCode{
+		Code:        e.Code,
+		Message:     e.Message,
+		Description: "Unknown error",
+		Tip:         "Run 'skorpion --explain " + e.Code + "' for more information.",
+	}
 }
 
 func InitErrors() {
@@ -80,6 +93,13 @@ func HasFatal() bool {
 	return hasFatal
 }
 
+func ClearErrors() {
+	mu.Lock()
+	defer mu.Unlock()
+	errors = make([]SkorpionError, 0)
+	hasFatal = false
+}
+
 func PrintErrors() {
 	for _, e := range TakeErrorsList() {
 		code := cli.Colors.Red("Err+" + e.Code)
@@ -92,9 +112,10 @@ func PrintErrors() {
 	}
 }
 
-func ClearErrors() {
-	mu.Lock()
-	defer mu.Unlock()
-	errors = make([]SkorpionError, 0)
-	hasFatal = false
+// ErrorReport для красивого вывода ошибок
+type ErrorReport struct {
+	Errors     []SkorpionError
+	FilePath   string
+	SourceCode []string
+	TotalTime  time.Duration
 }

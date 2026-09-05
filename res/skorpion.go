@@ -9,6 +9,8 @@ import (
 	"skrp/res/errors"
 	"skrp/res/front"
 	"skrp/res/midlevel"
+	"strings"
+	"time"
 )
 
 var (
@@ -37,6 +39,13 @@ func InitLang(args []string) {
 		buildProject()
 	case "test":
 		testProject()
+	case "--explain", "-e":
+		if len(args) > 1 {
+			errors.ExplainError(args[1])
+		} else {
+			fmt.Println("Usage: skorpion --explain <error-code>")
+			fmt.Println("Example: skorpion --explain Err+1043")
+		}
 
 	// Команды управления профилями
 	case "add-profile":
@@ -110,6 +119,8 @@ func parseFlags(args []string) []string {
 }
 
 func buildProject() {
+	startTime := time.Now()
+
 	fmt.Println(cli.Colors.Bold(cli.Colors.Cyan("Building Skorpion project...")))
 
 	projectPath := buildPath
@@ -119,7 +130,7 @@ func buildProject() {
 	cfg := front.ParseConfig(configPath)
 	if cfg == nil {
 		errors.NewError("1001", "Cannot read manifest.spc", 0, 0, "manifest.spc")
-		errors.PrintErrors()
+		printErrorReport(startTime, "manifest.spc", nil)
 		return
 	}
 
@@ -130,11 +141,20 @@ func buildProject() {
 	}
 	mainFile = filepath.Join(projectPath, mainFile)
 
+	// Читаем исходник для вывода ошибок
+	content, err := os.ReadFile(mainFile)
+	if err != nil {
+		errors.NewError("1001", fmt.Sprintf("Cannot read %s", mainFile), 0, 0, mainFile)
+		printErrorReport(startTime, mainFile, nil)
+		return
+	}
+	sourceLines := strings.Split(string(content), "\n")
+
 	// Загружаем программу с импортами
 	mainProg, err := front.LoadProgram(mainFile)
 	if err != nil {
 		errors.NewFatalError("1001", fmt.Sprintf("Import error: %v", err), 0, 0, mainFile)
-		errors.PrintErrors()
+		printErrorReport(startTime, mainFile, sourceLines)
 		os.Exit(1)
 		return
 	}
@@ -142,7 +162,6 @@ func buildProject() {
 	// Если нужно показать токены
 	if showTokens {
 		fmt.Println(cli.Colors.Bold(cli.Colors.Yellow("\n=== Tokens ===")))
-		content, _ := os.ReadFile(mainFile)
 		lexer := front.NewLexer(string(content))
 		tok := lexer.NextToken()
 		for tok.Type != front.TOKEN_EOF {
@@ -152,7 +171,7 @@ func buildProject() {
 		fmt.Println()
 
 		if errors.HasFatal() {
-			errors.PrintErrors()
+			printErrorReport(startTime, mainFile, sourceLines)
 			os.Exit(1)
 			return
 		}
@@ -176,24 +195,25 @@ func buildProject() {
 	semantic.SetImportManager(im)
 
 	if !semantic.Analyze() {
-		errors.PrintErrors()
+		printErrorReport(startTime, mainFile, sourceLines)
 		os.Exit(1)
 		return
 	}
 	fmt.Println(cli.Colors.Success("Semantic analysis passed"))
 
-	// ОПТИМИЗАЦИЯ — СОБИРАЕМ ВСЕ ФУНКЦИИ (main + импорты)
+	// ОПТИМИЗАЦИЯ — СОБИРАЕМ ВСЕ ФУНКЦИИ (main + импорты, включая неэкспортируемые)
 	allFunctions := make([]*front.Function, len(mainProg.Functions))
 	copy(allFunctions, mainProg.Functions)
 
-	// Добавляем функции из импортов
-	importedFuncs := im.GetAllFunctions()
-	allFunctions = append(allFunctions, importedFuncs...)
+	// Добавляем ВСЕ функции из импортов (включая неэкспортируемые)
+	// Для этого нужно получить их из ImportManager
+	allImportedFunctions := im.GetAllFunctionsInternal() // ← НУЖЕН НОВЫЙ МЕТОД
 
-	// ОПТИМИЗАЦИЯ — используем ВСЕ функции
+	allFunctions = append(allFunctions, allImportedFunctions...)
+
 	mergedProg := &front.Program{
 		Imports:   mainProg.Imports,
-		Functions: mainProg.AllFunctions, // ← Все функции!
+		Functions: allFunctions,
 	}
 
 	mid := midlevel.NewMidLevel(mergedProg)
@@ -232,7 +252,7 @@ func buildProject() {
 	// Создаём директорию
 	if err := os.MkdirAll(buildConfig.OutputDir, 0755); err != nil {
 		errors.NewFatalError("2004", fmt.Sprintf("Cannot create output directory: %v", err), 0, 0, "")
-		errors.PrintErrors()
+		printErrorReport(startTime, mainFile, sourceLines)
 		os.Exit(1)
 		return
 	}
@@ -252,7 +272,7 @@ func buildProject() {
 	// Сборка бинарника
 	fmt.Println("Building binary...")
 	if !back.Build(ir, buildConfig) {
-		errors.PrintErrors()
+		printErrorReport(startTime, mainFile, sourceLines)
 		os.Exit(1)
 		return
 	}
@@ -263,6 +283,20 @@ func buildProject() {
 func testProject() {
 	fmt.Println(cli.Colors.Bold(cli.Colors.Cyan("Testing Skorpion project...")))
 	// TODO: Реализовать тестирование
+}
+
+func printErrorReport(startTime time.Time, filePath string, sourceLines []string) {
+	if !errors.HasErrors() {
+		return
+	}
+
+	report := errors.ErrorReport{
+		Errors:     errors.TakeErrorsList(),
+		FilePath:   filePath,
+		SourceCode: sourceLines,
+		TotalTime:  time.Since(startTime),
+	}
+	errors.PrintErrorReport(report)
 }
 
 func printAST(node front.Node, indent int) {
@@ -376,6 +410,12 @@ func printAST(node front.Node, indent int) {
 		if n.Then != nil {
 			printAST(n.Then, indent+1)
 		}
+		for _, elsif := range n.Elsifs {
+			fmt.Println(prefix + cli.Colors.Yellow("Elsif"))
+			if elsif.Then != nil {
+				printAST(elsif.Then, indent+1)
+			}
+		}
 		if n.Else != nil {
 			fmt.Println(prefix + cli.Colors.Dim("Else:"))
 			printAST(n.Else, indent+1)
@@ -391,6 +431,20 @@ func printAST(node front.Node, indent int) {
 		fmt.Println(prefix + cli.Colors.Yellow("For"))
 		if n.Body != nil {
 			printAST(n.Body, indent+1)
+		}
+
+	case *front.CaseStmt:
+		fmt.Println(prefix + cli.Colors.Yellow("Case"))
+		for _, branch := range n.Branches {
+			fmt.Printf("%s  Pattern: ", prefix)
+			printAST(branch.Pattern, 0)
+			if branch.Body != nil {
+				printAST(branch.Body, indent+2)
+			}
+		}
+		if n.Default != nil {
+			fmt.Println(prefix + cli.Colors.Yellow("  Default:"))
+			printAST(n.Default, indent+2)
 		}
 
 	case *front.Number:

@@ -10,6 +10,16 @@ func NewParser(input string) *Parser {
 	p := &Parser{
 		lexer:     NewLexer(input),
 		hasErrors: false,
+		FileName:  "<input>",
+	}
+	return p
+}
+
+func NewParserWithFile(input string, fileName string) *Parser {
+	p := &Parser{
+		lexer:     NewLexer(input),
+		hasErrors: false,
+		FileName:  fileName,
 	}
 	return p
 }
@@ -39,13 +49,29 @@ func LoadProgram(mainFile string) (*Program, error) {
 
 // Получение всех функций из программы и импортов
 func GetAllFunctions(prog *Program, im *ImportManager) []*Function {
-	// Только функции из main, не из импортов
-	return prog.Functions
+	allFunctions := make([]*Function, len(prog.Functions))
+	copy(allFunctions, prog.Functions)
+
+	if im != nil {
+		imported := im.GetAllFunctions()
+		allFunctions = append(allFunctions, imported...)
+	}
+
+	return allFunctions
 }
 
 // Создание AST из нескольких файлов
 func BuildProgram(files map[string]string) *Program {
 	mainProg := &Program{Imports: []*Import{}, Functions: []*Function{}}
+
+	for path, content := range files {
+		path += ""
+		prog := InitAST(content)
+		if prog != nil {
+			mainProg.Imports = append(mainProg.Imports, prog.Imports...)
+			mainProg.Functions = append(mainProg.Functions, prog.Functions...)
+		}
+	}
 
 	return mainProg
 }

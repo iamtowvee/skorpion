@@ -63,7 +63,7 @@ func (sa *SemanticAnalyzer) registerImportedFunctions() {
 }
 
 func (sa *SemanticAnalyzer) resolveFunction(name string) *front.Function {
-	debug.Debug("resolveFunction: %s\n", name)
+	debug.Debug("resolveFunction: %s", name)
 
 	// Сначала ищем в текущем файле
 	for _, fn := range sa.Program.Functions {
@@ -521,16 +521,16 @@ func (sa *SemanticAnalyzer) analyzeIf(ifStmt *front.IfStmt) front.Node {
 }
 
 func (sa *SemanticAnalyzer) analyzeCase(caseStmt *front.CaseStmt) front.Node {
-	fmt.Printf("[DEBUG] analyzeCase: checking value\n")
+	debug.Debug("analyzeCase: checking value\n")
 
 	// Проверяем значение
 	valueType := sa.getNodeType(caseStmt.Value)
-	fmt.Printf("[DEBUG] Case value type: %s\n", valueType)
+	debug.Debug("Case value type: %s\n", valueType)
 
 	// Проверяем каждую ветку
 	for _, branch := range caseStmt.Branches {
 		patternType := sa.getNodeType(branch.Pattern)
-		fmt.Printf("[DEBUG] Pattern type: %s\n", patternType)
+		debug.Debug("Pattern type: %s\n", patternType)
 
 		// Паттерн должен совпадать по типу со значением
 		if patternType != valueType && patternType != "" {

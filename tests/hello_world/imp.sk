@@ -1,9 +1,9 @@
 use std/io
 
-void *called(any b) {
+void *called(string b) {
     io.sendln("DON'T EXIST IN THIS CONTEXT" + b)
 }
 
 void call(any a) {
-    called(a)
+    called($a)
 }

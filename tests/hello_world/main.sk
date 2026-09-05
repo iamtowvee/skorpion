@@ -1,10 +1,12 @@
 use std/io
+use imp
 
 void main(arr args) {
+    imp.call(3)
     int i = 0
     case (i) {
         0 {
-            io.sendln($i)
+            io.sendln($i);
         },
         _ {
             io.sendln($i)

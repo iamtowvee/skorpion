@@ -46,16 +46,13 @@ func (im *ImportManager) LoadMain(path string) (*Program, error) {
 		return nil, fmt.Errorf("cannot read main file %s: %v", path, err)
 	}
 
-	// Парсим главный файл
-	parser := NewParser(string(content))
+	// Парсим главный файл С ИМЕНЕМ ФАЙЛА!
+	parser := NewParserWithFile(string(content), path)
 	mainProg := parser.Parse()
 
 	if mainProg == nil {
 		return nil, fmt.Errorf("failed to parse main file: %s", path)
 	}
-
-	mainProg.AllFunctions = []*Function{}
-	mainProg.AllFunctions = append(mainProg.AllFunctions, mainProg.Functions...)
 
 	// Загружаем импорты
 	visited := make(map[string]bool)
@@ -65,10 +62,7 @@ func (im *ImportManager) LoadMain(path string) (*Program, error) {
 			return nil, err
 		}
 
-		// Добавляем ВСЕ функции из модуля (включая неэкспортируемые)
-		mainProg.AllFunctions = append(mainProg.AllFunctions, subProg.Functions...)
-
-		// Добавляем ТОЛЬКО экспортируемые в список импортированных
+		// Добавляем ТОЛЬКО экспортируемые функции
 		for _, fn := range subProg.Functions {
 			if fn.IsExport {
 				im.importedFuncs = append(im.importedFuncs, fn)
@@ -89,6 +83,7 @@ func (im *ImportManager) loadModuleInternal(path string, visited map[string]bool
 		return loaded.Program, nil
 	}
 
+	// Резолвим путь
 	fullPath, found, builtin := im.resolver.Resolve(path)
 	if !found {
 		return nil, fmt.Errorf("module not found: %s", path)
@@ -110,25 +105,27 @@ func (im *ImportManager) loadModuleInternal(path string, visited map[string]bool
 		content = string(data)
 	}
 
-	parser := NewParser(content)
+	// Парсим с именем файла
+	var parser *Parser
+	if builtin {
+		parser = NewParserWithFile(content, "<builtin:"+path+">")
+	} else {
+		parser = NewParserWithFile(content, fullPath)
+	}
 	prog := parser.Parse()
 
 	if prog == nil {
 		return nil, fmt.Errorf("failed to parse module: %s", path)
 	}
 
+	// Загружаем вложенные импорты
 	visited[path] = true
 	for _, imp := range prog.Imports {
 		subProg, err := im.loadModuleInternal(imp.Path, visited)
 		if err != nil {
 			return nil, err
 		}
-		// Добавляем ТОЛЬКО экспортируемые функции
-		for _, fn := range subProg.Functions {
-			if fn.IsExport {
-				prog.Functions = append(prog.Functions, fn)
-			}
-		}
+		prog.Functions = append(prog.Functions, subProg.Functions...)
 	}
 	delete(visited, path)
 
@@ -181,4 +178,15 @@ func GetModuleName(path string) string {
 
 func IsExportable(fn *Function) bool {
 	return fn.IsExport
+}
+
+func (im *ImportManager) GetAllFunctionsInternal() []*Function {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+
+	var allFunctions []*Function
+	for _, mod := range im.loaded {
+		allFunctions = append(allFunctions, mod.Program.Functions...)
+	}
+	return allFunctions
 }
