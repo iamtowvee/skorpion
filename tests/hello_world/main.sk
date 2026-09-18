@@ -1,12 +1,9 @@
 use std/io
-use imp
+
+arr ri(any x) {
+    return (x, 4).to_arr()
+}
 
 void main(arr args) {
-    imp.call(3)
-    int i = 0
-    case (i) {
-        0 {
-            io.sendln(type(i));
-        },
-    }
+    io.sendln($ri("5"))
 }

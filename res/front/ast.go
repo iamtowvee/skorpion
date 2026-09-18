@@ -5,27 +5,31 @@ import "strings"
 type NodeType string
 
 const (
-	NODE_PROGRAM     NodeType = "Program"
-	NODE_FUNCTION    NodeType = "Function"
-	NODE_VAR_DECL    NodeType = "VarDecl"
-	NODE_ASSIGN      NodeType = "Assign"
-	NODE_BINARY      NodeType = "Binary"
-	NODE_UNARY       NodeType = "Unary"
-	NODE_CALL        NodeType = "Call"
-	NODE_RETURN      NodeType = "Return"
-	NODE_BLOCK       NodeType = "Block"
-	NODE_IDENT       NodeType = "Ident"
-	NODE_NUMBER      NodeType = "Number"
-	NODE_STRING      NodeType = "String"
-	NODE_IF          NodeType = "If"
-	NODE_ELSIF       NodeType = "Elsif"
-	NODE_CASE        NodeType = "Case"
-	NODE_CASE_BRANCH NodeType = "CaseBranch"
-	NODE_WHILE       NodeType = "While"
-	NODE_FOR         NodeType = "For"
-	NODE_TYPEOF      NodeType = "TypeOf"
-	NODE_IMPORT      NodeType = "Import"
-	NODE_INCLUDE_C   NodeType = "IncludeC"
+	NODE_PROGRAM       NodeType = "Program"
+	NODE_FUNCTION      NodeType = "Function"
+	NODE_VAR_DECL      NodeType = "VarDecl"
+	NODE_ASSIGN        NodeType = "Assign"
+	NODE_BINARY        NodeType = "Binary"
+	NODE_UNARY         NodeType = "Unary"
+	NODE_CALL          NodeType = "Call"
+	NODE_RETURN        NodeType = "Return"
+	NODE_BLOCK         NodeType = "Block"
+	NODE_IDENT         NodeType = "Ident"
+	NODE_NUMBER        NodeType = "Number"
+	NODE_STRING        NodeType = "String"
+	NODE_IF            NodeType = "If"
+	NODE_ELSIF         NodeType = "Elsif"
+	NODE_CASE          NodeType = "Case"
+	NODE_CASE_BRANCH   NodeType = "CaseBranch"
+	NODE_WHILE         NodeType = "While"
+	NODE_FOR           NodeType = "For"
+	NODE_TYPEOF        NodeType = "TypeOf"
+	NODE_ARRAY_LITERAL NodeType = "ArrayLiteral"
+	NODE_ARRAY_INDEX   NodeType = "ArrayIndex"
+	NODE_ARRAY_LENGTH  NodeType = "ArrayLength"
+	NODE_ARRAY_ADD     NodeType = "ArrayAdd"
+	NODE_IMPORT        NodeType = "Import"
+	NODE_INCLUDE_C     NodeType = "IncludeC"
 )
 
 type Node interface {
@@ -81,10 +85,38 @@ type TypeOf struct {
 
 func (t *TypeOf) GetType() NodeType { return NODE_TYPEOF }
 
-type VarDecl struct {
+type ArrayLiteral struct {
+	Elements []Node
+}
+
+func (a *ArrayLiteral) GetType() NodeType { return NODE_ARRAY_LITERAL }
+
+type ArrayIndex struct {
+	Name  string
+	Index Node
+}
+
+func (a *ArrayIndex) GetType() NodeType { return NODE_ARRAY_INDEX }
+
+type ArrayLength struct {
 	Name string
-	Type string
-	Expr Node
+}
+
+func (a *ArrayLength) GetType() NodeType { return NODE_ARRAY_LENGTH }
+
+type ArrayAdd struct {
+	Name string
+	Elem Node
+}
+
+func (a *ArrayAdd) GetType() NodeType { return NODE_ARRAY_ADD }
+
+type VarDecl struct {
+	Name     string
+	Type     string
+	ElemType string
+	Expr     Node
+	IsArray  bool
 }
 
 func (v *VarDecl) GetType() NodeType     { return NODE_VAR_DECL }

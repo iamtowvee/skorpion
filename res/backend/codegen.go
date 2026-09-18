@@ -70,6 +70,48 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("void* any_get_ptr(sk_any a) { return a.data.p; }")
 	cg.writeLine("")
 
+	cg.writeLine("// Any converters")
+	cg.writeLine("int any_to_int(sk_any a) {")
+	cg.writeLine("    switch (a.type) {")
+	cg.writeLine("        case 0: return a.data.i;")
+	cg.writeLine("        case 2: return (int)a.data.f;")
+	cg.writeLine("        case 3: return (int)a.data.d;")
+	cg.writeLine("        case 4: return a.data.b ? 1 : 0;")
+	cg.writeLine("        case 1: return atoi(a.data.s);")
+	cg.writeLine("        default: return 0;")
+	cg.writeLine("    }")
+	cg.writeLine("}")
+	cg.writeLine("float any_to_float(sk_any a) {")
+	cg.writeLine("    switch (a.type) {")
+	cg.writeLine("        case 0: return (float)a.data.i;")
+	cg.writeLine("        case 2: return a.data.f;")
+	cg.writeLine("        case 3: return (float)a.data.d;")
+	cg.writeLine("        case 4: return a.data.b ? 1.0f : 0.0f;")
+	cg.writeLine("        case 1: return atof(a.data.s);")
+	cg.writeLine("        default: return 0.0f;")
+	cg.writeLine("    }")
+	cg.writeLine("}")
+	cg.writeLine("double any_to_double(sk_any a) {")
+	cg.writeLine("    switch (a.type) {")
+	cg.writeLine("        case 0: return (double)a.data.i;")
+	cg.writeLine("        case 2: return (double)a.data.f;")
+	cg.writeLine("        case 3: return a.data.d;")
+	cg.writeLine("        case 4: return a.data.b ? 1.0 : 0.0;")
+	cg.writeLine("        case 1: return atof(a.data.s);")
+	cg.writeLine("        default: return 0.0;")
+	cg.writeLine("    }")
+	cg.writeLine("}")
+	cg.writeLine("int any_to_bool(sk_any a) {")
+	cg.writeLine("    switch (a.type) {")
+	cg.writeLine("        case 0: return a.data.i != 0;")
+	cg.writeLine("        case 2: return a.data.f != 0.0f;")
+	cg.writeLine("        case 3: return a.data.d != 0.0;")
+	cg.writeLine("        case 4: return a.data.b;")
+	cg.writeLine("        case 1: return a.data.s[0] != '\\0';")
+	cg.writeLine("        default: return 0;")
+	cg.writeLine("    }")
+	cg.writeLine("}")
+
 	cg.writeLine("// Any to string")
 	cg.writeLine("sk_string any_to_string(sk_any a) {")
 	cg.writeLine("    char buf[64];")
@@ -84,6 +126,55 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("    }")
 	cg.writeLine("}")
 	cg.writeLine("")
+
+	// В Generate() после any типов
+	cg.writeLine("// Skorpion array type")
+	cg.writeLine("typedef struct {")
+	cg.writeLine("    void* data;")
+	cg.writeLine("    int length;")
+	cg.writeLine("    int capacity;")
+	cg.writeLine("    int elem_size;")
+	cg.writeLine("    int elem_type; // 0=int,1=string,2=float,3=double,4=bool,5=any")
+	cg.writeLine("} sk_array;")
+	cg.writeLine("")
+	cg.writeLine("sk_array* sk_array_new(int elem_size, int elem_type) {")
+	cg.writeLine("    sk_array* a = malloc(sizeof(sk_array));")
+	cg.writeLine("    a->data = NULL;")
+	cg.writeLine("    a->length = 0;")
+	cg.writeLine("    a->capacity = 0;")
+	cg.writeLine("    a->elem_size = elem_size;")
+	cg.writeLine("    a->elem_type = elem_type;")
+	cg.writeLine("    return a;")
+	cg.writeLine("}")
+	cg.writeLine("")
+	cg.writeLine("void sk_array_push(sk_array* a, void* elem) {")
+	cg.writeLine("    if (a->length >= a->capacity) {")
+	cg.writeLine("        a->capacity = a->capacity == 0 ? 4 : a->capacity * 2;")
+	cg.writeLine("        a->data = realloc(a->data, a->capacity * a->elem_size);")
+	cg.writeLine("    }")
+	cg.writeLine("    memcpy((char*)a->data + a->length * a->elem_size, elem, a->elem_size);")
+	cg.writeLine("    a->length++;")
+	cg.writeLine("}")
+	cg.writeLine("")
+	cg.writeLine("void* sk_array_get(sk_array* a, int index) {")
+	cg.writeLine("    if (index < 0 || index >= a->length) return NULL;")
+	cg.writeLine("    return (char*)a->data + index * a->elem_size;")
+	cg.writeLine("}")
+	cg.writeLine("")
+	cg.writeLine("int sk_array_len(sk_array* a) { return a->length; }")
+	cg.writeLine("")
+	cg.writeLine("sk_array* sk_array_copy(sk_array* a) {")
+	cg.writeLine("    sk_array* new = sk_array_new(a->elem_size, a->elem_type);")
+	cg.writeLine("    for (int i = 0; i < a->length; i++) {")
+	cg.writeLine("        sk_array_push(new, sk_array_get(a, i));")
+	cg.writeLine("    }")
+	cg.writeLine("    return new;")
+	cg.writeLine("}")
+	cg.writeLine("")
+	cg.writeLine("void sk_array_free(sk_array* a) {")
+	cg.writeLine("    free(a->data);")
+	cg.writeLine("    free(a);")
+	cg.writeLine("}")
 
 	cg.writeLine("// Function prototypes")
 	for _, fn := range cg.IR.Functions {
@@ -192,12 +283,13 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 		cg.writeLine(fmt.Sprintf("%s    case 3: strcpy(buf, \"double\"); break;", indent))
 		cg.writeLine(fmt.Sprintf("%s    case 4: strcpy(buf, \"bool\"); break;", indent))
 		cg.writeLine(fmt.Sprintf("%s    case 5: strcpy(buf, \"ptr\"); break;", indent))
+		cg.writeLine(fmt.Sprintf("%s    case 6: strcpy(buf, \"ptr\"); break;", indent))
 		cg.writeLine(fmt.Sprintf("%s    default: strcpy(buf, \"unknown\"); break;", indent))
 		cg.writeLine(fmt.Sprintf("%s}", indent))
 		cg.writeLine(fmt.Sprintf("%s%s = strdup(buf);", indent, ins.Result))
 
 	case "comment":
-		cg.writeLine(fmt.Sprintf("%s// %s", indent, ins.Arg1))
+		cg.writeLine(fmt.Sprintf("%s%s", indent, ins.Arg1))
 
 	case "strcat":
 		cg.writeLine(fmt.Sprintf("%schar %s[256];", indent, ins.Result))
@@ -258,6 +350,41 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 		} else {
 			cg.writeLine(fmt.Sprintf("%sreturn;", indent))
 		}
+
+	case "cast_bool_to_int":
+		cg.writeLine(fmt.Sprintf("%sint %s = %s ? 1 : 0;", indent, ins.Result, ins.Arg1))
+	case "cast_num_to_int":
+		cg.writeLine(fmt.Sprintf("%sint %s = (int)%s;", indent, ins.Result, ins.Arg1))
+	case "cast_str_to_int":
+		cg.writeLine(fmt.Sprintf("%sint %s = atoi(%s);", indent, ins.Result, ins.Arg1))
+	case "cast_bool_to_float":
+		cg.writeLine(fmt.Sprintf("%sfloat %s = %s ? 1.0f : 0.0f;", indent, ins.Result, ins.Arg1))
+	case "cast_num_to_float":
+		cg.writeLine(fmt.Sprintf("%sfloat %s = (float)%s;", indent, ins.Result, ins.Arg1))
+	case "cast_str_to_float":
+		cg.writeLine(fmt.Sprintf("%sfloat %s = (float)atof(%s);", indent, ins.Result, ins.Arg1))
+	case "cast_bool_to_double":
+		cg.writeLine(fmt.Sprintf("%sdouble %s = %s ? 1.0 : 0.0;", indent, ins.Result, ins.Arg1))
+	case "cast_num_to_double":
+		cg.writeLine(fmt.Sprintf("%sdouble %s = (double)%s;", indent, ins.Result, ins.Arg1))
+	case "cast_str_to_double":
+		cg.writeLine(fmt.Sprintf("%sdouble %s = atof(%s);", indent, ins.Result, ins.Arg1))
+	case "cast_bool_to_str":
+		cg.writeLine(fmt.Sprintf("%ssk_string %s = strdup(%s ? \"true\" : \"false\");", indent, ins.Result, ins.Arg1))
+	case "cast_num_to_str":
+		cg.writeLine(fmt.Sprintf("%schar _buf_%s[64]; snprintf(_buf_%s, 64, \"%%g\", (double)%s); sk_string %s = strdup(_buf_%s);", indent, ins.Result, ins.Result, ins.Arg1, ins.Result, ins.Result))
+	case "cast_num_to_bool":
+		cg.writeLine(fmt.Sprintf("%sint %s = %s > 0;", indent, ins.Result, ins.Arg1))
+	case "cast_str_to_bool":
+		cg.writeLine(fmt.Sprintf("%sint %s = (%s[0] != '\\0');", indent, ins.Result, ins.Arg1))
+
+	case "array_get":
+		cg.writeLine(fmt.Sprintf("%svoid* %s = sk_array_get(%s, %s);", indent, ins.Result, ins.Arg1, ins.Arg2))
+	case "array_len":
+		cg.writeLine(fmt.Sprintf("%sint %s = sk_array_len(%s);", indent, ins.Result, ins.Arg1))
+	case "array_add":
+		cg.writeLine(fmt.Sprintf("%ssk_array* %s = sk_array_copy(%s);", indent, ins.Result, ins.Arg1))
+		cg.writeLine(fmt.Sprintf("%ssk_array_push(%s, &%s);", indent, ins.Result, ins.Arg2))
 
 	case "call":
 		if ins.Result != "" {

@@ -448,8 +448,11 @@ func (p *Parser) parseCase() Node {
 			break
 		}
 
+		debug.Debug("parseCase: parsing pattern, current token: %s (%s)", p.peek.Literal, p.peek.Type.String())
+
 		// Парсим паттерн
 		pattern := p.parseExpression()
+		debug.Debug("parseCase: pattern parsed: %T", pattern)
 		if pattern == nil {
 			return nil
 		}
@@ -460,6 +463,7 @@ func (p *Parser) parseCase() Node {
 			if defaultBlock == nil {
 				return nil
 			}
+			debug.Debug("parseCase: default block parsed, current token: %s (%s)", p.peek.Literal, p.peek.Type.String())
 			// После default запятая обязательна!
 			if p.peek.Type != TOKEN_COMMA {
 				p.hasErrors = true
@@ -477,6 +481,7 @@ func (p *Parser) parseCase() Node {
 		if body == nil {
 			return nil
 		}
+		debug.Debug("parseCase: body parsed, current token after body: %s (%s)", p.peek.Literal, p.peek.Type.String())
 
 		branches = append(branches, &CaseBranch{
 			Pattern: pattern,
@@ -485,8 +490,10 @@ func (p *Parser) parseCase() Node {
 
 		// ЗАПЯТАЯ ОБЯЗАТЕЛЬНА ПОСЛЕ КАЖДОЙ ВЕТКИ
 		if p.peek.Type == TOKEN_COMMA {
+			debug.Debug("parseCase: found comma")
 			p.advance()
 		} else {
+			debug.Debug("parseCase: expected comma, got: %s (%s)", p.peek.Literal, p.peek.Type.String())
 			p.hasErrors = true
 			errors.NewFatalError("0019",
 				fmt.Sprintf("Expected ',' after case branch (at %d:%d)", p.peek.Line, p.peek.Column),
@@ -608,6 +615,71 @@ func (p *Parser) parseVarDecl() Node {
 		return nil
 	}
 
+	// Проверяем, не arr ли это с типом
+	if p.peek.Literal == "arr" {
+		p.advance()
+
+		var elemType string
+
+		// Проверяем, есть ли [тип]
+		if p.peek.Type == TOKEN_LBRACKET {
+			p.advance()
+			if p.peek.Type == TOKEN_KEYWORD || p.peek.Literal == "int" || p.peek.Literal == "string" ||
+				p.peek.Literal == "float" || p.peek.Literal == "double" || p.peek.Literal == "bool" ||
+				p.peek.Literal == "char" || p.peek.Literal == "any" {
+				elemType = p.peek.Literal
+				p.advance()
+			} else {
+				p.hasErrors = true
+				errors.NewFatalError("0020",
+					fmt.Sprintf("Expected type in arr[], got '%s'", p.peek.Literal),
+					p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			if p.peek.Type != TOKEN_RBRACKET {
+				p.hasErrors = true
+				errors.NewFatalError("0021",
+					fmt.Sprintf("Expected ']', got '%s'", p.peek.Literal),
+					p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			p.advance()
+		}
+
+		// Имя переменной
+		if p.peek.Type != TOKEN_IDENT {
+			p.hasErrors = true
+			errors.NewFatalError("0011",
+				fmt.Sprintf("Expected variable name, got '%s'", p.peek.Literal),
+				p.peek.Line, p.peek.Column, p.FileName)
+			return nil
+		}
+		name := p.peek.Literal
+		p.advance()
+
+		var expr Node
+		if p.peek.Type == TOKEN_EQUALS {
+			p.advance()
+			expr = p.parseExpression()
+			if expr == nil {
+				return nil
+			}
+		}
+
+		if p.peek.Type == TOKEN_SEMICOLON {
+			p.advance()
+		}
+
+		return &VarDecl{
+			Name:     name,
+			Type:     "arr",
+			ElemType: elemType,
+			Expr:     expr,
+			IsArray:  true,
+		}
+	}
+
+	// Обычная переменная
 	varType := p.peek.Literal
 	p.advance()
 
@@ -634,7 +706,7 @@ func (p *Parser) parseVarDecl() Node {
 		p.advance()
 	}
 
-	return &VarDecl{Name: name, Type: varType, Expr: expr}
+	return &VarDecl{Name: name, Type: varType, Expr: expr, IsArray: false}
 }
 
 func (p *Parser) parseAssignmentOrCall() Node {
@@ -827,20 +899,78 @@ func (p *Parser) parsePrimary() Node {
 		name := p.peek.Literal
 		p.advance()
 
-		// Проверяем, не точка ли это (module.function)
+		// arr[index]
+		if p.peek.Type == TOKEN_LBRACKET {
+			p.advance()
+			index := p.parseExpression()
+			if index == nil {
+				return nil
+			}
+			if p.peek.Type != TOKEN_RBRACKET {
+				p.hasErrors = true
+				errors.NewFatalError("0023",
+					fmt.Sprintf("Expected ']', got '%s'", p.peek.Literal),
+					p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			p.advance()
+			return &ArrayIndex{Name: name, Index: index}
+		}
+
+		// arr.length
 		if p.peek.Type == TOKEN_DOT {
 			p.advance()
+			if p.peek.Literal == "length" {
+				p.advance()
+				return &ArrayLength{Name: name}
+			}
+			// x.func() — вызов метода
 			if p.peek.Type == TOKEN_IDENT {
-				moduleName := name
 				funcName := p.peek.Literal
 				p.advance()
-				fullName := moduleName + "." + funcName
 
-				if p.peek.Type == TOKEN_LPAREN {
-					return p.parseCall(fullName)
+				if p.peek.Type != TOKEN_LPAREN {
+					p.hasErrors = true
+					errors.NewFatalError("0040",
+						fmt.Sprintf("Expected '(' after '%s'", funcName),
+						p.peek.Line, p.peek.Column, p.FileName)
+					return nil
 				}
-				return &Ident{Name: fullName}
+				p.advance() // (
+
+				var callArgs []Node
+				if p.peek.Type != TOKEN_RPAREN {
+					for {
+						arg := p.parseExpression()
+						if arg == nil {
+							return nil
+						}
+						callArgs = append(callArgs, arg)
+						if p.peek.Type == TOKEN_COMMA {
+							p.advance()
+							continue
+						}
+						break
+					}
+				}
+				p.expect(TOKEN_RPAREN)
+
+				// Вставляем name как первый аргумент
+				allArgs := []Node{&Ident{Name: name}}
+				allArgs = append(allArgs, callArgs...)
+
+				return &CallExpr{Name: funcName, Args: allArgs}
 			}
+		}
+
+		// arr + el
+		if p.peek.Type == TOKEN_PLUS {
+			p.advance()
+			elem := p.parseExpression()
+			if elem == nil {
+				return nil
+			}
+			return &ArrayAdd{Name: name, Elem: elem}
 		}
 
 		if p.peek.Type == TOKEN_LPAREN {
@@ -870,15 +1000,98 @@ func (p *Parser) parsePrimary() Node {
 
 	case TOKEN_LPAREN:
 		p.advance()
-		expr := p.parseExpression()
-		if expr == nil {
+		first := p.parseExpression()
+		if first == nil {
 			return nil
 		}
+
+		// Если после первого выражения запятая — это кортеж (a, b, c).func()
+		if p.peek.Type == TOKEN_COMMA {
+			items := []Node{first}
+			for p.peek.Type == TOKEN_COMMA {
+				p.advance()
+				item := p.parseExpression()
+				if item == nil {
+					return nil
+				}
+				items = append(items, item)
+			}
+			p.expect(TOKEN_RPAREN)
+
+			// Проверяем .func()
+			if p.peek.Type == TOKEN_DOT {
+				p.advance()
+				if p.peek.Type != TOKEN_IDENT {
+					p.hasErrors = true
+					errors.NewFatalError("0040",
+						fmt.Sprintf("Expected method name after '.'"),
+						p.peek.Line, p.peek.Column, p.FileName)
+					return nil
+				}
+				funcName := p.peek.Literal
+				p.advance()
+				p.expect(TOKEN_LPAREN)
+
+				var callArgs []Node
+				if p.peek.Type != TOKEN_RPAREN {
+					for {
+						arg := p.parseExpression()
+						if arg == nil {
+							return nil
+						}
+						callArgs = append(callArgs, arg)
+						if p.peek.Type == TOKEN_COMMA {
+							p.advance()
+							continue
+						}
+						break
+					}
+				}
+				p.expect(TOKEN_RPAREN)
+
+				// items — уже аргументы
+				allArgs := items
+				allArgs = append(allArgs, callArgs...)
+				return &CallExpr{Name: funcName, Args: allArgs}
+			}
+
+			// (a, b) без .func() — это массив
+			return &ArrayLiteral{Elements: items}
+		}
+
 		p.expect(TOKEN_RPAREN)
 		if p.hasErrors || errors.HasFatal() {
 			return nil
 		}
-		return expr
+		return first
+
+	case TOKEN_LBRACKET:
+		p.advance()
+		elements := []Node{}
+		if p.peek.Type != TOKEN_RBRACKET {
+			for {
+				expr := p.parseExpression()
+				if expr == nil {
+					return nil
+				}
+				elements = append(elements, expr)
+				if p.peek.Type == TOKEN_COMMA {
+					p.advance()
+					continue
+				} else {
+					break
+				}
+			}
+		}
+		if p.peek.Type != TOKEN_RBRACKET {
+			p.hasErrors = true
+			errors.NewFatalError("0022",
+				fmt.Sprintf("Expected ']', got '%s'", p.peek.Literal),
+				p.peek.Line, p.peek.Column, p.FileName)
+			return nil
+		}
+		p.advance()
+		return &ArrayLiteral{Elements: elements}
 
 	default:
 		p.hasErrors = true

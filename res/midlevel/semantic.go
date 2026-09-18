@@ -177,6 +177,19 @@ func (sa *SemanticAnalyzer) initBuiltinTypes() {
 	for _, t := range types {
 		sa.GlobalScope.Define("type_"+t, SYM_CONST, "type", true)
 	}
+
+	// Встроенные функции конвертации
+	builtins := map[string]string{
+		"to_int":    "int",
+		"to_float":  "float",
+		"to_double": "double",
+		"to_string": "string",
+		"to_bool":   "bool",
+		"to_arr":    "arr",
+	}
+	for name, retType := range builtins {
+		sa.GlobalScope.Define(name, SYM_FUNCTION, retType, true)
+	}
 }
 
 func (sa *SemanticAnalyzer) registerFunction(fn *front.Function) {
@@ -304,7 +317,29 @@ func (sa *SemanticAnalyzer) analyzeUnary(unary *front.UnaryExpr) front.Node {
 }
 
 func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
-	// Проверяем, что переменная не объявлена дважды
+	if decl.IsArray {
+		if decl.Expr != nil {
+			if arrLit, ok := decl.Expr.(*front.ArrayLiteral); ok {
+				if decl.ElemType != "" {
+					for _, elem := range arrLit.Elements {
+						elemType := sa.getNodeType(elem)
+						if elemType != decl.ElemType && elemType != "" {
+							sa.addError("0030",
+								fmt.Sprintf("Array element type mismatch: expected '%s', got '%s'",
+									decl.ElemType, elemType),
+								0, 0, "")
+						}
+					}
+				}
+				for _, elem := range arrLit.Elements {
+					sa.analyzeNode(elem)
+				}
+			}
+		}
+		sa.CurrentScope.Define(decl.Name, SYM_VARIABLE, "arr", false)
+		return decl
+	}
+
 	if existing := sa.CurrentScope.ResolveLocal(decl.Name); existing != nil {
 		sa.addError("1008", fmt.Sprintf("Variable '%s' already declared in this scope", decl.Name), 0, 0, "")
 		return decl
@@ -461,6 +496,22 @@ func (sa *SemanticAnalyzer) analyzeReturn(ret *front.ReturnStmt) front.Node {
 
 func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
 	debug.Debug("analyzeCall: %s\n", call.Name)
+
+	// Встроенные функции принимают любое количество аргументов
+	builtinFuncs := map[string]bool{
+		"to_int":    true,
+		"to_float":  true,
+		"to_double": true,
+		"to_string": true,
+		"to_bool":   true,
+		"to_arr":    true,
+	}
+	if builtinFuncs[call.Name] {
+		for _, arg := range call.Args {
+			sa.analyzeNode(arg)
+		}
+		return call
+	}
 
 	// Проверяем, что функция существует
 	targetFunc := sa.resolveFunction(call.Name)
@@ -633,6 +684,8 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 		return "int"
 	case *front.String:
 		return "string"
+	case *front.ArrayLiteral:
+		return "arr"
 	case *front.TypeOf:
 		return "string"
 	case *front.Ident:
