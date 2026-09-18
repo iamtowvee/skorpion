@@ -156,8 +156,7 @@ func (p *Pipeline) processUnary(unary *front.UnaryExpr, irFn *IRFunction) string
 		expr := p.processExpression(unary.Expr, irFn)
 		result := p.newTemp()
 
-		switch exprType {
-		case "any":
+		if exprType == "any" {
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op:         "call",
 				Result:     result,
@@ -165,7 +164,7 @@ func (p *Pipeline) processUnary(unary *front.UnaryExpr, irFn *IRFunction) string
 				Arg2:       expr,
 				ReturnType: "sk_string",
 			})
-		case "arr":
+		} else if isArrayType(exprType) {
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op:         "call",
 				Result:     result,
@@ -173,25 +172,26 @@ func (p *Pipeline) processUnary(unary *front.UnaryExpr, irFn *IRFunction) string
 				Arg2:       expr,
 				ReturnType: "sk_string",
 			})
-		case "string":
+		} else if exprType == "string" {
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op:     "=",
 				Result: result,
 				Arg1:   expr,
 			})
-		case "bool":
+		} else if exprType == "bool" {
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op:     "cast_bool_to_str",
 				Result: result,
 				Arg1:   expr,
 			})
-		case "float", "double":
+		} else if exprType == "float" || exprType == "double" {
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op:     "cast_num_to_str",
 				Result: result,
 				Arg1:   expr,
 			})
-		default:
+		} else {
+			// int
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op:     "to_string",
 				Result: result,
@@ -212,28 +212,30 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 				elemType = 5
 
 				if decl.ElemType != "" {
-					switch decl.ElemType {
-					case "int":
-						elemType = 0
-						elemSize = "sizeof(int)"
-					case "string":
-						elemType = 1
-						elemSize = "sizeof(sk_string)"
-					case "float":
-						elemType = 2
-						elemSize = "sizeof(float)"
-					case "double":
-						elemType = 3
-						elemSize = "sizeof(double)"
-					case "bool":
-						elemType = 4
-						elemSize = "sizeof(sk_bool)"
-					case "arr":
+					if isArrayType(decl.ElemType) {
 						elemType = 6
 						elemSize = "sizeof(sk_array*)"
-					default:
-						elemType = 5
-						elemSize = "sizeof(sk_any)"
+					} else {
+						switch decl.ElemType {
+						case "int":
+							elemType = 0
+							elemSize = "sizeof(int)"
+						case "string":
+							elemType = 1
+							elemSize = "sizeof(sk_string)"
+						case "float":
+							elemType = 2
+							elemSize = "sizeof(float)"
+						case "double":
+							elemType = 3
+							elemSize = "sizeof(double)"
+						case "bool":
+							elemType = 4
+							elemSize = "sizeof(sk_bool)"
+						default:
+							elemType = 5
+							elemSize = "sizeof(sk_any)"
+						}
 					}
 				}
 
@@ -252,28 +254,32 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 					ReturnType: "sk_array*",
 				})
 
+				// Ожидаемый тип элемента
+				expectedElemType := parseArrayElemType(decl.ElemType)
+
 				for _, elem := range arrLit.Elements {
-					elemTypeName := p.getExprType(elem, irFn)
-					val := p.processExpression(elem, irFn)
+					val := p.processExpressionTyped(elem, expectedElemType, irFn)
 
 					if decl.ElemType != "" {
 						// Типизированный массив
 						var pushFunc string
-						switch decl.ElemType {
-						case "int":
-							pushFunc = "sk_array_push_int"
-						case "string":
-							pushFunc = "sk_array_push_string"
-						case "float":
-							pushFunc = "sk_array_push_float"
-						case "double":
-							pushFunc = "sk_array_push_double"
-						case "bool":
-							pushFunc = "sk_array_push_bool"
-						case "arr":
+						if isArrayType(decl.ElemType) {
 							pushFunc = "sk_array_push_arr"
-						default:
-							pushFunc = "sk_array_push_any"
+						} else {
+							switch decl.ElemType {
+							case "int":
+								pushFunc = "sk_array_push_int"
+							case "string":
+								pushFunc = "sk_array_push_string"
+							case "float":
+								pushFunc = "sk_array_push_float"
+							case "double":
+								pushFunc = "sk_array_push_double"
+							case "bool":
+								pushFunc = "sk_array_push_bool"
+							default:
+								pushFunc = "sk_array_push_any"
+							}
 						}
 						irFn.Instructions = append(irFn.Instructions, IRInstruction{
 							Op:   "call",
@@ -282,6 +288,7 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 						})
 					} else {
 						// Нетипизированный массив — оборачиваем в any
+						elemTypeName := p.getExprType(elem, irFn)
 						if elemTypeName == "any" {
 							irFn.Instructions = append(irFn.Instructions, IRInstruction{
 								Op:   "call",
@@ -550,7 +557,7 @@ func (p *Pipeline) processExpression(expr front.Node, irFn *IRFunction) string {
 		}
 		return "0"
 	case *front.ArrayLiteral:
-		return p.processArrayLiteral(n, irFn)
+		return p.processArrayLiteralTyped(n, "", irFn)
 	case *front.ArrayIndex:
 		return p.processArrayIndex(n, irFn)
 	case *front.ArrayLength:
@@ -1020,6 +1027,14 @@ func (p *Pipeline) processArrayIndex(idx *front.ArrayIndex, irFn *IRFunction) st
 			Arg1:       idx.Name,
 			Arg2:       index,
 			ReturnType: "sk_any",
+		})
+	} else if isArrayType(elemType) {
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "array_get_typed",
+			Result:     result,
+			Arg1:       idx.Name,
+			Arg2:       index,
+			ReturnType: "sk_array*",
 		})
 	} else {
 		cType := p.typeToC(elemType)
@@ -1504,6 +1519,9 @@ func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 				if elemType == "" {
 					return "any"
 				}
+				if isArrayType(elemType) {
+					return elemType // "arr[int]" или "arr"
+				}
 				return elemType
 			}
 		}
@@ -1518,6 +1536,9 @@ func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 }
 
 func (p *Pipeline) getAnyWrapperByType(t string) string {
+	if isArrayType(t) {
+		return "any_ptr"
+	}
 	switch t {
 	case "int":
 		return "any_int"
@@ -1529,14 +1550,15 @@ func (p *Pipeline) getAnyWrapperByType(t string) string {
 		return "any_double"
 	case "bool":
 		return "any_bool"
-	case "arr":
-		return "any_ptr"
 	default:
 		return "any_int"
 	}
 }
 
 func (p *Pipeline) getAnyGetterByType(t string) string {
+	if isArrayType(t) {
+		return "any_get_ptr"
+	}
 	switch t {
 	case "int":
 		return "any_get_int"
@@ -1548,8 +1570,6 @@ func (p *Pipeline) getAnyGetterByType(t string) string {
 		return "any_get_double"
 	case "bool":
 		return "any_get_bool"
-	case "arr":
-		return "any_get_ptr"
 	default:
 		return "any_get_int"
 	}
@@ -1601,6 +1621,145 @@ func (p *Pipeline) processArrayLiteral(lit *front.ArrayLiteral, irFn *IRFunction
 				Op:   "call",
 				Arg1: "sk_array_push_any",
 				Arg2: result + ", " + tempVar,
+			})
+		}
+	}
+
+	return result
+}
+
+// parseArrayElemType возвращает тип элемента из строки типа массива
+// "arr[int]" → "int"
+// "arr[arr[int]]" → "arr[int]"
+// "arr[arr]" → "arr"
+// "" → "" (нетипизированный)
+func parseArrayElemType(elemType string) string {
+	if elemType == "" {
+		return ""
+	}
+	if !strings.HasPrefix(elemType, "arr[") {
+		return elemType // "int", "string", ...
+	}
+	// "arr[int]" → "int"
+	inner := elemType[4 : len(elemType)-1]
+	return inner
+}
+
+// isArrayType проверяет, является ли тип массивом
+func isArrayType(t string) bool {
+	return t == "arr" || strings.HasPrefix(t, "arr[")
+}
+
+// processExpressionTyped обрабатывает выражение с ожидаемым типом
+func (p *Pipeline) processExpressionTyped(expr front.Node, expectedType string, irFn *IRFunction) string {
+	switch n := expr.(type) {
+	case *front.ArrayLiteral:
+		return p.processArrayLiteralTyped(n, expectedType, irFn)
+	default:
+		return p.processExpression(expr, irFn)
+	}
+}
+
+// processArrayLiteralTyped создаёт массив с заданным типом элемента
+func (p *Pipeline) processArrayLiteralTyped(lit *front.ArrayLiteral, expectedElemType string, irFn *IRFunction) string {
+	result := p.newTemp()
+
+	// Определяем elem_type / elem_size для C
+	var elemType int
+	var elemSize string
+
+	if isArrayType(expectedElemType) {
+		elemType = 6
+		elemSize = "sizeof(sk_array*)"
+	} else {
+		switch expectedElemType {
+		case "int":
+			elemType = 0
+			elemSize = "sizeof(int)"
+		case "string":
+			elemType = 1
+			elemSize = "sizeof(sk_string)"
+		case "float":
+			elemType = 2
+			elemSize = "sizeof(float)"
+		case "double":
+			elemType = 3
+			elemSize = "sizeof(double)"
+		case "bool":
+			elemType = 4
+			elemSize = "sizeof(sk_bool)"
+		default:
+			elemType = 5
+			elemSize = "sizeof(sk_any)"
+		}
+	}
+
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:         "call",
+		Result:     result,
+		Arg1:       "sk_array_new",
+		Arg2:       fmt.Sprintf("%s, %d", elemSize, elemType),
+		ReturnType: "sk_array*",
+	})
+
+	// Внутренний тип элемента (для вложенных массивов)
+	innerElemType := parseArrayElemType(expectedElemType)
+
+	for _, elem := range lit.Elements {
+		val := p.processExpressionTyped(elem, innerElemType, irFn)
+
+		if isArrayType(expectedElemType) {
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:   "call",
+				Arg1: "sk_array_push_arr",
+				Arg2: result + ", " + val,
+			})
+		} else if expectedElemType == "" || expectedElemType == "any" {
+			// Нетипизированный — оборачиваем в any
+			elemTypeName := p.getExprType(elem, irFn)
+			if elemTypeName == "any" {
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op:   "call",
+					Arg1: "sk_array_push_any",
+					Arg2: result + ", " + val,
+				})
+			} else {
+				wrapper := p.getAnyWrapperByType(elemTypeName)
+				tempVar := p.newTemp()
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op:         "call",
+					Result:     tempVar,
+					Arg1:       wrapper,
+					Arg2:       val,
+					ReturnType: "sk_any",
+				})
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op:   "call",
+					Arg1: "sk_array_push_any",
+					Arg2: result + ", " + tempVar,
+				})
+			}
+		} else {
+			// Типизированный простой
+			var pushFunc string
+			switch expectedElemType {
+			case "int":
+				pushFunc = "sk_array_push_int"
+			case "string":
+				pushFunc = "sk_array_push_string"
+			case "float":
+				pushFunc = "sk_array_push_float"
+			case "double":
+				pushFunc = "sk_array_push_double"
+			case "bool":
+				pushFunc = "sk_array_push_bool"
+			default:
+				pushFunc = "sk_array_push_any"
+			}
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:   "call",
+				Arg1: pushFunc,
+				Arg2: result + ", " + val,
 			})
 		}
 	}

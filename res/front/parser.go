@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"skrp/res/debug"
 	"skrp/res/errors"
+	"strings"
 )
 
 type Parser struct {
@@ -621,29 +622,12 @@ func (p *Parser) parseVarDecl() Node {
 
 		var elemType string
 
-		// Проверяем, есть ли [тип]
 		if p.peek.Type == TOKEN_LBRACKET {
-			p.advance()
-			if p.peek.Type == TOKEN_KEYWORD || p.peek.Literal == "int" || p.peek.Literal == "string" ||
-				p.peek.Literal == "float" || p.peek.Literal == "double" || p.peek.Literal == "bool" ||
-				p.peek.Literal == "char" || p.peek.Literal == "any" {
-				elemType = p.peek.Literal
-				p.advance()
-			} else {
-				p.hasErrors = true
-				errors.NewFatalError("0020",
-					fmt.Sprintf("Expected type in arr[], got '%s'", p.peek.Literal),
-					p.peek.Line, p.peek.Column, p.FileName)
+			fullArrayType := p.parseArrayType() // "arr[int]" или "arr[arr[int]]"
+			if p.hasErrors || errors.HasFatal() {
 				return nil
 			}
-			if p.peek.Type != TOKEN_RBRACKET {
-				p.hasErrors = true
-				errors.NewFatalError("0021",
-					fmt.Sprintf("Expected ']', got '%s'", p.peek.Literal),
-					p.peek.Line, p.peek.Column, p.FileName)
-				return nil
-			}
-			p.advance()
+			elemType = parseArrayElemTypeFromFullType(fullArrayType)
 		}
 
 		// Имя переменной
@@ -1101,4 +1085,64 @@ func (p *Parser) parsePrimary() Node {
 		p.advance()
 		return nil
 	}
+}
+
+func (p *Parser) parseArrayType() string {
+	// уже прочитали "arr", не читаем
+	if p.peek.Type != TOKEN_LBRACKET {
+		return "arr"
+	}
+
+	p.advance() // [
+
+	var innerType string
+	if p.peek.Type == TOKEN_KEYWORD {
+		switch p.peek.Literal {
+		case "int", "string", "float", "double", "bool", "char", "any":
+			innerType = p.peek.Literal
+			p.advance()
+		case "arr":
+			p.advance()
+			innerType = p.parseArrayType() // возвращает "arr[int]" или "arr" или "arr[arr]"
+		default:
+			p.hasErrors = true
+			errors.NewFatalError("0020",
+				fmt.Sprintf("Expected type in arr[], got '%s'", p.peek.Literal),
+				p.peek.Line, p.peek.Column, p.FileName)
+			return ""
+		}
+	} else {
+		p.hasErrors = true
+		errors.NewFatalError("0020",
+			fmt.Sprintf("Expected type in arr[], got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return ""
+	}
+
+	if p.peek.Type != TOKEN_RBRACKET {
+		p.hasErrors = true
+		errors.NewFatalError("0021",
+			fmt.Sprintf("Expected ']', got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return ""
+	}
+	p.advance() // ]
+
+	// Возвращаем тип ВСЕГО массива: "arr[innerType]"
+	return "arr[" + innerType + "]"
+}
+
+// parseArrayElemTypeFromFullType извлекает тип элемента из полного типа массива
+// "arr[int]" → "int"
+// "arr[arr[int]]" → "arr[int]"
+// "arr[arr]" → "arr"
+// "arr" → ""
+func parseArrayElemTypeFromFullType(fullType string) string {
+	if fullType == "arr" {
+		return "" // нетипизированный
+	}
+	if !strings.HasPrefix(fullType, "arr[") {
+		return fullType
+	}
+	return fullType[4 : len(fullType)-1]
 }

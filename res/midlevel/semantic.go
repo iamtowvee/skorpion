@@ -274,6 +274,11 @@ func (sa *SemanticAnalyzer) analyzeNode(node front.Node) front.Node {
 		return sa.analyzeAssign(n)
 	case *front.BinaryExpr:
 		return sa.analyzeBinary(n)
+	case *front.ArrayLiteral:
+		for _, elem := range n.Elements {
+			sa.analyzeNode(elem)
+		}
+		return n
 	case *front.UnaryExpr:
 		return sa.analyzeUnary(n)
 	case *front.Number:
@@ -320,17 +325,32 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 	if decl.IsArray {
 		if decl.Expr != nil {
 			if arrLit, ok := decl.Expr.(*front.ArrayLiteral); ok {
-				if decl.ElemType != "" {
+				expectedElemType := decl.ElemType // ← НЕ parseArrayElemTypeSemantic!
+
+				if expectedElemType != "" && expectedElemType != "any" {
 					for _, elem := range arrLit.Elements {
-						elemType := sa.getNodeType(elem)
-						if elemType != decl.ElemType && elemType != "" {
-							sa.addError("0030",
-								fmt.Sprintf("Array element type mismatch: expected '%s', got '%s'",
-									decl.ElemType, elemType),
-								0, 0, "")
+						if isArrayTypeSemantic(expectedElemType) {
+							// Ожидается вложенный массив
+							if _, ok := elem.(*front.ArrayLiteral); !ok {
+								sa.addError("0030",
+									fmt.Sprintf("Array element type mismatch: expected '%s', got '%s'",
+										expectedElemType, sa.getNodeType(elem)),
+									0, 0, "")
+							}
+						} else {
+							// Ожидается простой тип
+							elemType := sa.getNodeType(elem)
+							if elemType != expectedElemType && elemType != "" {
+								sa.addError("0030",
+									fmt.Sprintf("Array element type mismatch: expected '%s', got '%s'",
+										expectedElemType, elemType),
+									0, 0, "")
+							}
 						}
 					}
 				}
+
+				// Анализируем элементы рекурсивно
 				for _, elem := range arrLit.Elements {
 					sa.analyzeNode(elem)
 				}
@@ -804,4 +824,25 @@ func (sa *SemanticAnalyzer) addError(code, message string, line, col int, file s
 		Column:  col,
 		File:    file,
 	})
+}
+
+// parseArrayElemTypeSemantic возвращает тип элемента из строки типа массива
+// "arr[int]" → "int"
+// "arr[arr[int]]" → "arr[int]"
+// "arr[arr]" → "arr"
+// "" → ""
+// "int" → "int"
+func parseArrayElemTypeSemantic(elemType string) string {
+	if elemType == "" {
+		return ""
+	}
+	if !strings.HasPrefix(elemType, "arr[") {
+		return elemType
+	}
+	return elemType[4 : len(elemType)-1]
+}
+
+// isArrayTypeSemantic проверяет, является ли тип массивом
+func isArrayTypeSemantic(t string) bool {
+	return t == "arr" || strings.HasPrefix(t, "arr[")
 }
