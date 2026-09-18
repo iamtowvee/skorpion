@@ -48,12 +48,13 @@ func (p *Pipeline) Process() *IRProgram {
 
 func (p *Pipeline) processFunction(fn *front.Function) {
 	irFn := IRFunction{
-		Name:         fn.Name,
-		ReturnType:   fn.ReturnType,
-		IsExport:     fn.IsExport,
-		Params:       []IRParam{},
-		Locals:       []string{},
-		Instructions: []IRInstruction{},
+		Name:           fn.Name,
+		ReturnType:     fn.ReturnType,
+		IsExport:       fn.IsExport,
+		Params:         []IRParam{},
+		Locals:         []string{},
+		Instructions:   []IRInstruction{},
+		ArrayElemTypes: make(map[string]string),
 	}
 
 	for _, param := range fn.Params {
@@ -227,6 +228,9 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 					case "bool":
 						elemType = 4
 						elemSize = "sizeof(sk_bool)"
+					case "arr":
+						elemType = 6
+						elemSize = "sizeof(sk_array*)"
 					default:
 						elemType = 5
 						elemSize = "sizeof(sk_any)"
@@ -266,6 +270,8 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 							pushFunc = "sk_array_push_double"
 						case "bool":
 							pushFunc = "sk_array_push_bool"
+						case "arr":
+							pushFunc = "sk_array_push_arr"
 						default:
 							pushFunc = "sk_array_push_any"
 						}
@@ -543,6 +549,8 @@ func (p *Pipeline) processExpression(expr front.Node, irFn *IRFunction) string {
 			return p.processUnary(n, irFn)
 		}
 		return "0"
+	case *front.ArrayLiteral:
+		return p.processArrayLiteral(n, irFn)
 	case *front.ArrayIndex:
 		return p.processArrayIndex(n, irFn)
 	case *front.ArrayLength:
@@ -1555,4 +1563,47 @@ func (p *Pipeline) newTemp() string {
 func (p *Pipeline) newLabel() string {
 	p.LabelCounter++
 	return fmt.Sprintf("L%d", p.LabelCounter)
+}
+
+func (p *Pipeline) processArrayLiteral(lit *front.ArrayLiteral, irFn *IRFunction) string {
+	result := p.newTemp()
+
+	// Нетипизированный массив (any)
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:         "call",
+		Result:     result,
+		Arg1:       "sk_array_new",
+		Arg2:       "sizeof(sk_any), 5",
+		ReturnType: "sk_array*",
+	})
+
+	for _, elem := range lit.Elements {
+		elemType := p.getExprType(elem, irFn)
+		val := p.processExpression(elem, irFn)
+
+		if elemType == "any" {
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:   "call",
+				Arg1: "sk_array_push_any",
+				Arg2: result + ", " + val,
+			})
+		} else {
+			wrapper := p.getAnyWrapperByType(elemType)
+			tempVar := p.newTemp()
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:         "call",
+				Result:     tempVar,
+				Arg1:       wrapper,
+				Arg2:       val,
+				ReturnType: "sk_any",
+			})
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:   "call",
+				Arg1: "sk_array_push_any",
+				Arg2: result + ", " + tempVar,
+			})
+		}
+	}
+
+	return result
 }

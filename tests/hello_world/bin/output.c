@@ -115,6 +115,7 @@ void sk_array_push_float(sk_array* a, float v) { sk_array_push(a, &v); }
 void sk_array_push_double(sk_array* a, double v) { sk_array_push(a, &v); }
 void sk_array_push_bool(sk_array* a, sk_bool v) { sk_array_push(a, &v); }
 void sk_array_push_any(sk_array* a, sk_any v) { sk_array_push(a, &v); }
+void sk_array_push_arr(sk_array* a, sk_array* v) { sk_array_push(a, &v); }
 
 void* sk_array_get(sk_array* a, int index) {
     if (index < 0 || index >= a->length) return NULL;
@@ -174,6 +175,10 @@ sk_string sk_array_to_string(sk_array* a) {
             char tmp[32]; snprintf(tmp, 32, "%f", *(double*)elem); strcat(buf, tmp);
         } else if (a->elem_type == 4) {
             strcat(buf, *(sk_bool*)elem ? "true" : "false");
+        } else if (a->elem_type == 6) {
+			  sk_array* nested = *(sk_array**)elem;
+			  char* s = sk_array_to_string(nested);
+			  strcat(buf, s);
         }
     }
     strcat(buf, "]");
@@ -187,41 +192,57 @@ sk_string input(sk_string prompt);
 
 void main(void* args) {
     sk_array* nums;
+    sk_array* experiement;
     sk_array* mixed;
 
     nums = sk_array_new(sizeof(int), 0);
     sk_array_push_int(nums, 1);
     sk_array_push_int(nums, 2);
     sk_array_push_int(nums, 3);
-    int t1 = sk_array_len(nums);
-    int t2 = 1 + t1;
-    char t3[32];
-    snprintf(t3, 32, "%d", t2);
-    char t4[256];
-    strcpy(t4, "Length: ");
-    strcat(t4, t3);
-    sendln(t4);
-    int t5 = *(int*)sk_array_get(nums, 0);
-    char t6[32];
-    snprintf(t6, 32, "%d", t5);
-    char t7[256];
-    strcpy(t7, "First: ");
-    strcat(t7, t6);
-    sendln(t7);
-    mixed = sk_array_new(sizeof(sk_any), 5);
-    sk_any t8 = any_int(1);
-    sk_array_push_any(mixed, t8);
-    sk_any t9 = any_string("hi");
-    sk_array_push_any(mixed, t9);
-    sk_any t10 = any_double(3.14);
-    sk_array_push_any(mixed, t10);
-    sk_any t11 = any_bool(true);
-    sk_array_push_any(mixed, t11);
-    sk_string t12 = sk_array_to_string(mixed);
-    char t13[256];
-    strcpy(t13, "Mixed: ");
-    strcat(t13, t12);
+    experiement = sk_array_new(sizeof(sk_array*), 6);
+    sk_array* t1 = sk_array_new(sizeof(sk_any), 5);
+    sk_any t2 = any_int(3);
+    sk_array_push_any(t1, t2);
+    sk_array_push_arr(experiement, t1);
+    sk_array* t3 = sk_array_new(sizeof(sk_any), 5);
+    sk_any t4 = any_int(3);
+    sk_array_push_any(t3, t4);
+    sk_any t5 = any_int(1);
+    sk_array_push_any(t3, t5);
+    sk_any t6 = any_int(4);
+    sk_array_push_any(t3, t6);
+    sk_array_push_arr(experiement, t3);
+    int t7 = sk_array_len(nums);
+    char t8[32];
+    snprintf(t8, 32, "%d", t7);
+    char t9[256];
+    strcpy(t9, "Length: ");
+    strcat(t9, t8);
+    sendln(t9);
+    int t10 = *(int*)sk_array_get(nums, 0);
+    char t11[32];
+    snprintf(t11, 32, "%d", t10);
+    char t12[256];
+    strcpy(t12, "First: ");
+    strcat(t12, t11);
+    sendln(t12);
+    sk_string t13 = sk_array_to_string(experiement);
     sendln(t13);
+    mixed = sk_array_new(sizeof(sk_any), 5);
+    int t14 = 1 - 3;
+    sk_any t15 = any_int(t14);
+    sk_array_push_any(mixed, t15);
+    sk_any t16 = any_string("hi");
+    sk_array_push_any(mixed, t16);
+    sk_any t17 = any_double(3.14);
+    sk_array_push_any(mixed, t17);
+    sk_any t18 = any_bool(true);
+    sk_array_push_any(mixed, t18);
+    sk_string t19 = sk_array_to_string(mixed);
+    char t20[256];
+    strcpy(t20, "Mixed: ");
+    strcat(t20, t19);
+    sendln(t20);
     return;
 }
 

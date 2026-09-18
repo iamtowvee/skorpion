@@ -2,9 +2,11 @@ use std/io
 
 void main(arr args) {
     arr[int] nums = [1, 2, 3]
+    arr[arr[int]] experiement = [[3], [3, 1, 4]]
     io.sendln("Length: " + $nums.length)
     io.sendln("First: " + $nums[0])
+    io.sendln($experiement)
     
-    arr mixed = [1, "hi", 3.14, true]
+    arr mixed = [(1 - 3), "hi", 3.14, true]
     io.sendln("Mixed: " + $mixed)
 }
