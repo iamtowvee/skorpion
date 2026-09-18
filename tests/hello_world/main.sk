@@ -1,11 +1,13 @@
 use std/io
 
 void main(arr args) {
-    arr[int] nums = [1, 2, 3]
-    arr[arr[int]] experiement = [[3], [3, 1, 4]]
-    io.sendln("Length: " + $nums.length)
-    io.sendln("First: " + $nums[0])
-    
-    arr mixed = [(1 - 3), "hi", 3.14, true]
-    io.sendln("Mixed: " + $mixed)
+    includeC ```
+        #ifdef SK_OS_WINDOWS
+            printf("Running on Windows\n");
+        #elif defined(SK_OS_LINUX)
+            printf("Running on Linux\n");
+        #else
+            printf("Unknown OS\n");
+        #endif
+    ```
 }

@@ -16,342 +16,293 @@ type Profile struct {
 	Path string `json:"path"`
 }
 
+type ProfileStore struct {
+	Windows []Profile         `json:"windows"`
+	Linux   []Profile         `json:"linux"`
+	Current map[string]string `json:"current"`
+}
+
 type ProfileManager struct {
-	Profiles   []Profile
+	Store      *ProfileStore
 	ConfigPath string
 }
 
 func NewProfileManager() *ProfileManager {
-	// Путь к файлу конфигурации профилей
 	homeDir, _ := os.UserHomeDir()
 	configDir := filepath.Join(homeDir, ".skorpion")
 	configPath := filepath.Join(configDir, "profiles.json")
 
 	pm := &ProfileManager{
-		Profiles:   []Profile{},
+		Store:      &ProfileStore{},
 		ConfigPath: configPath,
 	}
-
 	pm.Load()
 	return pm
 }
 
 func (pm *ProfileManager) Load() {
-	// Проверяем, существует ли файл
 	if _, err := os.Stat(pm.ConfigPath); os.IsNotExist(err) {
-		// Создаём дефолтные профили
-		pm.Profiles = []Profile{
-			{ID: 1, Name: "auto", Path: "auto"},
-		}
+		pm.Store = defaultStore()
 		pm.Save()
 		return
 	}
 
 	data, err := os.ReadFile(pm.ConfigPath)
 	if err != nil {
-		pm.Profiles = []Profile{
-			{ID: 1, Name: "auto", Path: "auto"},
-		}
+		pm.Store = defaultStore()
 		return
 	}
 
-	err = json.Unmarshal(data, &pm.Profiles)
-	if err != nil {
-		pm.Profiles = []Profile{
-			{ID: 1, Name: "auto", Path: "auto"},
-		}
+	if err := json.Unmarshal(data, pm.Store); err != nil {
+		pm.Store = defaultStore()
+	}
+
+	if pm.Store.Current == nil {
+		pm.Store.Current = map[string]string{"windows": "auto", "linux": "auto"}
+	}
+	if pm.Store.Windows == nil {
+		pm.Store.Windows = []Profile{{ID: 1, Name: "auto", Path: "auto"}}
+	}
+	if pm.Store.Linux == nil {
+		pm.Store.Linux = []Profile{{ID: 1, Name: "auto", Path: "auto"}}
+	}
+}
+
+func defaultStore() *ProfileStore {
+	return &ProfileStore{
+		Windows: []Profile{{ID: 1, Name: "auto", Path: "auto"}},
+		Linux:   []Profile{{ID: 1, Name: "auto", Path: "auto"}},
+		Current: map[string]string{"windows": "auto", "linux": "auto"},
 	}
 }
 
 func (pm *ProfileManager) Save() {
-	// Создаём директорию если её нет
 	dir := filepath.Dir(pm.ConfigPath)
 	os.MkdirAll(dir, 0755)
 
-	data, err := json.MarshalIndent(pm.Profiles, "", "  ")
+	data, err := json.MarshalIndent(pm.Store, "", "  ")
 	if err != nil {
 		return
 	}
-
 	os.WriteFile(pm.ConfigPath, data, 0644)
 }
 
-func (pm *ProfileManager) AddProfile(name, path string) error {
-	// Проверяем, что имя не пустое
+// ============ Добавление ============
+
+func (pm *ProfileManager) AddProfile(osName, name, path string) error {
 	if name == "" {
 		return fmt.Errorf("profile name cannot be empty")
 	}
 
-	// Проверяем, что имя содержит только A-Za-z
 	for _, ch := range name {
-		if !((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')) {
-			return fmt.Errorf("profile name must contain only A-Za-z (got '%s')", name)
+		if !((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_') {
+			return fmt.Errorf("profile name must contain only A-Za-z0-9_- (got '%s')", name)
 		}
 	}
 
-	// Проверяем, что профиль не существует
-	for _, p := range pm.Profiles {
+	if name == "auto" {
+		return fmt.Errorf("'auto' is a reserved profile name")
+	}
+
+	profiles := pm.getProfilesByOS(osName)
+	for _, p := range profiles {
 		if p.Name == name {
-			return fmt.Errorf("profile '%s' already exists", name)
+			return fmt.Errorf("profile '%s' already exists for %s", name, osName)
 		}
 	}
 
-	// Проверяем, что компилятор существует (через PATH или по полному пути)
 	if path != "auto" {
-		found := false
-
-		// 1. Проверяем как есть (полный путь или имя в PATH)
-		if _, err := exec.LookPath(path); err == nil {
-			found = true
-		}
-
-		// 2. Если не найден, пробуем добавить расширение на Windows
-		if !found && runtime.GOOS == "windows" && !strings.HasSuffix(strings.ToLower(path), ".exe") {
-			if _, err := exec.LookPath(path + ".exe"); err == nil {
-				found = true
-				path = path + ".exe"
-			}
-		}
-
-		// 3. Если не найден, проверяем как полный путь к файлу
-		if !found {
-			if _, err := os.Stat(path); err == nil {
-				found = true
-			}
-		}
-
-		if !found {
-			return fmt.Errorf("compiler '%s' not found in PATH or at specified path", path)
+		if !pm.compilerExists(path) {
+			return fmt.Errorf("compiler '%s' not found", path)
 		}
 	}
 
-	// Находим следующий ID
 	maxID := 0
-	for _, p := range pm.Profiles {
+	for _, p := range profiles {
 		if p.ID > maxID {
 			maxID = p.ID
 		}
 	}
 
-	pm.Profiles = append(pm.Profiles, Profile{
-		ID:   maxID + 1,
-		Name: name,
-		Path: path,
-	})
-
+	newProfile := Profile{ID: maxID + 1, Name: name, Path: path}
+	pm.setProfilesByOS(osName, append(profiles, newProfile))
 	pm.Save()
 	return nil
 }
 
-func (pm *ProfileManager) EditProfile(name, newPath string) error {
-	// Нельзя редактировать auto
+// ============ Редактирование ============
+
+func (pm *ProfileManager) EditProfile(osName, name, newPath string) error {
 	if name == "auto" {
 		return fmt.Errorf("cannot edit 'auto' profile")
 	}
 
-	// Проверяем, что компилятор существует
-	found := false
-
-	// 1. Проверяем как есть (полный путь или имя в PATH)
-	if _, err := exec.LookPath(newPath); err == nil {
-		found = true
+	if !pm.compilerExists(newPath) {
+		return fmt.Errorf("compiler '%s' not found", newPath)
 	}
 
-	// 2. Если не найден, пробуем добавить расширение на Windows
-	if !found && runtime.GOOS == "windows" && !strings.HasSuffix(strings.ToLower(newPath), ".exe") {
-		if _, err := exec.LookPath(newPath + ".exe"); err == nil {
-			found = true
-			newPath = newPath + ".exe"
-		}
-	}
-
-	// 3. Если не найден, проверяем как полный путь к файлу
-	if !found {
-		if _, err := os.Stat(newPath); err == nil {
-			found = true
-		}
-	}
-
-	if !found {
-		return fmt.Errorf("compiler '%s' not found in PATH or at specified path", newPath)
-	}
-
-	for i, p := range pm.Profiles {
+	profiles := pm.getProfilesByOS(osName)
+	for i, p := range profiles {
 		if p.Name == name {
-			pm.Profiles[i].Path = newPath
+			profiles[i].Path = newPath
+			pm.setProfilesByOS(osName, profiles)
 			pm.Save()
 			return nil
 		}
 	}
 
-	return fmt.Errorf("profile '%s' not found", name)
+	return fmt.Errorf("profile '%s' not found for %s", name, osName)
 }
 
-func (pm *ProfileManager) SetProfile(name string) error {
-	// Проверяем, что профиль существует
-	for _, p := range pm.Profiles {
+// ============ Установка текущего ============
+
+func (pm *ProfileManager) SetProfile(osName, name string) error {
+	profiles := pm.getProfilesByOS(osName)
+	for _, p := range profiles {
 		if p.Name == name {
-			// Сохраняем выбранный профиль в отдельный файл
-			homeDir, _ := os.UserHomeDir()
-			configDir := filepath.Join(homeDir, ".skorpion")
-			currentPath := filepath.Join(configDir, "current_profile.txt")
-			os.WriteFile(currentPath, []byte(name), 0644)
+			pm.Store.Current[osName] = name
+			pm.Save()
 			return nil
 		}
 	}
-
-	return fmt.Errorf("profile '%s' not found", name)
+	return fmt.Errorf("profile '%s' not found for %s", name, osName)
 }
 
-func (pm *ProfileManager) GetCurrentProfile() string {
-	homeDir, _ := os.UserHomeDir()
-	configDir := filepath.Join(homeDir, ".skorpion")
-	currentPath := filepath.Join(configDir, "current_profile.txt")
+// ============ Удаление ============
 
-	data, err := os.ReadFile(currentPath)
-	if err != nil {
-		return "auto"
-	}
-
-	name := strings.TrimSpace(string(data))
-
-	// Проверяем, что профиль существует
-	for _, p := range pm.Profiles {
-		if p.Name == name {
-			return name
-		}
-	}
-
-	return "auto"
-}
-
-func (pm *ProfileManager) DeleteProfile(name string) error {
-	// Нельзя удалить auto
+func (pm *ProfileManager) DeleteProfile(osName, name string) error {
 	if name == "auto" {
 		return fmt.Errorf("cannot delete 'auto' profile")
 	}
 
-	for i, p := range pm.Profiles {
+	profiles := pm.getProfilesByOS(osName)
+	for i, p := range profiles {
 		if p.Name == name {
-			pm.Profiles = append(pm.Profiles[:i], pm.Profiles[i+1:]...)
+			pm.setProfilesByOS(osName, append(profiles[:i], profiles[i+1:]...))
 			pm.Save()
 			return nil
 		}
 	}
 
-	return fmt.Errorf("profile '%s' not found", name)
+	return fmt.Errorf("profile '%s' not found for %s", name, osName)
 }
 
-func (pm *ProfileManager) ListProfiles() {
-	fmt.Println("ID\tName\tPath")
-	fmt.Println("--\t----\t----")
-	for _, p := range pm.Profiles {
-		current := ""
-		if p.Name == pm.GetCurrentProfile() {
-			current = " (current)"
-		}
+// ============ Списки ============
 
-		// Показываем, найден ли компилятор в PATH
-		status := "✓"
-		if p.Name != "auto" {
-			if !pm.CompilerExists(p.Path) {
-				status = "✗"
-			}
-		}
+func (pm *ProfileManager) ListProfiles(osName string) {
+	profiles := pm.getProfilesByOS(osName)
+	current := pm.Store.Current[osName]
 
-		fmt.Printf("%d\t%s\t%s %s%s\n", p.ID, p.Name, p.Path, status, current)
+	fmt.Printf("%s\t%s\t%s\n", Colors.Bold("ID"), Colors.Bold("Name"), Colors.Bold("Path"))
+	fmt.Println(Colors.Dim("--\t----\t----"))
+	for _, p := range profiles {
+		cur := ""
+		if p.Name == current {
+			cur = Colors.Green(" (current)")
+		}
+		status := Colors.Green("✓")
+		if p.Name != "auto" && !pm.compilerExists(p.Path) {
+			status = Colors.Red("✗")
+		}
+		fmt.Printf("%d\t%s\t%s %s%s\n", p.ID, p.Name, p.Path, status, cur)
 	}
 }
 
-func (pm *ProfileManager) GetProfilePath(name string) string {
-	for _, p := range pm.Profiles {
-		if p.Name == name {
+func (pm *ProfileManager) ShowCurrentProfile(osName string) {
+	current := pm.Store.Current[osName]
+	fmt.Printf("Current %s profile: %s\n", osName, Colors.Cyan(current))
+}
+
+// ============ Получение компилятора ============
+
+// GetCompilerForOS возвращает путь к компилятору для конкретной ОС
+func (pm *ProfileManager) GetCompilerForOS(osName string) string {
+	normOS := osName
+	switch osName {
+	case "win", "windows":
+		normOS = "windows"
+	}
+	current := pm.Store.Current[normOS]
+	profiles := pm.getProfilesByOS(normOS)
+	for _, p := range profiles {
+		if p.Name == current {
 			return p.Path
 		}
 	}
-	return ""
+	return "auto"
 }
 
-func (pm *ProfileManager) CompilerExists(path string) bool {
-	if path == "auto" {
-		// Для auto проверяем наличие любого компилятора
-		compilers := []string{"gcc", "clang", "tcc"}
-		for _, c := range compilers {
-			if _, err := exec.LookPath(c); err == nil {
-				return true
-			}
-			// Windows
-			if runtime.GOOS == "windows" {
-				if _, err := exec.LookPath(c + ".exe"); err == nil {
-					return true
-				}
-			}
-		}
-		return false
-	}
+// ============ Хелперы ============
 
-	// Проверяем конкретный компилятор
-	if _, err := exec.LookPath(path); err == nil {
+func (pm *ProfileManager) getProfilesByOS(osName string) []Profile {
+	switch osName {
+	case "windows", "win":
+		return pm.Store.Windows
+	case "linux":
+		return pm.Store.Linux
+	}
+	return nil
+}
+
+func (pm *ProfileManager) setProfilesByOS(osName string, profiles []Profile) {
+	switch osName {
+	case "windows", "win":
+		pm.Store.Windows = profiles
+	case "linux":
+		pm.Store.Linux = profiles
+	}
+}
+
+func (pm *ProfileManager) compilerExists(path string) bool {
+	if path == "auto" {
 		return true
 	}
 
-	// Windows с .exe
+	fmt.Printf("[DEBUG] compilerExists: path=%q (len=%d)\n", path, len(path))
+
+	// Проверяем каждый байт
+	for i, b := range path {
+		if b == ' ' || b == '"' || b == '\'' {
+			fmt.Printf("[DEBUG]   byte[%d] = %q (0x%02x)\n", i, b, b)
+		}
+	}
+
+	// 1. Единый путь
+	if _, err := os.Stat(path); err == nil {
+		fmt.Println("[DEBUG] os.Stat(path) OK")
+		return true
+	} else {
+		fmt.Printf("[DEBUG] os.Stat(path) FAILED: %v\n", err)
+	}
+
+	// + .exe
 	if runtime.GOOS == "windows" && !strings.HasSuffix(strings.ToLower(path), ".exe") {
-		if _, err := exec.LookPath(path + ".exe"); err == nil {
+		if _, err := os.Stat(path + ".exe"); err == nil {
+			fmt.Println("[DEBUG] os.Stat(path+.exe) OK")
 			return true
 		}
 	}
 
-	// Проверяем как полный путь
-	if _, err := os.Stat(path); err == nil {
+	// 2. LookPath
+	if _, err := exec.LookPath(path); err == nil {
+		fmt.Println("[DEBUG] exec.LookPath(path) OK")
 		return true
 	}
 
+	// 3. По частям
+	parts := strings.Fields(path)
+	fmt.Printf("[DEBUG] parts: %#v\n", parts)
+	if len(parts) > 0 {
+		if _, err := os.Stat(parts[0]); err == nil {
+			fmt.Println("[DEBUG] os.Stat(parts[0]) OK")
+			return true
+		}
+		if _, err := exec.LookPath(parts[0]); err == nil {
+			fmt.Println("[DEBUG] exec.LookPath(parts[0]) OK")
+			return true
+		}
+	}
+
+	fmt.Println("[DEBUG] compilerExists: all checks failed")
 	return false
-}
-
-func (pm *ProfileManager) FindCompiler(profileName string) string {
-	// Если auto, ищем любой доступный компилятор
-	if profileName == "auto" {
-		// Приоритет: tcc, gcc, clang
-		compilers := []string{"tcc", "gcc", "clang"}
-
-		for _, c := range compilers {
-			if path, err := exec.LookPath(c); err == nil {
-				return path
-			}
-			// Windows
-			if runtime.GOOS == "windows" {
-				if path, err := exec.LookPath(c + ".exe"); err == nil {
-					return path
-				}
-			}
-		}
-		return ""
-	}
-
-	// Ищем конкретный профиль
-	path := pm.GetProfilePath(profileName)
-	if path == "" {
-		return ""
-	}
-
-	// Проверяем в PATH
-	if path, err := exec.LookPath(path); err == nil {
-		return path
-	}
-
-	// Windows с .exe
-	if runtime.GOOS == "windows" && !strings.HasSuffix(strings.ToLower(path), ".exe") {
-		if path, err := exec.LookPath(path + ".exe"); err == nil {
-			return path
-		}
-	}
-
-	// Проверяем как полный путь
-	if _, err := os.Stat(path); err == nil {
-		return path
-	}
-
-	return ""
 }

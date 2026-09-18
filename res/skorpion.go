@@ -18,6 +18,7 @@ var (
 	showAST    bool
 	saveC      bool
 	uncolored  bool
+	noOptimize bool
 	buildPath  string
 )
 
@@ -25,7 +26,35 @@ func InitLang(args []string) {
 	errors.InitErrors()
 	defer errors.CloseErrors()
 
-	// Парсим флаги
+	// 1. Предварительный проход: ищем --path=... в args (до парсинга флагов)
+	projectPath := "."
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "--path=") {
+			projectPath = arg[7:]
+			break
+		}
+	}
+
+	// 2. Читаем manifest.spc (если он есть)
+	configPath := filepath.Join(projectPath, "manifest.spc")
+	cfg := front.ParseConfig(configPath)
+
+	// 3. Применяем env (если конфиг прочитан)
+	if cfg != nil && len(cfg.Env) > 0 {
+		for _, envVar := range cfg.Env {
+			parts := strings.SplitN(envVar, "=", 2)
+			if len(parts) == 2 {
+				os.Setenv(parts[0], parts[1])
+			}
+		}
+	}
+
+	// 4. Добавляем execute в конец args (если есть)
+	if cfg != nil && len(cfg.Execute) > 0 {
+		args = append(args, cfg.Execute...)
+	}
+
+	// 5. Парсим флаги
 	args = parseFlags(args)
 
 	if len(args) < 1 {
@@ -47,19 +76,33 @@ func InitLang(args []string) {
 			fmt.Println("Example: skorpion --explain Err+1043")
 		}
 
-	// Команды управления профилями
-	case "add-profile":
-		cli.HandleAddProfile(args)
-	case "edit-profile":
-		cli.HandleEditProfile(args)
-	case "set-profile":
-		cli.HandleSetProfile(args)
-	case "del-profile":
-		cli.HandleDeleteProfile(args)
-	case "--profile-list":
-		cli.HandleProfileList()
-	case "--current-profile":
-		cli.HandleCurrentProfile()
+		// Команды управления профилями для Windows
+	case "add-win-profile":
+		cli.HandleAddProfile(args, "windows")
+	case "edit-win-profile":
+		cli.HandleEditProfile(args, "windows")
+	case "set-win-profile":
+		cli.HandleSetProfile(args, "windows")
+	case "del-win-profile":
+		cli.HandleDeleteProfile(args, "windows")
+	case "--win-profile-list":
+		cli.HandleProfileList("windows")
+	case "--current-win-profile":
+		cli.HandleCurrentProfile("windows")
+
+	// Команды управления профилями для Linux
+	case "add-linux-profile":
+		cli.HandleAddProfile(args, "linux")
+	case "edit-linux-profile":
+		cli.HandleEditProfile(args, "linux")
+	case "set-linux-profile":
+		cli.HandleSetProfile(args, "linux")
+	case "del-linux-profile":
+		cli.HandleDeleteProfile(args, "linux")
+	case "--linux-profile-list":
+		cli.HandleProfileList("linux")
+	case "--current-linux-profile":
+		cli.HandleCurrentProfile("linux")
 
 	// Команды настроек
 	case "color":
@@ -89,6 +132,7 @@ func parseFlags(args []string) []string {
 	showAST = false
 	saveC = false
 	uncolored = false
+	noOptimize = false
 	buildPath = "."
 
 	for i := 0; i < len(args); i++ {
@@ -105,6 +149,8 @@ func parseFlags(args []string) []string {
 			uncolored = true
 			cli.Colors.Disable()
 			cli.ColorSettings.Enabled = false
+		case "--no-optimize", "-N":
+			noOptimize = true
 		default:
 			// Проверяем --path=...
 			if len(arg) > 7 && arg[:7] == "--path=" {
@@ -205,10 +251,7 @@ func buildProject() {
 	allFunctions := make([]*front.Function, len(mainProg.Functions))
 	copy(allFunctions, mainProg.Functions)
 
-	// Добавляем ВСЕ функции из импортов (включая неэкспортируемые)
-	// Для этого нужно получить их из ImportManager
-	allImportedFunctions := im.GetAllFunctionsInternal() // ← НУЖЕН НОВЫЙ МЕТОД
-
+	allImportedFunctions := im.GetAllFunctionsInternal()
 	allFunctions = append(allFunctions, allImportedFunctions...)
 
 	mergedProg := &front.Program{
@@ -216,27 +259,31 @@ func buildProject() {
 		Functions: allFunctions,
 	}
 
-	mid := midlevel.NewMidLevel(mergedProg)
-	optProg := mid.OptimizeIR()
-	fmt.Println(cli.Colors.Success("Optimization complete"))
+	// Оптимизация (можно отключить флагом --no-optimize)
+	var optProg *front.Program
+	if noOptimize {
+		optProg = mergedProg
+		fmt.Println(cli.Colors.Warning("Optimization skipped (--no-optimize)"))
+	} else {
+		mid := midlevel.NewMidLevel(mergedProg)
+		optProg = mid.OptimizeIR()
+		fmt.Println(cli.Colors.Success("Optimization complete"))
+	}
 
 	// Конвейер: AST → IR
 	pipeline := backend.NewPipeline(optProg)
 	ir := pipeline.Process()
 	fmt.Printf(cli.Colors.Info("Generated IR with %d functions\n"), len(ir.Functions))
 
-	// Получаем текущий профиль
+	// Сборка бинарника — под все target-ОС
 	pm := cli.NewProfileManager()
-	currentProfile := pm.GetCurrentProfile()
-	compilerPath := pm.GetProfilePath(currentProfile)
 
-	// Сборка бинарника
 	buildConfig := &backend.BuildConfig{
-		Profile:      currentProfile,
-		CompilerPath: compilerPath,
-		OutputName:   cfg.BuildOutName,
-		OutputDir:    cfg.BuildOutPath,
-		IsTest:       false,
+		ProfileManager: pm,
+		Targets:        cfg.Target,
+		OutputName:     cfg.BuildOutName,
+		OutputDir:      cfg.BuildOutPath,
+		IsTest:         false,
 	}
 
 	if buildConfig.OutputName == "" {
@@ -512,19 +559,30 @@ func printHelp() {
 	fmt.Println("  build --path=\"DIR\"    Build project from specified directory")
 	fmt.Println("  test                  Run tests")
 	fmt.Println()
-	fmt.Println(cli.Colors.Bold("PROFILE MANAGEMENT:"))
-	fmt.Println("  add-profile NAME : PATH    Add new compiler profile")
-	fmt.Println("  edit-profile NAME : PATH   Edit existing compiler profile")
-	fmt.Println("  set-profile NAME           Set current compiler profile")
-	fmt.Println("  del-profile NAME           Delete compiler profile")
-	fmt.Println("  --profile-list             List all compiler profiles")
-	fmt.Println("  --current-profile          Show current compiler profile")
+	fmt.Println(cli.Colors.Bold("WINDOWS PROFILE MANAGEMENT:"))
+	fmt.Println("  add-win-profile NAME : PATH    Add new Windows compiler profile")
+	fmt.Println("  edit-win-profile NAME : PATH   Edit existing Windows compiler profile")
+	fmt.Println("  set-win-profile NAME           Set current Windows compiler profile")
+	fmt.Println("  del-win-profile NAME           Delete Windows compiler profile")
+	fmt.Println("  --win-profile-list             List all Windows compiler profiles")
+	fmt.Println("  --current-win-profile          Show current Windows compiler profile")
+	fmt.Println()
+	fmt.Println(cli.Colors.Bold("LINUX PROFILE MANAGEMENT:"))
+	fmt.Println("  add-linux-profile NAME : PATH    Add new Linux compiler profile")
+	fmt.Println("  edit-linux-profile NAME : PATH   Edit existing Linux compiler profile")
+	fmt.Println("  set-linux-profile NAME           Set current Linux compiler profile")
+	fmt.Println("  del-linux-profile NAME           Delete Linux compiler profile")
+	fmt.Println("  --linux-profile-list             List all Linux compiler profiles")
+	fmt.Println("  --current-linux-profile          Show current Linux compiler profile")
 	fmt.Println()
 	fmt.Println(cli.Colors.Bold("SETTINGS:"))
 	fmt.Println("  color [true|false|toggle]  Enable/disable colors")
 	fmt.Println("  updates [true|false|toggle] Enable/disable update checks")
 	fmt.Println("  --colors                   Show current color setting")
 	fmt.Println("  --updates                  Show current update setting")
+	fmt.Println()
+	fmt.Println(cli.Colors.Bold("BUILD OPTIONS:"))
+	fmt.Println("  --no-optimize, -N         Skip optimization")
 	fmt.Println()
 	fmt.Println(cli.Colors.Bold("DEBUG OPTIONS:"))
 	fmt.Println("  --uncolored               Disable all colors")

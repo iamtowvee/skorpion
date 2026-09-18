@@ -2,7 +2,108 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 )
+
+func HandleAddProfile(args []string, osName string) {
+	name, path, err := parseAddProfileArgs(args)
+	if err != nil {
+		fmt.Println(Colors.Error("Error:"), err)
+		return
+	}
+
+	pm := NewProfileManager()
+	if err := pm.AddProfile(osName, name, path); err != nil {
+		fmt.Println(Colors.Error("Error:"), err)
+		return
+	}
+
+	fmt.Printf(Colors.Success("Profile '%s' added for %s")+" (path: %s)\n", name, osName, path)
+}
+
+func HandleEditProfile(args []string, osName string) {
+	name, newPath, err := parseAddProfileArgs(args)
+	if err != nil {
+		fmt.Println(Colors.Error("Error:"), err)
+		return
+	}
+
+	pm := NewProfileManager()
+	if err := pm.EditProfile(osName, name, newPath); err != nil {
+		fmt.Println(Colors.Error("Error:"), err)
+		return
+	}
+
+	fmt.Printf(Colors.Success("Profile '%s' updated for %s")+" (new path: %s)\n", name, osName, newPath)
+}
+
+func HandleSetProfile(args []string, osName string) {
+	if len(args) < 2 {
+		fmt.Println(Colors.Warning("Usage: skorpion set-" + osName + "-profile NAME"))
+		return
+	}
+
+	name := args[1]
+	pm := NewProfileManager()
+	if err := pm.SetProfile(osName, name); err != nil {
+		fmt.Println(Colors.Error("Error:"), err)
+		return
+	}
+
+	fmt.Printf(Colors.Success("Current %s profile set to '%s'\n"), osName, name)
+}
+
+func HandleDeleteProfile(args []string, osName string) {
+	if len(args) < 2 {
+		fmt.Println(Colors.Warning("Usage: skorpion del-" + osName + "-profile NAME"))
+		return
+	}
+
+	name := args[1]
+	pm := NewProfileManager()
+	if err := pm.DeleteProfile(osName, name); err != nil {
+		fmt.Println(Colors.Error("Error:"), err)
+		return
+	}
+
+	fmt.Printf(Colors.Success("Profile '%s' deleted for %s\n"), name, osName)
+}
+
+func HandleProfileList(osName string) {
+	pm := NewProfileManager()
+	fmt.Printf(Colors.Bold("Profiles for %s:\n"), osName)
+	pm.ListProfiles(osName)
+}
+
+func HandleCurrentProfile(osName string) {
+	pm := NewProfileManager()
+	pm.ShowCurrentProfile(osName)
+}
+
+func parseAddProfileArgs(args []string) (string, string, error) {
+	if len(args) < 4 {
+		return "", "", fmt.Errorf("usage: NAME : PATH")
+	}
+
+	sep := -1
+	for i, arg := range args {
+		if arg == ":" {
+			sep = i
+			break
+		}
+	}
+
+	if sep == -1 || sep == 0 || sep == len(args)-1 {
+		return "", "", fmt.Errorf("invalid format, use: NAME : PATH")
+	}
+
+	name := strings.Join(args[1:sep], " ")
+	path := strings.Join(args[sep+1:], " ")
+
+	return name, path, nil
+}
+
+// ============ Старые функции (color, updates) ============
 
 type ColorConfig struct {
 	Enabled bool
@@ -16,103 +117,6 @@ var (
 	ColorSettings  = ColorConfig{Enabled: true}
 	UpdateSettings = UpdateConfig{Enabled: true}
 )
-
-func HandleAddProfile(args []string) {
-	name, path, err := ParseAddProfile(args)
-	if err != nil {
-		fmt.Println(Colors.Error("Error:"), err)
-		return
-	}
-
-	pm := NewProfileManager()
-	err = pm.AddProfile(name, path)
-	if err != nil {
-		fmt.Println(Colors.Error("Error:"), err)
-		return
-	}
-
-	fmt.Printf(Colors.Success("Profile '%s' added successfully")+" (path: %s)\n", name, path)
-}
-
-func HandleEditProfile(args []string) {
-	name, newPath, err := ParseEditProfile(args)
-	if err != nil {
-		fmt.Println(Colors.Error("Error:"), err)
-		return
-	}
-
-	pm := NewProfileManager()
-	err = pm.EditProfile(name, newPath)
-	if err != nil {
-		fmt.Println(Colors.Error("Error:"), err)
-		return
-	}
-
-	fmt.Printf(Colors.Success("Profile '%s' updated successfully")+" (new path: %s)\n", name, newPath)
-}
-
-func HandleSetProfile(args []string) {
-	if len(args) < 2 {
-		fmt.Println(Colors.Warning("Usage: skorpion set-profile NAME"))
-		return
-	}
-
-	name := args[1]
-	pm := NewProfileManager()
-	err := pm.SetProfile(name)
-	if err != nil {
-		fmt.Println(Colors.Error("Error:"), err)
-		return
-	}
-
-	fmt.Printf(Colors.Success("Current profile set to '%s'\n"), name)
-}
-
-func HandleDeleteProfile(args []string) {
-	if len(args) < 2 {
-		fmt.Println(Colors.Warning("Usage: skorpion del-profile NAME"))
-		return
-	}
-
-	name := args[1]
-	pm := NewProfileManager()
-	err := pm.DeleteProfile(name)
-	if err != nil {
-		fmt.Println(Colors.Error("Error:"), err)
-		return
-	}
-
-	fmt.Printf(Colors.Success("Profile '%s' deleted successfully\n"), name)
-}
-
-func HandleProfileList() {
-	pm := NewProfileManager()
-
-	fmt.Println(Colors.Bold("ID\tName\tPath"))
-	fmt.Println(Colors.Dim("--\t----\t----"))
-	for _, p := range pm.Profiles {
-		current := ""
-		if p.Name == pm.GetCurrentProfile() {
-			current = Colors.Green(" (current)")
-		}
-
-		// Показываем, найден ли компилятор в PATH
-		status := Colors.Green("✓")
-		if p.Name != "auto" {
-			if !pm.CompilerExists(p.Path) {
-				status = Colors.Red("✗")
-			}
-		}
-
-		fmt.Printf("%d\t%s\t%s %s%s\n", p.ID, p.Name, p.Path, status, current)
-	}
-}
-
-func HandleCurrentProfile() {
-	pm := NewProfileManager()
-	current := pm.GetCurrentProfile()
-	fmt.Printf("Current profile: %s\n", Colors.Cyan(current))
-}
 
 func HandleColor(args []string) {
 	if len(args) < 2 {
@@ -176,22 +180,4 @@ func HandleShowColors() {
 func HandleShowUpdates() {
 	fmt.Printf("Updates: %s\n",
 		map[bool]string{true: Colors.Green("true"), false: "false"}[UpdateSettings.Enabled])
-}
-
-func HandleUncolored() {
-	Colors.Disable()
-	ColorSettings.Enabled = false
-	fmt.Println("Colors disabled")
-}
-
-func HandleSaveC() string {
-	return "temp_skorpion.c"
-}
-
-func HandleAST() bool {
-	return true
-}
-
-func HandleTokens() bool {
-	return true
 }

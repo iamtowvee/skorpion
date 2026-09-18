@@ -16,12 +16,20 @@ type Config struct {
 	BuildOutPath string
 	TestOutName  string
 	TestOutPath  string
+
+	// Env — переменные окружения вида "SOME=15"
+	Env []string
+
+	// Execute — дополнительные аргументы CLI, добавляемые в конец команды
+	Execute []string
 }
 
 func ParseConfig(path string) *Config {
 	cfg := &Config{
 		BuildOutPath: "bin/",
 		TestOutPath:  "test/",
+		Env:          []string{},
+		Execute:      []string{},
 	}
 
 	data, err := os.ReadFile(path)
@@ -60,18 +68,44 @@ func ParseConfig(path string) *Config {
 			case "testOutPath":
 				cfg.TestOutPath = strings.Trim(value, `"`)
 			case "target":
-				// array: <"win", "linux">
 				value = strings.Trim(value, "<>")
 				parts := strings.Split(value, ",")
 				for _, p := range parts {
-					cfg.Target = append(cfg.Target, strings.Trim(strings.Trim(p, `"`), " "))
+					trimmed := strings.TrimSpace(p)
+					trimmed = strings.Trim(trimmed, `"`)
+					trimmed = strings.TrimSpace(trimmed)
+					if trimmed != "" {
+						cfg.Target = append(cfg.Target, trimmed)
+					}
 				}
 			case "authors":
 				value = strings.Trim(value, "<>")
 				parts := strings.Split(value, ",")
 				for _, p := range parts {
-					cfg.Authors = append(cfg.Authors, strings.Trim(strings.Trim(p, `"`), " "))
+					trimmed := strings.TrimSpace(p)
+					trimmed = strings.Trim(trimmed, `"`)
+					trimmed = strings.TrimSpace(trimmed)
+					if trimmed != "" {
+						cfg.Authors = append(cfg.Authors, trimmed)
+					}
 				}
+			case "env":
+				// env["SOME=15"]
+				// env["SOME=15,NODE_ENV=production"]
+				value = strings.Trim(value, `"`)
+				parts := strings.Split(value, ",")
+				for _, p := range parts {
+					p = strings.TrimSpace(p)
+					if p != "" {
+						cfg.Env = append(cfg.Env, p)
+					}
+				}
+			case "execute":
+				// execute["--uncolored --no-optimize"]
+				value = strings.Trim(value, `"`)
+				// Разбиваем по пробелам
+				parts := strings.Fields(value)
+				cfg.Execute = append(cfg.Execute, parts...)
 			}
 		}
 	}
