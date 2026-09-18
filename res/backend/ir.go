@@ -15,12 +15,13 @@ type IRInstruction struct {
 }
 
 type IRFunction struct {
-	Name         string
-	ReturnType   string
-	Params       []IRParam
-	Locals       []string
-	Instructions []IRInstruction
-	IsExport     bool
+	Name           string
+	ReturnType     string
+	IsExport       bool
+	Params         []IRParam
+	Locals         []string
+	ArrayElemTypes map[string]string
+	Instructions   []IRInstruction
 }
 
 type IRParam struct {

@@ -1,9 +1,10 @@
 use std/io
 
-arr ri(any x) {
-    return (x, 4).to_arr()
-}
-
 void main(arr args) {
-    io.sendln($ri("5"))
+    arr[int] nums = [1, 2, 3]
+    io.sendln("Length: " + $nums.length)
+    io.sendln("First: " + $nums[0])
+    
+    arr mixed = [1, "hi", 3.14, true]
+    io.sendln("Mixed: " + $mixed)
 }

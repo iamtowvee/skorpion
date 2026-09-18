@@ -461,7 +461,11 @@ func (sa *SemanticAnalyzer) analyzeString(str *front.String) front.Node {
 }
 
 func (sa *SemanticAnalyzer) analyzeIdent(ident *front.Ident) front.Node {
-	// Проверяем, что идентификатор существует
+	// true/false — встроенные булевы литералы
+	if ident.Name == "true" || ident.Name == "false" {
+		return ident
+	}
+
 	sym := sa.CurrentScope.Resolve(ident.Name)
 	if sym == nil {
 		sa.addError("1017", fmt.Sprintf("Undefined identifier '%s'", ident.Name), 0, 0, "")
@@ -689,6 +693,10 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 	case *front.TypeOf:
 		return "string"
 	case *front.Ident:
+		// true/false — bool
+		if n.Name == "true" || n.Name == "false" {
+			return "bool"
+		}
 		sym := sa.CurrentScope.Resolve(n.Name)
 		if sym != nil {
 			return sym.Type

@@ -2,7 +2,6 @@ package backend
 
 import (
 	"fmt"
-	"skrp/res/debug"
 	"skrp/res/front"
 	"strings"
 )
@@ -98,9 +97,6 @@ func (p *Pipeline) processNode(node front.Node, irFn *IRFunction) {
 		p.processBinary(n, irFn)
 	case *front.UnaryExpr:
 		p.processUnary(n, irFn)
-	case *front.Number:
-	case *front.String:
-	case *front.Ident:
 	case *front.ReturnStmt:
 		p.processReturn(n, irFn)
 	case *front.CallExpr:
@@ -128,31 +124,19 @@ func (p *Pipeline) processNode(node front.Node, irFn *IRFunction) {
 }
 
 func (p *Pipeline) processTypeOf(typeOf *front.TypeOf, irFn *IRFunction) string {
+	exprType := p.getExprType(typeOf.Expr, irFn)
 	expr := p.processExpression(typeOf.Expr, irFn)
 	result := p.newTemp()
 
-	// Проверяем, является ли выражение any
-	if p.isAnyValue(expr, irFn) {
-		// Для any нужно проверить type поле
+	if exprType == "any" {
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:     "typeof_any",
 			Result: result,
 			Arg1:   expr,
 		})
 	} else {
-		// Для конкретных типов — просто возвращаем строку
-		var varType string
-		if p.isStringValue(expr, irFn) || strings.HasPrefix(expr, "\"") {
-			varType = "string"
-		} else if p.isIntValue(expr, irFn) {
-			varType = "int"
-		} else if p.isFloatValue(expr, irFn) {
-			varType = "float"
-		} else if p.isBoolValue(expr, irFn) {
-			varType = "bool"
-		} else if p.isArrayValue(expr, irFn) {
-			varType = "arr"
-		} else {
+		varType := exprType
+		if varType == "" {
 			varType = "unknown"
 		}
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
@@ -167,11 +151,12 @@ func (p *Pipeline) processTypeOf(typeOf *front.TypeOf, irFn *IRFunction) string 
 
 func (p *Pipeline) processUnary(unary *front.UnaryExpr, irFn *IRFunction) string {
 	if unary.Op == "$" {
+		exprType := p.getExprType(unary.Expr, irFn)
 		expr := p.processExpression(unary.Expr, irFn)
 		result := p.newTemp()
 
-		// Проверяем, является ли выражение any
-		if p.isAnyValue(expr, irFn) {
+		switch exprType {
+		case "any":
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op:         "call",
 				Result:     result,
@@ -179,7 +164,33 @@ func (p *Pipeline) processUnary(unary *front.UnaryExpr, irFn *IRFunction) string
 				Arg2:       expr,
 				ReturnType: "sk_string",
 			})
-		} else {
+		case "arr":
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:         "call",
+				Result:     result,
+				Arg1:       "sk_array_to_string",
+				Arg2:       expr,
+				ReturnType: "sk_string",
+			})
+		case "string":
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:     "=",
+				Result: result,
+				Arg1:   expr,
+			})
+		case "bool":
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:     "cast_bool_to_str",
+				Result: result,
+				Arg1:   expr,
+			})
+		case "float", "double":
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:     "cast_num_to_str",
+				Result: result,
+				Arg1:   expr,
+			})
+		default:
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op:     "to_string",
 				Result: result,
@@ -195,46 +206,40 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 	if decl.IsArray {
 		if decl.Expr != nil {
 			if arrLit, ok := decl.Expr.(*front.ArrayLiteral); ok {
-				// Определяем тип элемента
-				var elemTypeStr string
-				debug.Debug(elemTypeStr)
 				var elemType int
 				elemSize := "sizeof(sk_any)"
-				elemType = 5 // any по умолчанию
+				elemType = 5
 
 				if decl.ElemType != "" {
 					switch decl.ElemType {
 					case "int":
-						elemTypeStr = "int"
 						elemType = 0
 						elemSize = "sizeof(int)"
 					case "string":
-						elemTypeStr = "sk_string"
 						elemType = 1
 						elemSize = "sizeof(sk_string)"
 					case "float":
-						elemTypeStr = "float"
 						elemType = 2
 						elemSize = "sizeof(float)"
 					case "double":
-						elemTypeStr = "double"
 						elemType = 3
 						elemSize = "sizeof(double)"
 					case "bool":
-						elemTypeStr = "sk_bool"
 						elemType = 4
 						elemSize = "sizeof(sk_bool)"
 					default:
-						elemTypeStr = "sk_any"
 						elemType = 5
 						elemSize = "sizeof(sk_any)"
 					}
 				}
 
-				// Объявляем массив как sk_array*
 				irFn.Locals = append(irFn.Locals, "sk_array* "+decl.Name)
 
-				// sk_array* arr = sk_array_new(elem_size, elem_type);
+				if irFn.ArrayElemTypes == nil {
+					irFn.ArrayElemTypes = make(map[string]string)
+				}
+				irFn.ArrayElemTypes[decl.Name] = decl.ElemType
+
 				irFn.Instructions = append(irFn.Instructions, IRInstruction{
 					Op:         "call",
 					Result:     decl.Name,
@@ -243,33 +248,56 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 					ReturnType: "sk_array*",
 				})
 
-				// push each element
 				for _, elem := range arrLit.Elements {
+					elemTypeName := p.getExprType(elem, irFn)
 					val := p.processExpression(elem, irFn)
 
-					// Если нетипизированный массив, оборачиваем в any
-					if decl.ElemType == "" {
-						wrapper := p.getAnyWrapper(val, irFn)
-						tempVar := p.newTemp()
-						irFn.Instructions = append(irFn.Instructions, IRInstruction{
-							Op:         "call",
-							Result:     tempVar,
-							Arg1:       wrapper,
-							Arg2:       val,
-							ReturnType: "sk_any",
-						})
+					if decl.ElemType != "" {
+						// Типизированный массив
+						var pushFunc string
+						switch decl.ElemType {
+						case "int":
+							pushFunc = "sk_array_push_int"
+						case "string":
+							pushFunc = "sk_array_push_string"
+						case "float":
+							pushFunc = "sk_array_push_float"
+						case "double":
+							pushFunc = "sk_array_push_double"
+						case "bool":
+							pushFunc = "sk_array_push_bool"
+						default:
+							pushFunc = "sk_array_push_any"
+						}
 						irFn.Instructions = append(irFn.Instructions, IRInstruction{
 							Op:   "call",
-							Arg1: "sk_array_push",
-							Arg2: decl.Name + ", &" + tempVar,
+							Arg1: pushFunc,
+							Arg2: decl.Name + ", " + val,
 						})
 					} else {
-						// Для типизированного массива просто передаём адрес
-						irFn.Instructions = append(irFn.Instructions, IRInstruction{
-							Op:   "call",
-							Arg1: "sk_array_push",
-							Arg2: decl.Name + ", &" + val,
-						})
+						// Нетипизированный массив — оборачиваем в any
+						if elemTypeName == "any" {
+							irFn.Instructions = append(irFn.Instructions, IRInstruction{
+								Op:   "call",
+								Arg1: "sk_array_push_any",
+								Arg2: decl.Name + ", " + val,
+							})
+						} else {
+							wrapper := p.getAnyWrapperByType(elemTypeName)
+							tempVar := p.newTemp()
+							irFn.Instructions = append(irFn.Instructions, IRInstruction{
+								Op:         "call",
+								Result:     tempVar,
+								Arg1:       wrapper,
+								Arg2:       val,
+								ReturnType: "sk_any",
+							})
+							irFn.Instructions = append(irFn.Instructions, IRInstruction{
+								Op:   "call",
+								Arg1: "sk_array_push_any",
+								Arg2: decl.Name + ", " + tempVar,
+							})
+						}
 					}
 				}
 			}
@@ -282,23 +310,32 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 	irFn.Locals = append(irFn.Locals, cType+" "+decl.Name)
 
 	if decl.Expr != nil {
+		exprType := p.getExprType(decl.Expr, irFn)
 		exprResult := p.processExpression(decl.Expr, irFn)
 
 		if decl.Type == "any" {
-			tempVar := p.newTemp()
-			wrapperFunc := p.getAnyWrapper(exprResult, irFn)
-			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:         "call",
-				Result:     tempVar,
-				Arg1:       wrapperFunc,
-				Arg2:       exprResult,
-				ReturnType: "sk_any",
-			})
-			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:     "=",
-				Result: decl.Name,
-				Arg1:   tempVar,
-			})
+			if exprType == "any" {
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op:     "=",
+					Result: decl.Name,
+					Arg1:   exprResult,
+				})
+			} else {
+				tempVar := p.newTemp()
+				wrapperFunc := p.getAnyWrapperByType(exprType)
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op:         "call",
+					Result:     tempVar,
+					Arg1:       wrapperFunc,
+					Arg2:       exprResult,
+					ReturnType: "sk_any",
+				})
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op:     "=",
+					Result: decl.Name,
+					Arg1:   tempVar,
+				})
+			}
 		} else {
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op:     "=",
@@ -326,7 +363,7 @@ func (p *Pipeline) typeToC(typ string) string {
 	case "void":
 		return "void"
 	case "arr":
-		return "void*"
+		return "sk_array*"
 	case "dict":
 		return "void*"
 	case "any":
@@ -337,28 +374,48 @@ func (p *Pipeline) typeToC(typ string) string {
 }
 
 func (p *Pipeline) processAssign(assign *front.Assign, irFn *IRFunction) {
-	if assign.Expr != nil {
-		exprResult := p.processExpression(assign.Expr, irFn)
+	if assign.Expr == nil {
+		return
+	}
 
-		// Проверяем тип переменной
-		var varType string
-		for _, local := range irFn.Locals {
-			if strings.Contains(local, assign.Name) {
-				if strings.Contains(local, "sk_any") {
-					varType = "any"
-				} else if strings.Contains(local, "sk_string") {
-					varType = "string"
-				} else if strings.Contains(local, "int") {
-					varType = "int"
-				}
-				break
+	exprType := p.getExprType(assign.Expr, irFn)
+	exprResult := p.processExpression(assign.Expr, irFn)
+
+	// Определяем тип переменной
+	varType := ""
+	for _, local := range irFn.Locals {
+		parts := strings.Fields(local)
+		if len(parts) >= 2 && parts[len(parts)-1] == assign.Name {
+			switch parts[0] {
+			case "int":
+				varType = "int"
+			case "sk_string":
+				varType = "string"
+			case "float":
+				varType = "float"
+			case "double":
+				varType = "double"
+			case "sk_bool":
+				varType = "bool"
+			case "sk_array*":
+				varType = "arr"
+			case "sk_any":
+				varType = "any"
 			}
+			break
 		}
+	}
 
-		// Если переменная ANY, а присваиваем конкретное значение
-		if varType == "any" {
+	if varType == "any" {
+		if exprType == "any" {
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:     "=",
+				Result: assign.Name,
+				Arg1:   exprResult,
+			})
+		} else {
 			tempVar := p.newTemp()
-			wrapperFunc := p.getAnyWrapper(exprResult, irFn)
+			wrapperFunc := p.getAnyWrapperByType(exprType)
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op:         "call",
 				Result:     tempVar,
@@ -371,29 +428,27 @@ func (p *Pipeline) processAssign(assign *front.Assign, irFn *IRFunction) {
 				Result: assign.Name,
 				Arg1:   tempVar,
 			})
-		} else {
-			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:     "=",
-				Result: assign.Name,
-				Arg1:   exprResult,
-			})
 		}
+	} else {
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "=",
+			Result: assign.Name,
+			Arg1:   exprResult,
+		})
 	}
 }
 
 func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string {
+	leftType := p.getExprType(bin.Left, irFn)
+	rightType := p.getExprType(bin.Right, irFn)
+
 	left := p.processExpression(bin.Left, irFn)
 	right := p.processExpression(bin.Right, irFn)
 
-	// Определяем типы операндов
-	leftIsString := p.isStringValue(left, irFn) || p.isAnyStringValue(left, irFn)
-	rightIsString := p.isStringValue(right, irFn) || p.isAnyStringValue(right, irFn)
-
 	// Конкатенация строк
-	if bin.Op == "+" && (leftIsString || rightIsString) {
-		// Если левый операнд any, распаковываем
+	if bin.Op == "+" && (leftType == "string" || rightType == "string") {
 		leftVal := left
-		if p.isAnyValue(left, irFn) {
+		if leftType == "any" {
 			tempVar := p.newTemp()
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op:         "call",
@@ -404,9 +459,8 @@ func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string
 			})
 			leftVal = tempVar
 		}
-		// Если правый операнд any, распаковываем
 		rightVal := right
-		if p.isAnyValue(right, irFn) {
+		if rightType == "any" {
 			tempVar := p.newTemp()
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op:         "call",
@@ -427,9 +481,9 @@ func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string
 		return result
 	}
 
-	// Арифметика — проверяем, не any ли операнды
+	// Арифметика/сравнения — распаковываем any если надо
 	leftVal := left
-	if p.isAnyValue(left, irFn) {
+	if leftType == "any" {
 		tempVar := p.newTemp()
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:         "call",
@@ -441,7 +495,7 @@ func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string
 		leftVal = tempVar
 	}
 	rightVal := right
-	if p.isAnyValue(right, irFn) {
+	if rightType == "any" {
 		tempVar := p.newTemp()
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:         "call",
@@ -470,39 +524,6 @@ func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string
 	return result
 }
 
-func (p *Pipeline) isStringValue(value string, irFn *IRFunction) bool {
-	if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
-		return true
-	}
-
-	for _, local := range irFn.Locals {
-		if strings.Contains(local, value) && strings.Contains(local, "sk_string") {
-			return true
-		}
-	}
-
-	for _, ins := range irFn.Instructions {
-		if ins.Result == value {
-			switch ins.Op {
-			case "to_string", "strcat":
-				return true
-			case "=":
-				if strings.HasPrefix(ins.Arg1, "\"") && strings.HasSuffix(ins.Arg1, "\"") {
-					return true
-				}
-			}
-		}
-	}
-
-	return false
-}
-
-func (p *Pipeline) isAnyStringValue(value string, irFn *IRFunction) bool {
-	// Проверяем, что это any и его реальный тип - строка
-	// Пока просто проверяем через isAnyValue
-	return p.isAnyValue(value, irFn)
-}
-
 func (p *Pipeline) processExpression(expr front.Node, irFn *IRFunction) string {
 	switch n := expr.(type) {
 	case *front.Number:
@@ -522,6 +543,12 @@ func (p *Pipeline) processExpression(expr front.Node, irFn *IRFunction) string {
 			return p.processUnary(n, irFn)
 		}
 		return "0"
+	case *front.ArrayIndex:
+		return p.processArrayIndex(n, irFn)
+	case *front.ArrayLength:
+		return p.processArrayLength(n, irFn)
+	case *front.ArrayAdd:
+		return p.processArrayAdd(n, irFn)
 	default:
 		return "0"
 	}
@@ -542,29 +569,12 @@ func (p *Pipeline) processReturn(ret *front.ReturnStmt, irFn *IRFunction) {
 }
 
 func (p *Pipeline) processCall(call *front.CallExpr, irFn *IRFunction) {
-	var targetFunc *front.Function
-	for _, fn := range p.Program.Functions {
-		if fn.Name == call.Name {
-			targetFunc = fn
-			break
-		}
-	}
-
-	if targetFunc == nil && strings.Contains(call.Name, ".") {
-		parts := strings.Split(call.Name, ".")
-		simpleName := parts[len(parts)-1]
-		for _, fn := range p.Program.Functions {
-			if fn.Name == simpleName {
-				targetFunc = fn
-				break
-			}
-		}
-	}
+	targetFunc := p.findFunction(call.Name)
 
 	args := []string{}
-	argIndex := 0
 
 	if targetFunc != nil {
+		argIndex := 0
 		for _, param := range targetFunc.Params {
 			var argExpr front.Node
 
@@ -578,52 +588,7 @@ func (p *Pipeline) processCall(call *front.CallExpr, irFn *IRFunction) {
 				continue
 			}
 
-			argValue := p.processExpression(argExpr, irFn)
-
-			// Если параметр ANY — оборачиваем
-			if param.Type == "any" {
-				tempVar := p.newTemp()
-				wrapperFunc := p.getAnyWrapper(argValue, irFn)
-				irFn.Instructions = append(irFn.Instructions, IRInstruction{
-					Op:         "call",
-					Result:     tempVar,
-					Arg1:       wrapperFunc,
-					Arg2:       argValue,
-					ReturnType: "sk_any",
-				})
-				args = append(args, tempVar)
-				continue
-			}
-
-			// Если передаём ANY в функцию с конкретным типом — распаковываем
-			if p.isAnyValue(argValue, irFn) {
-				tempVar := p.newTemp()
-				var getterFunc string
-				switch param.Type {
-				case "int":
-					getterFunc = "any_get_int"
-				case "string":
-					getterFunc = "any_get_string"
-				case "float":
-					getterFunc = "any_get_float"
-				case "double":
-					getterFunc = "any_get_double"
-				case "bool":
-					getterFunc = "any_get_bool"
-				default:
-					getterFunc = "any_get_ptr"
-				}
-				irFn.Instructions = append(irFn.Instructions, IRInstruction{
-					Op:         "call",
-					Result:     tempVar,
-					Arg1:       getterFunc,
-					Arg2:       argValue,
-					ReturnType: param.Type,
-				})
-				args = append(args, tempVar)
-			} else {
-				args = append(args, argValue)
-			}
+			args = append(args, p.prepareArg(argExpr, param.Type, irFn))
 		}
 	} else {
 		for _, arg := range call.Args {
@@ -632,7 +597,6 @@ func (p *Pipeline) processCall(call *front.CallExpr, irFn *IRFunction) {
 	}
 
 	argsStr := strings.Join(args, ", ")
-
 	funcName := call.Name
 	if strings.Contains(funcName, ".") {
 		parts := strings.Split(funcName, ".")
@@ -644,46 +608,6 @@ func (p *Pipeline) processCall(call *front.CallExpr, irFn *IRFunction) {
 		Arg1: funcName,
 		Arg2: argsStr,
 	})
-}
-
-func (p *Pipeline) getAnyWrapper(value string, irFn *IRFunction) string {
-	argType := p.inferType(value)
-	switch argType {
-	case "string":
-		return "any_string"
-	case "float":
-		return "any_float"
-	case "double":
-		return "any_double"
-	case "bool":
-		return "any_bool"
-	default:
-		return "any_int"
-	}
-}
-
-func (p *Pipeline) isAnyValue(value string, irFn *IRFunction) bool {
-	// Проверяем параметры
-	for _, param := range irFn.Params {
-		if param.Name == value && param.Type == "any" {
-			return true
-		}
-	}
-	// Проверяем локальные переменные
-	for _, local := range irFn.Locals {
-		if strings.Contains(local, value) && strings.Contains(local, "sk_any") {
-			return true
-		}
-	}
-	// Проверяем инструкции
-	for _, ins := range irFn.Instructions {
-		if ins.Result == value && ins.Op == "call" {
-			if strings.Contains(ins.Arg1, "any_") {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) string {
@@ -702,29 +626,12 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 		return p.processToArr(call, irFn)
 	}
 
-	var targetFunc *front.Function
-	for _, fn := range p.Program.Functions {
-		if fn.Name == call.Name {
-			targetFunc = fn
-			break
-		}
-	}
-
-	if targetFunc == nil && strings.Contains(call.Name, ".") {
-		parts := strings.Split(call.Name, ".")
-		simpleName := parts[len(parts)-1]
-		for _, fn := range p.Program.Functions {
-			if fn.Name == simpleName {
-				targetFunc = fn
-				break
-			}
-		}
-	}
+	targetFunc := p.findFunction(call.Name)
 
 	args := []string{}
-	argIndex := 0
 
 	if targetFunc != nil {
+		argIndex := 0
 		for _, param := range targetFunc.Params {
 			var argExpr front.Node
 
@@ -738,50 +645,7 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 				continue
 			}
 
-			argValue := p.processExpression(argExpr, irFn)
-
-			if param.Type == "any" {
-				tempVar := p.newTemp()
-				wrapperFunc := p.getAnyWrapper(argValue, irFn)
-				irFn.Instructions = append(irFn.Instructions, IRInstruction{
-					Op:         "call",
-					Result:     tempVar,
-					Arg1:       wrapperFunc,
-					Arg2:       argValue,
-					ReturnType: "sk_any",
-				})
-				args = append(args, tempVar)
-				continue
-			}
-
-			if p.isAnyValue(argValue, irFn) {
-				tempVar := p.newTemp()
-				var getterFunc string
-				switch param.Type {
-				case "int":
-					getterFunc = "any_get_int"
-				case "string":
-					getterFunc = "any_get_string"
-				case "float":
-					getterFunc = "any_get_float"
-				case "double":
-					getterFunc = "any_get_double"
-				case "bool":
-					getterFunc = "any_get_bool"
-				default:
-					getterFunc = "any_get_ptr"
-				}
-				irFn.Instructions = append(irFn.Instructions, IRInstruction{
-					Op:         "call",
-					Result:     tempVar,
-					Arg1:       getterFunc,
-					Arg2:       argValue,
-					ReturnType: param.Type,
-				})
-				args = append(args, tempVar)
-			} else {
-				args = append(args, argValue)
-			}
+			args = append(args, p.prepareArg(argExpr, param.Type, irFn))
 		}
 	} else {
 		for _, arg := range call.Args {
@@ -791,9 +655,9 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 
 	argsStr := strings.Join(args, ", ")
 
+	// Определяем тип возврата
 	returnType := "sk_string"
 	funcName := call.Name
-
 	simpleName := funcName
 	if strings.Contains(funcName, ".") {
 		parts := strings.Split(funcName, ".")
@@ -802,22 +666,7 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 
 	for _, fn := range p.Program.Functions {
 		if fn.Name == simpleName || fn.Name == funcName {
-			switch fn.ReturnType {
-			case "int":
-				returnType = "int"
-			case "string":
-				returnType = "sk_string"
-			case "float":
-				returnType = "float"
-			case "double":
-				returnType = "double"
-			case "bool":
-				returnType = "sk_bool"
-			case "void":
-				returnType = "void"
-			default:
-				returnType = "sk_string"
-			}
+			returnType = p.typeToC(fn.ReturnType)
 			break
 		}
 	}
@@ -837,6 +686,61 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 	})
 
 	return result
+}
+
+// prepareArg подготавливает аргумент: оборачивает в any или распаковывает из any
+func (p *Pipeline) prepareArg(argExpr front.Node, paramType string, irFn *IRFunction) string {
+	argType := p.getExprType(argExpr, irFn)
+	argValue := p.processExpression(argExpr, irFn)
+
+	if paramType == "any" {
+		if argType == "any" {
+			return argValue
+		}
+		wrapper := p.getAnyWrapperByType(argType)
+		tempVar := p.newTemp()
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "call",
+			Result:     tempVar,
+			Arg1:       wrapper,
+			Arg2:       argValue,
+			ReturnType: "sk_any",
+		})
+		return tempVar
+	}
+
+	if argType == "any" {
+		getter := p.getAnyGetterByType(paramType)
+		tempVar := p.newTemp()
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "call",
+			Result:     tempVar,
+			Arg1:       getter,
+			Arg2:       argValue,
+			ReturnType: p.typeToC(paramType),
+		})
+		return tempVar
+	}
+
+	return argValue
+}
+
+func (p *Pipeline) findFunction(name string) *front.Function {
+	for _, fn := range p.Program.Functions {
+		if fn.Name == name {
+			return fn
+		}
+	}
+	if strings.Contains(name, ".") {
+		parts := strings.Split(name, ".")
+		simpleName := parts[len(parts)-1]
+		for _, fn := range p.Program.Functions {
+			if fn.Name == simpleName {
+				return fn
+			}
+		}
+	}
+	return nil
 }
 
 func (p *Pipeline) processIf(ifStmt *front.IfStmt, irFn *IRFunction) {
@@ -921,11 +825,39 @@ func (p *Pipeline) processIf(ifStmt *front.IfStmt, irFn *IRFunction) {
 
 func (p *Pipeline) processCase(caseStmt *front.CaseStmt, irFn *IRFunction) {
 	value := p.processExpression(caseStmt.Value, irFn)
+	valueType := p.getExprType(caseStmt.Value, irFn)
+
+	// Распаковываем any если нужно
+	if valueType == "any" {
+		tempVar := p.newTemp()
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "call",
+			Result:     tempVar,
+			Arg1:       "any_get_int",
+			Arg2:       value,
+			ReturnType: "int",
+		})
+		value = tempVar
+	}
 
 	endLabel := p.newLabel()
 
 	for _, branch := range caseStmt.Branches {
+		patternType := p.getExprType(branch.Pattern, irFn)
 		pattern := p.processExpression(branch.Pattern, irFn)
+
+		if patternType == "any" {
+			tempVar := p.newTemp()
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:         "call",
+				Result:     tempVar,
+				Arg1:       "any_get_int",
+				Arg2:       pattern,
+				ReturnType: "int",
+			})
+			pattern = tempVar
+		}
+
 		branchLabel := p.newLabel()
 		nextLabel := p.newLabel()
 
@@ -1064,133 +996,33 @@ func (p *Pipeline) processFor(forStmt *front.ForStmt, irFn *IRFunction) {
 	})
 }
 
-func (p *Pipeline) newTemp() string {
-	p.TempCounter++
-	return fmt.Sprintf("t%d", p.TempCounter)
-}
-
-func (p *Pipeline) newLabel() string {
-	p.LabelCounter++
-	return fmt.Sprintf("L%d", p.LabelCounter)
-}
-
-func (p *Pipeline) inferType(value string) string {
-	if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
-		return "string"
-	}
-	if strings.Contains(value, ".") {
-		return "double"
-	}
-	if value == "true" || value == "false" {
-		return "bool"
-	}
-	if len(value) > 0 && (value[0] >= '0' && value[0] <= '9' || value[0] == '-') {
-		return "int"
-	}
-	return "int"
-}
-
-// isIntValue проверяет, является ли значение int
-func (p *Pipeline) isIntValue(value string, irFn *IRFunction) bool {
-	// Проверяем локальные переменные
-	for _, local := range irFn.Locals {
-		// local это "int i" или "sk_string s"
-		parts := strings.Fields(local)
-		if len(parts) >= 2 && parts[1] == value {
-			if parts[0] == "int" {
-				return true
-			}
-		}
-	}
-
-	// Проверяем, что это числовой литерал (не строка, не bool)
-	if len(value) > 0 && (value[0] >= '0' && value[0] <= '9' || value[0] == '-') {
-		if strings.Contains(value, ".") {
-			return false
-		}
-		return true
-	}
-
-	return false
-}
-
-// isFloatValue проверяет, является ли значение float/double
-func (p *Pipeline) isFloatValue(value string, irFn *IRFunction) bool {
-	// Проверяем локальные переменные
-	for _, local := range irFn.Locals {
-		parts := strings.Fields(local)
-		if len(parts) >= 2 && parts[1] == value {
-			if parts[0] == "float" || parts[0] == "double" {
-				return true
-			}
-		}
-	}
-
-	// Проверяем, что это числовой литерал с точкой
-	if len(value) > 0 && (value[0] >= '0' && value[0] <= '9' || value[0] == '-') {
-		if strings.Contains(value, ".") {
-			return true
-		}
-	}
-
-	return false
-}
-
-// isBoolValue проверяет, является ли значение bool
-func (p *Pipeline) isBoolValue(value string, irFn *IRFunction) bool {
-	// Проверяем локальные переменные
-	for _, local := range irFn.Locals {
-		parts := strings.Fields(local)
-		if len(parts) >= 2 && parts[1] == value {
-			if parts[0] == "sk_bool" || parts[0] == "bool" {
-				return true
-			}
-		}
-	}
-
-	// Проверяем литералы true/false
-	if value == "true" || value == "false" {
-		return true
-	}
-
-	return false
-}
-
-// isArrayValue проверяет, является ли значение массивом
-func (p *Pipeline) isArrayValue(value string, irFn *IRFunction) bool {
-	if strings.HasPrefix(value, "[") && strings.HasSuffix(value, "]") {
-		return true
-	}
-
-	for _, local := range irFn.Locals {
-		if strings.Contains(local, value) && strings.Contains(local, "sk_array*") {
-			return true
-		}
-	}
-
-	// Проверяем инструкции, где результат — sk_array*
-	for _, ins := range irFn.Instructions {
-		if ins.Result == value {
-			switch ins.Op {
-			case "call":
-				if ins.Arg1 == "sk_array_new" || ins.Arg1 == "sk_array_copy" {
-					return true
-				}
-			}
-		}
-	}
-
-	return false
-}
-
 func (p *Pipeline) processArrayIndex(idx *front.ArrayIndex, irFn *IRFunction) string {
+	elemType := ""
+	if irFn.ArrayElemTypes != nil {
+		elemType = irFn.ArrayElemTypes[idx.Name]
+	}
+
 	result := p.newTemp()
-	irFn.Instructions = append(irFn.Instructions, IRInstruction{
-		Op:     "array_get",
-		Result: result,
-		Arg1:   idx.Name,
-		Arg2:   p.processExpression(idx.Index, irFn),
-	})
+	index := p.processExpression(idx.Index, irFn)
+
+	if elemType == "" || elemType == "any" {
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "array_get_any",
+			Result:     result,
+			Arg1:       idx.Name,
+			Arg2:       index,
+			ReturnType: "sk_any",
+		})
+	} else {
+		cType := p.typeToC(elemType)
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "array_get_typed",
+			Result:     result,
+			Arg1:       idx.Name,
+			Arg2:       index,
+			ReturnType: cType,
+		})
+	}
 	return result
 }
 
@@ -1205,14 +1037,11 @@ func (p *Pipeline) processArrayLength(length *front.ArrayLength, irFn *IRFunctio
 }
 
 func (p *Pipeline) processArrayAdd(add *front.ArrayAdd, irFn *IRFunction) string {
-	// arr + el → sk_array_copy(arr); sk_array_push(new, &el)
+	elemType := p.getExprType(add.Elem, irFn)
 	elemVal := p.processExpression(add.Elem, irFn)
 
-	// Определяем тип элемента из существующего массива
-	// Пока просто копируем и пушим
 	result := p.newTemp()
 
-	// sk_array* new = sk_array_copy(arr)
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:     "call",
 		Result: result,
@@ -1220,15 +1049,33 @@ func (p *Pipeline) processArrayAdd(add *front.ArrayAdd, irFn *IRFunction) string
 		Arg2:   add.Name,
 	})
 
-	// sk_array_push(new, &elem)
-	irFn.Instructions = append(irFn.Instructions, IRInstruction{
-		Op:   "call",
-		Arg1: "sk_array_push",
-		Arg2: result + ", &" + elemVal,
-	})
+	if elemType == "any" {
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:   "call",
+			Arg1: "sk_array_push",
+			Arg2: result + ", &" + elemVal,
+		})
+	} else {
+		wrapper := p.getAnyWrapperByType(elemType)
+		tempVar := p.newTemp()
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "call",
+			Result:     tempVar,
+			Arg1:       wrapper,
+			Arg2:       elemVal,
+			ReturnType: "sk_any",
+		})
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:   "call",
+			Arg1: "sk_array_push",
+			Arg2: result + ", &" + tempVar,
+		})
+	}
 
 	return result
 }
+
+// ============ Встроенные функции ============
 
 func (p *Pipeline) processToInt(call *front.CallExpr, irFn *IRFunction) string {
 	if len(call.Args) == 0 {
@@ -1241,9 +1088,9 @@ func (p *Pipeline) processToInt(call *front.CallExpr, irFn *IRFunction) string {
 		return result
 	}
 
+	argType := p.getExprType(call.Args[0], irFn)
 	arg := p.processExpression(call.Args[0], irFn)
 	result := p.newTemp()
-	argType := p.inferExprType(call.Args[0], irFn)
 
 	switch argType {
 	case "bool":
@@ -1294,9 +1141,9 @@ func (p *Pipeline) processToFloat(call *front.CallExpr, irFn *IRFunction) string
 		return result
 	}
 
+	argType := p.getExprType(call.Args[0], irFn)
 	arg := p.processExpression(call.Args[0], irFn)
 	result := p.newTemp()
-	argType := p.inferExprType(call.Args[0], irFn)
 
 	switch argType {
 	case "bool":
@@ -1337,7 +1184,6 @@ func (p *Pipeline) processToFloat(call *front.CallExpr, irFn *IRFunction) string
 }
 
 func (p *Pipeline) processToDouble(call *front.CallExpr, irFn *IRFunction) string {
-	// аналогично to_float, но ReturnType double
 	if len(call.Args) == 0 {
 		result := p.newTemp()
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
@@ -1348,9 +1194,9 @@ func (p *Pipeline) processToDouble(call *front.CallExpr, irFn *IRFunction) strin
 		return result
 	}
 
+	argType := p.getExprType(call.Args[0], irFn)
 	arg := p.processExpression(call.Args[0], irFn)
 	result := p.newTemp()
-	argType := p.inferExprType(call.Args[0], irFn)
 
 	switch argType {
 	case "bool":
@@ -1401,9 +1247,9 @@ func (p *Pipeline) processToString(call *front.CallExpr, irFn *IRFunction) strin
 		return result
 	}
 
+	argType := p.getExprType(call.Args[0], irFn)
 	arg := p.processExpression(call.Args[0], irFn)
 	result := p.newTemp()
-	argType := p.inferExprType(call.Args[0], irFn)
 
 	switch argType {
 	case "int":
@@ -1429,6 +1275,14 @@ func (p *Pipeline) processToString(call *front.CallExpr, irFn *IRFunction) strin
 			Op:         "call",
 			Result:     result,
 			Arg1:       "any_to_string",
+			Arg2:       arg,
+			ReturnType: "sk_string",
+		})
+	case "arr":
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "call",
+			Result:     result,
+			Arg1:       "sk_array_to_string",
 			Arg2:       arg,
 			ReturnType: "sk_string",
 		})
@@ -1460,9 +1314,9 @@ func (p *Pipeline) processToBool(call *front.CallExpr, irFn *IRFunction) string 
 		return result
 	}
 
+	argType := p.getExprType(call.Args[0], irFn)
 	arg := p.processExpression(call.Args[0], irFn)
 	result := p.newTemp()
-	argType := p.inferExprType(call.Args[0], irFn)
 
 	switch argType {
 	case "int", "float", "double":
@@ -1497,9 +1351,7 @@ func (p *Pipeline) processToBool(call *front.CallExpr, irFn *IRFunction) string 
 }
 
 func (p *Pipeline) processToArr(call *front.CallExpr, irFn *IRFunction) string {
-	// to_arr(a, b, c) → создаём массив с этими элементами
 	result := p.newTemp()
-
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:         "call",
 		Result:     result,
@@ -1509,27 +1361,40 @@ func (p *Pipeline) processToArr(call *front.CallExpr, irFn *IRFunction) string {
 	})
 
 	for _, arg := range call.Args {
+		argType := p.getExprType(arg, irFn)
 		val := p.processExpression(arg, irFn)
-		wrapper := p.getAnyWrapper(val, irFn)
-		tempVar := p.newTemp()
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:         "call",
-			Result:     tempVar,
-			Arg1:       wrapper,
-			Arg2:       val,
-			ReturnType: "sk_any",
-		})
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:   "call",
-			Arg1: "sk_array_push",
-			Arg2: result + ", &" + tempVar,
-		})
+
+		if argType == "any" {
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:   "call",
+				Arg1: "sk_array_push_any",
+				Arg2: result + ", " + val,
+			})
+		} else {
+			wrapper := p.getAnyWrapperByType(argType)
+			tempVar := p.newTemp()
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:         "call",
+				Result:     tempVar,
+				Arg1:       wrapper,
+				Arg2:       val,
+				ReturnType: "sk_any",
+			})
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:   "call",
+				Arg1: "sk_array_push_any",
+				Arg2: result + ", " + tempVar,
+			})
+		}
 	}
 
 	return result
 }
 
-func (p *Pipeline) inferExprType(expr front.Node, irFn *IRFunction) string {
+// ============ Система типов ============
+
+// getExprType возвращает реальный тип AST-узла
+func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 	switch n := expr.(type) {
 	case *front.Number:
 		if strings.Contains(n.Value, ".") {
@@ -1539,55 +1404,67 @@ func (p *Pipeline) inferExprType(expr front.Node, irFn *IRFunction) string {
 	case *front.String:
 		return "string"
 	case *front.Ident:
-		// Проверяем параметры функции
+		// true/false — bool
+		if n.Name == "true" || n.Name == "false" {
+			return "bool"
+		}
+		// Параметры
 		for _, param := range irFn.Params {
 			if param.Name == n.Name {
-				switch param.Type {
-				case "int":
-					return "int"
-				case "string":
-					return "string"
-				case "float":
-					return "float"
-				case "double":
-					return "double"
-				case "bool":
-					return "bool"
-				case "arr":
-					return "arr"
-				case "any":
-					return "any"
-				}
+				return param.Type
 			}
 		}
-		// Проверяем локальные переменные
-		if p.isAnyValue(n.Name, irFn) {
-			return "any"
-		}
+		// Локальные переменные
 		for _, local := range irFn.Locals {
 			parts := strings.Fields(local)
-			if len(parts) >= 2 && parts[1] == n.Name {
-				switch parts[0] {
-				case "int":
-					return "int"
-				case "sk_string":
-					return "string"
-				case "float":
-					return "float"
-				case "double":
-					return "double"
-				case "sk_bool":
-					return "bool"
-				case "sk_array*":
-					return "arr"
-				case "sk_any":
-					return "any"
+			if len(parts) >= 2 {
+				name := parts[len(parts)-1]
+				if name == n.Name {
+					switch parts[0] {
+					case "int":
+						return "int"
+					case "sk_string":
+						return "string"
+					case "float":
+						return "float"
+					case "double":
+						return "double"
+					case "sk_bool":
+						return "bool"
+					case "sk_array*":
+						return "arr"
+					case "sk_any":
+						return "any"
+					}
 				}
 			}
 		}
 		return ""
+	case *front.BinaryExpr:
+		leftType := p.getExprType(n.Left, irFn)
+		rightType := p.getExprType(n.Right, irFn)
+		if n.Op == "+" && (leftType == "string" || rightType == "string") {
+			return "string"
+		}
+		if n.Op == "<" || n.Op == ">" || n.Op == "==" || n.Op == "!=" || n.Op == "<=" || n.Op == ">=" {
+			return "bool"
+		}
+		if leftType == "double" || rightType == "double" {
+			return "double"
+		}
+		if leftType == "float" || rightType == "float" {
+			return "float"
+		}
+		if leftType == "int" && rightType == "int" {
+			return "int"
+		}
+		return "int"
+	case *front.UnaryExpr:
+		if n.Op == "$" {
+			return "string"
+		}
+		return p.getExprType(n.Expr, irFn)
 	case *front.CallExpr:
-		// Встроенные функции
 		switch n.Name {
 		case "to_int":
 			return "int"
@@ -1602,23 +1479,26 @@ func (p *Pipeline) inferExprType(expr front.Node, irFn *IRFunction) string {
 		case "to_arr":
 			return "arr"
 		}
-		// Пользовательские функции
 		for _, fn := range p.Program.Functions {
 			if fn.Name == n.Name {
 				return fn.ReturnType
 			}
 		}
 		return ""
-	case *front.UnaryExpr:
-		if n.Op == "$" {
-			return "string"
-		}
-		return p.inferExprType(n.Expr, irFn)
 	case *front.TypeOf:
 		return "string"
 	case *front.ArrayLiteral:
 		return "arr"
 	case *front.ArrayIndex:
+		if irFn.ArrayElemTypes != nil {
+			elemType, ok := irFn.ArrayElemTypes[n.Name]
+			if ok {
+				if elemType == "" {
+					return "any"
+				}
+				return elemType
+			}
+		}
 		return ""
 	case *front.ArrayLength:
 		return "int"
@@ -1627,4 +1507,52 @@ func (p *Pipeline) inferExprType(expr front.Node, irFn *IRFunction) string {
 	default:
 		return ""
 	}
+}
+
+func (p *Pipeline) getAnyWrapperByType(t string) string {
+	switch t {
+	case "int":
+		return "any_int"
+	case "string":
+		return "any_string"
+	case "float":
+		return "any_float"
+	case "double":
+		return "any_double"
+	case "bool":
+		return "any_bool"
+	case "arr":
+		return "any_ptr"
+	default:
+		return "any_int"
+	}
+}
+
+func (p *Pipeline) getAnyGetterByType(t string) string {
+	switch t {
+	case "int":
+		return "any_get_int"
+	case "string":
+		return "any_get_string"
+	case "float":
+		return "any_get_float"
+	case "double":
+		return "any_get_double"
+	case "bool":
+		return "any_get_bool"
+	case "arr":
+		return "any_get_ptr"
+	default:
+		return "any_get_int"
+	}
+}
+
+func (p *Pipeline) newTemp() string {
+	p.TempCounter++
+	return fmt.Sprintf("t%d", p.TempCounter)
+}
+
+func (p *Pipeline) newLabel() string {
+	p.LabelCounter++
+	return fmt.Sprintf("L%d", p.LabelCounter)
 }

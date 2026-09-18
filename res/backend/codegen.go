@@ -38,6 +38,7 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("#define false 0")
 	cg.writeLine("")
 
+	// ===== sk_any =====
 	cg.writeLine("// Skorpion any type")
 	cg.writeLine("typedef struct {")
 	cg.writeLine("    int type;")
@@ -111,23 +112,9 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("        default: return 0;")
 	cg.writeLine("    }")
 	cg.writeLine("}")
-
-	cg.writeLine("// Any to string")
-	cg.writeLine("sk_string any_to_string(sk_any a) {")
-	cg.writeLine("    char buf[64];")
-	cg.writeLine("    switch (a.type) {")
-	cg.writeLine("        case 0: snprintf(buf, 64, \"%d\", a.data.i); return strdup(buf);")
-	cg.writeLine("        case 1: return strdup(a.data.s);")
-	cg.writeLine("        case 2: snprintf(buf, 64, \"%f\", a.data.f); return strdup(buf);")
-	cg.writeLine("        case 3: snprintf(buf, 64, \"%f\", a.data.d); return strdup(buf);")
-	cg.writeLine("        case 4: return strdup(a.data.b ? \"true\" : \"false\");")
-	cg.writeLine("        case 5: snprintf(buf, 64, \"%p\", a.data.p); return strdup(buf);")
-	cg.writeLine("        default: return strdup(\"unknown\");")
-	cg.writeLine("    }")
-	cg.writeLine("}")
 	cg.writeLine("")
 
-	// В Generate() после any типов
+	// ===== sk_array =====
 	cg.writeLine("// Skorpion array type")
 	cg.writeLine("typedef struct {")
 	cg.writeLine("    void* data;")
@@ -155,6 +142,12 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("    memcpy((char*)a->data + a->length * a->elem_size, elem, a->elem_size);")
 	cg.writeLine("    a->length++;")
 	cg.writeLine("}")
+	cg.writeLine("void sk_array_push_int(sk_array* a, int v) { sk_array_push(a, &v); }")
+	cg.writeLine("void sk_array_push_string(sk_array* a, sk_string v) { sk_array_push(a, &v); }")
+	cg.writeLine("void sk_array_push_float(sk_array* a, float v) { sk_array_push(a, &v); }")
+	cg.writeLine("void sk_array_push_double(sk_array* a, double v) { sk_array_push(a, &v); }")
+	cg.writeLine("void sk_array_push_bool(sk_array* a, sk_bool v) { sk_array_push(a, &v); }")
+	cg.writeLine("void sk_array_push_any(sk_array* a, sk_any v) { sk_array_push(a, &v); }")
 	cg.writeLine("")
 	cg.writeLine("void* sk_array_get(sk_array* a, int index) {")
 	cg.writeLine("    if (index < 0 || index >= a->length) return NULL;")
@@ -175,7 +168,58 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("    free(a->data);")
 	cg.writeLine("    free(a);")
 	cg.writeLine("}")
+	cg.writeLine("")
 
+	cg.writeLine("// Forward declarations")
+	cg.writeLine("sk_string sk_array_to_string(sk_array* a);")
+	cg.writeLine("")
+
+	// ===== any_to_string =====
+	cg.writeLine("// Any to string")
+	cg.writeLine("sk_string any_to_string(sk_any a) {")
+	cg.writeLine("    char buf[64];")
+	cg.writeLine("    switch (a.type) {")
+	cg.writeLine("        case 0: snprintf(buf, 64, \"%d\", a.data.i); return strdup(buf);")
+	cg.writeLine("        case 1: return strdup(a.data.s);")
+	cg.writeLine("        case 2: snprintf(buf, 64, \"%f\", a.data.f); return strdup(buf);")
+	cg.writeLine("        case 3: snprintf(buf, 64, \"%f\", a.data.d); return strdup(buf);")
+	cg.writeLine("        case 4: return strdup(a.data.b ? \"true\" : \"false\");")
+	cg.writeLine("        case 5: return sk_array_to_string((sk_array*)a.data.p);")
+	cg.writeLine("        default: return strdup(\"unknown\");")
+	cg.writeLine("    }")
+	cg.writeLine("}")
+	cg.writeLine("")
+
+	// ===== sk_array_to_string (ПОСЛЕ any_to_string!) =====
+	cg.writeLine("// Array to string")
+	cg.writeLine("sk_string sk_array_to_string(sk_array* a) {")
+	cg.writeLine("    char* buf = malloc(1024);")
+	cg.writeLine("    strcpy(buf, \"[\");")
+	cg.writeLine("    for (int i = 0; i < a->length; i++) {")
+	cg.writeLine("        if (i > 0) strcat(buf, \", \");")
+	cg.writeLine("        void* elem = sk_array_get(a, i);")
+	cg.writeLine("        if (a->elem_type == 5) {")
+	cg.writeLine("            sk_any* any = (sk_any*)elem;")
+	cg.writeLine("            char* s = any_to_string(*any);")
+	cg.writeLine("            strcat(buf, s);")
+	cg.writeLine("        } else if (a->elem_type == 0) {")
+	cg.writeLine("            char tmp[32]; snprintf(tmp, 32, \"%d\", *(int*)elem); strcat(buf, tmp);")
+	cg.writeLine("        } else if (a->elem_type == 1) {")
+	cg.writeLine("            strcat(buf, *(sk_string*)elem);")
+	cg.writeLine("        } else if (a->elem_type == 2) {")
+	cg.writeLine("            char tmp[32]; snprintf(tmp, 32, \"%f\", *(float*)elem); strcat(buf, tmp);")
+	cg.writeLine("        } else if (a->elem_type == 3) {")
+	cg.writeLine("            char tmp[32]; snprintf(tmp, 32, \"%f\", *(double*)elem); strcat(buf, tmp);")
+	cg.writeLine("        } else if (a->elem_type == 4) {")
+	cg.writeLine("            strcat(buf, *(sk_bool*)elem ? \"true\" : \"false\");")
+	cg.writeLine("        }")
+	cg.writeLine("    }")
+	cg.writeLine("    strcat(buf, \"]\");")
+	cg.writeLine("    return buf;")
+	cg.writeLine("}")
+	cg.writeLine("")
+
+	// ===== Function prototypes =====
 	cg.writeLine("// Function prototypes")
 	for _, fn := range cg.IR.Functions {
 		if fn.Name == "main" {
@@ -194,12 +238,14 @@ func (cg *CodeGenerator) Generate() string {
 	}
 	cg.writeLine("")
 
+	// ===== Inline C =====
 	if cg.IR.InlineC != "" {
 		cg.writeLine("// Inline C code")
 		cg.writeLine(cg.IR.InlineC)
 		cg.writeLine("")
 	}
 
+	// ===== Globals =====
 	if len(cg.IR.Globals) > 0 {
 		cg.writeLine("// Global variables")
 		for _, g := range cg.IR.Globals {
@@ -212,6 +258,7 @@ func (cg *CodeGenerator) Generate() string {
 		cg.writeLine("")
 	}
 
+	// ===== Functions =====
 	for _, fn := range cg.IR.Functions {
 		cg.generateFunction(&fn)
 	}
@@ -382,6 +429,10 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 		cg.writeLine(fmt.Sprintf("%svoid* %s = sk_array_get(%s, %s);", indent, ins.Result, ins.Arg1, ins.Arg2))
 	case "array_len":
 		cg.writeLine(fmt.Sprintf("%sint %s = sk_array_len(%s);", indent, ins.Result, ins.Arg1))
+	case "array_get_any":
+		cg.writeLine(fmt.Sprintf("%ssk_any %s = *(sk_any*)sk_array_get(%s, %s);", indent, ins.Result, ins.Arg1, ins.Arg2))
+	case "array_get_typed":
+		cg.writeLine(fmt.Sprintf("%s%s %s = *(%s*)sk_array_get(%s, %s);", indent, ins.ReturnType, ins.Result, ins.ReturnType, ins.Arg1, ins.Arg2))
 	case "array_add":
 		cg.writeLine(fmt.Sprintf("%ssk_array* %s = sk_array_copy(%s);", indent, ins.Result, ins.Arg1))
 		cg.writeLine(fmt.Sprintf("%ssk_array_push(%s, &%s);", indent, ins.Result, ins.Arg2))

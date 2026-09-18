@@ -81,19 +81,6 @@ int any_to_bool(sk_any a) {
         default: return 0;
     }
 }
-// Any to string
-sk_string any_to_string(sk_any a) {
-    char buf[64];
-    switch (a.type) {
-        case 0: snprintf(buf, 64, "%d", a.data.i); return strdup(buf);
-        case 1: return strdup(a.data.s);
-        case 2: snprintf(buf, 64, "%f", a.data.f); return strdup(buf);
-        case 3: snprintf(buf, 64, "%f", a.data.d); return strdup(buf);
-        case 4: return strdup(a.data.b ? "true" : "false");
-        case 5: snprintf(buf, 64, "%p", a.data.p); return strdup(buf);
-        default: return strdup("unknown");
-    }
-}
 
 // Skorpion array type
 typedef struct {
@@ -122,6 +109,12 @@ void sk_array_push(sk_array* a, void* elem) {
     memcpy((char*)a->data + a->length * a->elem_size, elem, a->elem_size);
     a->length++;
 }
+void sk_array_push_int(sk_array* a, int v) { sk_array_push(a, &v); }
+void sk_array_push_string(sk_array* a, sk_string v) { sk_array_push(a, &v); }
+void sk_array_push_float(sk_array* a, float v) { sk_array_push(a, &v); }
+void sk_array_push_double(sk_array* a, double v) { sk_array_push(a, &v); }
+void sk_array_push_bool(sk_array* a, sk_bool v) { sk_array_push(a, &v); }
+void sk_array_push_any(sk_array* a, sk_any v) { sk_array_push(a, &v); }
 
 void* sk_array_get(sk_array* a, int index) {
     if (index < 0 || index >= a->length) return NULL;
@@ -142,27 +135,93 @@ void sk_array_free(sk_array* a) {
     free(a->data);
     free(a);
 }
+
+// Forward declarations
+sk_string sk_array_to_string(sk_array* a);
+
+// Any to string
+sk_string any_to_string(sk_any a) {
+    char buf[64];
+    switch (a.type) {
+        case 0: snprintf(buf, 64, "%d", a.data.i); return strdup(buf);
+        case 1: return strdup(a.data.s);
+        case 2: snprintf(buf, 64, "%f", a.data.f); return strdup(buf);
+        case 3: snprintf(buf, 64, "%f", a.data.d); return strdup(buf);
+        case 4: return strdup(a.data.b ? "true" : "false");
+        case 5: return sk_array_to_string((sk_array*)a.data.p);
+        default: return strdup("unknown");
+    }
+}
+
+// Array to string
+sk_string sk_array_to_string(sk_array* a) {
+    char* buf = malloc(1024);
+    strcpy(buf, "[");
+    for (int i = 0; i < a->length; i++) {
+        if (i > 0) strcat(buf, ", ");
+        void* elem = sk_array_get(a, i);
+        if (a->elem_type == 5) {
+            sk_any* any = (sk_any*)elem;
+            char* s = any_to_string(*any);
+            strcat(buf, s);
+        } else if (a->elem_type == 0) {
+            char tmp[32]; snprintf(tmp, 32, "%d", *(int*)elem); strcat(buf, tmp);
+        } else if (a->elem_type == 1) {
+            strcat(buf, *(sk_string*)elem);
+        } else if (a->elem_type == 2) {
+            char tmp[32]; snprintf(tmp, 32, "%f", *(float*)elem); strcat(buf, tmp);
+        } else if (a->elem_type == 3) {
+            char tmp[32]; snprintf(tmp, 32, "%f", *(double*)elem); strcat(buf, tmp);
+        } else if (a->elem_type == 4) {
+            strcat(buf, *(sk_bool*)elem ? "true" : "false");
+        }
+    }
+    strcat(buf, "]");
+    return buf;
+}
+
 // Function prototypes
-void* ri(sk_any x);
 void sendln(sk_string msg);
 void sendf(sk_string msg);
 sk_string input(sk_string prompt);
 
-void* ri(sk_any x) {
-    sk_array* t1 = sk_array_new(sizeof(sk_any), 5);
-    sk_any t2 = any_int(x);
-    sk_array_push(t1, &t2);
-    sk_any t3 = any_int(4);
-    sk_array_push(t1, &t3);
-    return t1;
-}
-
 void main(void* args) {
-    sk_any t4 = any_string("5");
-    sk_string t5 = ri(t4);
+    sk_array* nums;
+    sk_array* mixed;
+
+    nums = sk_array_new(sizeof(int), 0);
+    sk_array_push_int(nums, 1);
+    sk_array_push_int(nums, 2);
+    sk_array_push_int(nums, 3);
+    int t1 = sk_array_len(nums);
+    int t2 = 1 + t1;
+    char t3[32];
+    snprintf(t3, 32, "%d", t2);
+    char t4[256];
+    strcpy(t4, "Length: ");
+    strcat(t4, t3);
+    sendln(t4);
+    int t5 = *(int*)sk_array_get(nums, 0);
     char t6[32];
     snprintf(t6, 32, "%d", t5);
-    sendln(t6);
+    char t7[256];
+    strcpy(t7, "First: ");
+    strcat(t7, t6);
+    sendln(t7);
+    mixed = sk_array_new(sizeof(sk_any), 5);
+    sk_any t8 = any_int(1);
+    sk_array_push_any(mixed, t8);
+    sk_any t9 = any_string("hi");
+    sk_array_push_any(mixed, t9);
+    sk_any t10 = any_double(3.14);
+    sk_array_push_any(mixed, t10);
+    sk_any t11 = any_bool(true);
+    sk_array_push_any(mixed, t11);
+    sk_string t12 = sk_array_to_string(mixed);
+    char t13[256];
+    strcpy(t13, "Mixed: ");
+    strcat(t13, t12);
+    sendln(t13);
     return;
 }
 
