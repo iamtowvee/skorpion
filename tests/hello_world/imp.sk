@@ -1,9 +1,7 @@
 use std/io
 
-void *called(string b) {
-    io.sendln("DON'T EXIST IN THIS CONTEXT" + b)
-}
+void some() { io.sendln("Hi"); }
 
-void call(any a) {
-    called($a)
+void main(arr args) {
+    any x = some()
 }

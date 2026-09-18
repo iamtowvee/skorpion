@@ -186,56 +186,18 @@ sk_string sk_array_to_string(sk_array* a) {
 }
 
 // Function prototypes
+void some(void);
 void sendln(sk_string msg);
 void sendf(sk_string msg);
 sk_string input(sk_string prompt);
 
-void main(void* args) {
-    sk_array* nums;
-    sk_array* experiement;
-    sk_array* mixed;
+void some(void) {
+    sendln("Hi");
+    return;
+}
 
-    nums = sk_array_new(sizeof(int), 0);
-    sk_array_push_int(nums, 1);
-    sk_array_push_int(nums, 2);
-    sk_array_push_int(nums, 3);
-    experiement = sk_array_new(sizeof(sk_array*), 6);
-    sk_array* t1 = sk_array_new(sizeof(int), 0);
-    sk_array_push_int(t1, 3);
-    sk_array_push_arr(experiement, t1);
-    sk_array* t2 = sk_array_new(sizeof(int), 0);
-    sk_array_push_int(t2, 3);
-    sk_array_push_int(t2, 1);
-    sk_array_push_int(t2, 4);
-    sk_array_push_arr(experiement, t2);
-    int t3 = sk_array_len(nums);
-    char t4[32];
-    snprintf(t4, 32, "%d", t3);
-    char t5[256];
-    strcpy(t5, "Length: ");
-    strcat(t5, t4);
-    sendln(t5);
-    int t6 = *(int*)sk_array_get(nums, 0);
-    char t7[32];
-    snprintf(t7, 32, "%d", t6);
-    char t8[256];
-    strcpy(t8, "First: ");
-    strcat(t8, t7);
-    sendln(t8);
-    mixed = sk_array_new(sizeof(sk_any), 5);
-    sk_any t9 = any_int(-2);
-    sk_array_push_any(mixed, t9);
-    sk_any t10 = any_string("hi");
-    sk_array_push_any(mixed, t10);
-    sk_any t11 = any_double(3.14);
-    sk_array_push_any(mixed, t11);
-    sk_any t12 = any_bool(true);
-    sk_array_push_any(mixed, t12);
-    sk_string t13 = sk_array_to_string(mixed);
-    char t14[256];
-    strcpy(t14, "Mixed: ");
-    strcat(t14, t13);
-    sendln(t14);
+void main(void* args) {
+    some();
     return;
 }
 
