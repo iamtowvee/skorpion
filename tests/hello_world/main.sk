@@ -1,13 +1,24 @@
 use std/io
 
 void main(arr args) {
-    includeC ```
-        #ifdef SK_OS_WINDOWS
-            printf("Running on Windows\n");
-        #elif defined(SK_OS_LINUX)
-            printf("Running on Linux\n");
-        #else
-            printf("Unknown OS\n");
-        #endif
-    ```
+    string s = io.input()       // ← allocated
+    io.sendln(s)                 // ← use
+    // ← free(s) здесь
+
+    string t = "hello"           // ← literal, не free
+    io.sendln(t)
+    // ← нет free
+
+    int i = 0
+    while (i < 3) {
+        string loop_s = io.input()  // ← allocated в цикле
+        io.sendln(loop_s)
+        i = i + 1
+        // ← free(loop_s) ЗДЕСЬ (внутри цикла, т.к. каждая итерация новая)
+    }
+
+    // Циклические ссылки
+    any a = io.input()
+    any b = a                    // ← a и b ссылаются на одно
+    // free(a); free(b) — нужно освободить один раз
 }

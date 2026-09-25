@@ -272,18 +272,35 @@ func (cg *CodeGenerator) Generate() string {
 }
 
 func (cg *CodeGenerator) generateFunction(fn *IRFunction) {
-	returnType := cg.typeToC(fn.ReturnType)
+	isMain := fn.Name == "main"
 
-	params := []string{}
-	for _, p := range fn.Params {
-		params = append(params, fmt.Sprintf("%s %s", cg.typeToC(p.Type), p.Name))
+	var returnType string
+	if isMain {
+		returnType = "int"
+	} else {
+		returnType = cg.typeToC(fn.ReturnType)
 	}
-	paramsStr := strings.Join(params, ", ")
-	if paramsStr == "" {
-		paramsStr = "void"
+
+	var paramsStr string
+	if isMain {
+		paramsStr = "int argc, char** argv"
+	} else {
+		params := []string{}
+		for _, p := range fn.Params {
+			params = append(params, fmt.Sprintf("%s %s", cg.typeToC(p.Type), p.Name))
+		}
+		paramsStr = strings.Join(params, ", ")
+		if paramsStr == "" {
+			paramsStr = "void"
+		}
 	}
 
 	cg.writeLine(fmt.Sprintf("%s %s(%s) {", returnType, fn.Name, paramsStr))
+
+	if isMain {
+		cg.writeLine("    (void)argc;")
+		cg.writeLine("    (void)argv;")
+	}
 
 	if len(fn.Locals) > 0 {
 		for _, local := range fn.Locals {
@@ -299,7 +316,11 @@ func (cg *CodeGenerator) generateFunction(fn *IRFunction) {
 	if fn.ReturnType == "void" && len(fn.Instructions) > 0 {
 		lastIns := fn.Instructions[len(fn.Instructions)-1]
 		if lastIns.Op != "ret" {
-			cg.writeLine("    return;")
+			if isMain {
+				cg.writeLine("    return 0;")
+			} else {
+				cg.writeLine("    return;")
+			}
 		}
 	}
 
@@ -399,6 +420,8 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 	case "ret":
 		if ins.Arg1 != "" {
 			cg.writeLine(fmt.Sprintf("%sreturn %s;", indent, ins.Arg1))
+		} else if fn.Name == "main" {
+			cg.writeLine(fmt.Sprintf("%sreturn 0;", indent))
 		} else {
 			cg.writeLine(fmt.Sprintf("%sreturn;", indent))
 		}
@@ -476,22 +499,26 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 		cg.writeLine(fmt.Sprintf("%sgoto %s;", indent, ins.Result))
 
 	case "=":
-		if strings.HasPrefix(ins.Result, "t") {
-			argType := "int"
-			if strings.HasPrefix(ins.Arg1, "\"") && strings.HasSuffix(ins.Arg1, "\"") {
-				argType = "sk_string"
-			} else if strings.Contains(ins.Arg1, ".") {
-				argType = "double"
-			} else if ins.Arg1 == "true" || ins.Arg1 == "false" {
-				argType = "sk_bool"
-			}
-			cg.writeLine(fmt.Sprintf("%s%s %s = %s;", indent, argType, ins.Result, ins.Arg1))
+		if ins.Arg1 == "NULL" {
+			cg.writeLine(fmt.Sprintf("%s%s = NULL;", indent, ins.Result))
 		} else {
-			cg.writeLine(fmt.Sprintf("%s%s = %s;", indent, ins.Result, ins.Arg1))
+			if isTempVar(ins.Result) {
+				argType := "int"
+				if strings.HasPrefix(ins.Arg1, "\"") && strings.HasSuffix(ins.Arg1, "\"") {
+					argType = "sk_string"
+				} else if strings.Contains(ins.Arg1, ".") {
+					argType = "double"
+				} else if ins.Arg1 == "true" || ins.Arg1 == "false" {
+					argType = "sk_bool"
+				}
+				cg.writeLine(fmt.Sprintf("%s%s %s = %s;", indent, argType, ins.Result, ins.Arg1))
+			} else {
+				cg.writeLine(fmt.Sprintf("%s%s = %s;", indent, ins.Result, ins.Arg1))
+			}
 		}
 
 	case "+", "-", "*", "/":
-		if strings.HasPrefix(ins.Result, "t") {
+		if isTempVar(ins.Result) {
 			cg.writeLine(fmt.Sprintf("%sint %s = %s %s %s;", indent, ins.Result, ins.Arg1, ins.Op, ins.Arg2))
 		} else {
 			cg.writeLine(fmt.Sprintf("%s%s = %s %s %s;", indent, ins.Result, ins.Arg1, ins.Op, ins.Arg2))
@@ -537,4 +564,17 @@ func (cg *CodeGenerator) typeToC(typ string) string {
 
 func (cg *CodeGenerator) writeLine(line string) {
 	cg.CSource.WriteString(line + "\n")
+}
+
+func isTempVar(name string) bool {
+	if !strings.HasPrefix(name, "t") || len(name) < 2 {
+		return false
+	}
+	// Всё после "t" должно быть цифрой
+	for _, c := range name[1:] {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }

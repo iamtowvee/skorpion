@@ -152,8 +152,9 @@ func (u *UnaryExpr) GetTypeString() string {
 }
 
 type CallExpr struct {
-	Name string
-	Args []Node
+	Name     string
+	Args     []Node
+	Receiver string
 }
 
 func (c *CallExpr) GetType() NodeType { return NODE_CALL }

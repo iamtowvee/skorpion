@@ -901,7 +901,7 @@ func (p *Parser) parsePrimary() Node {
 			return &ArrayIndex{Name: name, Index: index}
 		}
 
-		// arr.length
+		// arr.length или x.func()
 		if p.peek.Type == TOKEN_DOT {
 			p.advance()
 			if p.peek.Literal == "length" {
@@ -939,22 +939,13 @@ func (p *Parser) parsePrimary() Node {
 				}
 				p.expect(TOKEN_RPAREN)
 
-				// Вставляем name как первый аргумент
-				allArgs := []Node{&Ident{Name: name}}
-				allArgs = append(allArgs, callArgs...)
-
-				return &CallExpr{Name: funcName, Args: allArgs}
+				// Используем полное имя с точкой
+				return &CallExpr{
+					Name:     name + "." + funcName,
+					Args:     callArgs,
+					Receiver: name,
+				}
 			}
-		}
-
-		// arr + el
-		if p.peek.Type == TOKEN_PLUS {
-			p.advance()
-			elem := p.parseExpression()
-			if elem == nil {
-				return nil
-			}
-			return &ArrayAdd{Name: name, Elem: elem}
 		}
 
 		if p.peek.Type == TOKEN_LPAREN {
@@ -972,7 +963,7 @@ func (p *Parser) parsePrimary() Node {
 			p.advance()
 			return p.parsePrimary()
 		}
-		if p.peek.Literal == "type" { // <-- НОВОЕ
+		if p.peek.Literal == "type" {
 			return p.parseTypeOf()
 		}
 		p.hasErrors = true

@@ -455,6 +455,13 @@ func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string
 	leftType := p.getExprType(bin.Left, irFn)
 	rightType := p.getExprType(bin.Right, irFn)
 
+	if bin.Op == "+" && isArrayType(leftType) {
+		// Проверяем, что слева идентификатор (имя переменной)
+		if ident, ok := bin.Left.(*front.Ident); ok {
+			return p.processArrayAddName(ident.Name, bin.Right, irFn)
+		}
+	}
+
 	left := p.processExpression(bin.Left, irFn)
 	right := p.processExpression(bin.Right, irFn)
 
@@ -643,6 +650,16 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 
 	targetFunc := p.findFunction(call.Name)
 
+	// Нормализуем имя функции (io.input → input)
+	funcName := call.Name
+	if strings.Contains(funcName, ".") {
+		parts := strings.Split(funcName, ".")
+		funcName = parts[len(parts)-1]
+	}
+
+	// Ищем целевую функцию — уже сделано выше через findFunction(call.Name)
+	// Но findFunction умеет искать по простому имени тоже
+
 	args := []string{}
 
 	if targetFunc != nil {
@@ -672,7 +689,6 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 
 	// Определяем тип возврата
 	returnType := "sk_string"
-	funcName := call.Name
 	simpleName := funcName
 	if strings.Contains(funcName, ".") {
 		parts := strings.Split(funcName, ".")
@@ -1070,6 +1086,45 @@ func (p *Pipeline) processArrayAdd(add *front.ArrayAdd, irFn *IRFunction) string
 		Result: result,
 		Arg1:   "sk_array_copy",
 		Arg2:   add.Name,
+	})
+
+	if elemType == "any" {
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:   "call",
+			Arg1: "sk_array_push",
+			Arg2: result + ", &" + elemVal,
+		})
+	} else {
+		wrapper := p.getAnyWrapperByType(elemType)
+		tempVar := p.newTemp()
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "call",
+			Result:     tempVar,
+			Arg1:       wrapper,
+			Arg2:       elemVal,
+			ReturnType: "sk_any",
+		})
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:   "call",
+			Arg1: "sk_array_push",
+			Arg2: result + ", &" + tempVar,
+		})
+	}
+
+	return result
+}
+
+func (p *Pipeline) processArrayAddName(name string, elemExpr front.Node, irFn *IRFunction) string {
+	elemType := p.getExprType(elemExpr, irFn)
+	elemVal := p.processExpression(elemExpr, irFn)
+
+	result := p.newTemp()
+
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:     "call",
+		Result: result,
+		Arg1:   "sk_array_copy",
+		Arg2:   name,
 	})
 
 	if elemType == "any" {
