@@ -805,7 +805,38 @@ func (p *Parser) parseExpression() Node {
 	if p.hasErrors || errors.HasFatal() {
 		return nil
 	}
-	return p.parseBinary(0)
+
+	cond := p.parseBinary(0)
+	if cond == nil {
+		return nil
+	}
+
+	// Тернарник: cond ? then : else
+	if p.peek.Type == TOKEN_QUESTION {
+		p.advance()
+		thenExpr := p.parseExpression()
+		if thenExpr == nil {
+			return nil
+		}
+
+		if p.peek.Type != TOKEN_COLON {
+			p.hasErrors = true
+			errors.NewFatalError("0041",
+				fmt.Sprintf("Expected ':' in ternary, got '%s'", p.peek.Literal),
+				p.peek.Line, p.peek.Column, p.FileName)
+			return nil
+		}
+		p.advance()
+
+		elseExpr := p.parseExpression()
+		if elseExpr == nil {
+			return nil
+		}
+
+		return &TernaryExpr{Condition: cond, Then: thenExpr, Else: elseExpr}
+	}
+
+	return cond
 }
 
 func (p *Parser) parseUnary() Node {

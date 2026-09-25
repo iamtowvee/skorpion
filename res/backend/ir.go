@@ -10,6 +10,7 @@ type IRInstruction struct {
 	Result     string
 	Arg1       string
 	Arg2       string
+	Arg3       string
 	ReturnType string
 	Metadata   map[string]interface{}
 }

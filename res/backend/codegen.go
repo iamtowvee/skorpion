@@ -361,6 +361,10 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 			}
 		}
 
+	case "ternary":
+		cg.writeLine(fmt.Sprintf("%s%s %s = %s ? %s : %s;",
+			indent, ins.ReturnType, ins.Result, ins.Arg1, ins.Arg2, ins.Arg3))
+
 	case "typeof_any":
 		cg.writeLine(fmt.Sprintf("%ssk_string %s;", indent, ins.Result))
 		cg.writeLine(fmt.Sprintf("%schar buf[32];", indent))

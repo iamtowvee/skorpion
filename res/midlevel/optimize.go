@@ -86,6 +86,9 @@ func (o *Optimizer) optimizeNode(node front.Node) front.Node {
 	case *front.ForStmt:
 		return o.optimizeFor(n)
 
+	case *front.TernaryExpr:
+		return o.optimizeTernary(n)
+
 	case *front.CaseStmt:
 		return o.optimizeCase(n)
 
@@ -548,6 +551,10 @@ func (o *Optimizer) hasNoSideEffects(node front.Node) bool {
 		return o.hasNoSideEffects(n.Left) && o.hasNoSideEffects(n.Right)
 	case *front.UnaryExpr:
 		return o.hasNoSideEffects(n.Expr)
+	case *front.TernaryExpr:
+		return o.hasNoSideEffects(n.Condition) &&
+			o.hasNoSideEffects(n.Then) &&
+			o.hasNoSideEffects(n.Else)
 	default:
 		return false
 	}
@@ -583,6 +590,10 @@ func (o *Optimizer) collectUsedIdents(node front.Node, used map[string]bool) {
 		if n.Expr != nil {
 			o.collectUsedIdents(n.Expr, used)
 		}
+	case *front.TernaryExpr:
+		o.collectUsedIdents(n.Condition, used)
+		o.collectUsedIdents(n.Then, used)
+		o.collectUsedIdents(n.Else, used)
 	case *front.Assign:
 		// Идентификатор в Expr — используется
 		if n.Expr != nil {
@@ -718,4 +729,27 @@ func (o *Optimizer) filterNestedBlocks(node front.Node, used map[string]bool) {
 	case *front.Block:
 		o.filterUnusedDecls(n, used)
 	}
+}
+
+func (o *Optimizer) optimizeTernary(t *front.TernaryExpr) front.Node {
+	if t.Condition != nil {
+		t.Condition = o.optimizeNode(t.Condition)
+	}
+	if t.Then != nil {
+		t.Then = o.optimizeNode(t.Then)
+	}
+	if t.Else != nil {
+		t.Else = o.optimizeNode(t.Else)
+	}
+
+	// Если условие — константа, выбираем одну ветку
+	if val, ok := o.getBoolConstant(t.Condition); ok {
+		o.Changed = true
+		if val {
+			return t.Then
+		}
+		return t.Else
+	}
+
+	return t
 }

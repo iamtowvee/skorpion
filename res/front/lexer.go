@@ -38,6 +38,8 @@ const (
 	TOKEN_DOLLAR
 	TOKEN_DOT
 	TOKEN_DOTDOT
+	TOKEN_QUESTION
+	TOKEN_COLON
 	TOKEN_INCLUDE_C
 	TOKEN_PERCENT
 	TOKEN_BACKTICK
@@ -139,6 +141,10 @@ func (l *Lexer) NextToken() Token {
 		return l.makeToken(TOKEN_LT, "<")
 	case '>':
 		return l.makeToken(TOKEN_GT, ">")
+	case '?':
+		return l.makeToken(TOKEN_QUESTION, "?")
+	case ':':
+		return l.makeToken(TOKEN_COLON, ":")
 	case '!':
 		return l.makeToken(TOKEN_NOT, "!")
 	case '&':
@@ -418,6 +424,10 @@ func (tt TokenType) String() string {
 		return "&&"
 	case TOKEN_OR:
 		return "||"
+	case TOKEN_QUESTION:
+		return "?"
+	case TOKEN_COLON:
+		return ":"
 	case TOKEN_PERCENT:
 		return "%"
 	case TOKEN_INCLUDE_C:

@@ -279,6 +279,8 @@ func (sa *SemanticAnalyzer) analyzeNode(node front.Node) front.Node {
 			sa.analyzeNode(elem)
 		}
 		return n
+	case *front.TernaryExpr:
+		return sa.analyzeTernary(n)
 	case *front.UnaryExpr:
 		return sa.analyzeUnary(n)
 	case *front.Number:
@@ -800,6 +802,17 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 
 		return "int"
 
+	case *front.TernaryExpr:
+		thenType := sa.getNodeType(n.Then)
+		elseType := sa.getNodeType(n.Else)
+		if thenType == elseType {
+			return thenType
+		}
+		if thenType == "any" || elseType == "any" {
+			return "any"
+		}
+		return thenType
+
 	case *front.CallExpr:
 		debug.Debug("getNodeType CallExpr: %s\n", n.Name)
 
@@ -904,4 +917,31 @@ func parseArrayElemTypeSemantic(elemType string) string {
 // isArrayTypeSemantic проверяет, является ли тип массивом
 func isArrayTypeSemantic(t string) bool {
 	return t == "arr" || strings.HasPrefix(t, "arr[")
+}
+
+func (sa *SemanticAnalyzer) analyzeTernary(t *front.TernaryExpr) front.Node {
+	// Условие — bool
+	condType := sa.getNodeType(t.Condition)
+	if condType != "bool" && condType != "" {
+		sa.addError("1037",
+			fmt.Sprintf("Ternary condition must be bool, got '%s'", condType),
+			0, 0, "")
+	}
+
+	sa.analyzeNode(t.Condition)
+
+	// Типы then и else должны совпадать
+	thenType := sa.getNodeType(t.Then)
+	elseType := sa.getNodeType(t.Else)
+
+	if thenType != elseType && thenType != "" && elseType != "" {
+		sa.addError("1038",
+			fmt.Sprintf("Ternary branches type mismatch: '%s' vs '%s'", thenType, elseType),
+			0, 0, "")
+	}
+
+	sa.analyzeNode(t.Then)
+	sa.analyzeNode(t.Else)
+
+	return t
 }

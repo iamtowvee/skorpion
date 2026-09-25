@@ -1,24 +1,5 @@
-use std/io
+use #std/io
 
 void main(arr args) {
-    bool a = true
-    bool b = false
-    
-    if (a && b) {
-        io.sendln("a && b = true")
-    } else {
-        io.sendln("a && b = false")
-    }
-    
-    if (a || b) {
-        io.sendln("a || b = true")
-    } else {
-        io.sendln("a || b = false")
-    }
-    
-    if (!b) {
-        io.sendln("!b = true")
-    } else {
-        io.sendln("!b = false")
-    }
+    "zero".sendln()
 }

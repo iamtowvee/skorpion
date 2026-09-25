@@ -99,6 +99,8 @@ func (p *Pipeline) processNode(node front.Node, irFn *IRFunction) {
 		p.processBinary(n, irFn)
 	case *front.UnaryExpr:
 		p.processUnary(n, irFn)
+	case *front.TernaryExpr:
+		p.processTernary(n, irFn)
 	case *front.ReturnStmt:
 		p.processReturn(n, irFn)
 	case *front.CallExpr:
@@ -512,6 +514,8 @@ func (p *Pipeline) processExpression(expr front.Node, irFn *IRFunction) string {
 		return n.Name
 	case *front.BinaryExpr:
 		return p.processBinary(n, irFn)
+	case *front.TernaryExpr:
+		return p.processTernary(n, irFn)
 	case *front.TypeOf:
 		return p.processTypeOf(n, irFn)
 	case *front.CallExpr:
@@ -1921,4 +1925,37 @@ func (p *Pipeline) getConstantInt(expr front.Node, irFn *IRFunction) int {
 		}
 	}
 	return -1
+}
+
+func (p *Pipeline) processTernary(t *front.TernaryExpr, irFn *IRFunction) string {
+	cond := p.processExpression(t.Condition, irFn)
+
+	thenType := p.getExprType(t.Then, irFn)
+	elseType := p.getExprType(t.Else, irFn)
+
+	// Определяем общий тип
+	resultType := thenType
+	if resultType == "" {
+		resultType = elseType
+	}
+	if resultType == "" {
+		resultType = "int"
+	}
+
+	thenVal := p.processExpression(t.Then, irFn)
+	elseVal := p.processExpression(t.Else, irFn)
+
+	result := p.newTemp()
+	cType := p.typeToC(resultType)
+
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:         "ternary",
+		Result:     result,
+		Arg1:       cond,
+		Arg2:       thenVal,
+		Arg3:       elseVal,
+		ReturnType: cType,
+	})
+
+	return result
 }

@@ -32,6 +32,7 @@ const (
 	NODE_INCLUDE_C     NodeType = "IncludeC"
 	NODE_RANGE         NodeType = "Range"
 	NODE_CALL_RANGE    NodeType = "CallRange"
+	NODE_TERNARY       NodeType = "Ternary"
 )
 
 type Node interface {
@@ -80,6 +81,14 @@ type Block struct {
 }
 
 func (b *Block) GetType() NodeType { return NODE_BLOCK }
+
+type TernaryExpr struct {
+	Condition Node
+	Then      Node
+	Else      Node
+}
+
+func (t *TernaryExpr) GetType() NodeType { return NODE_TERNARY }
 
 type TypeOf struct {
 	Expr Node
