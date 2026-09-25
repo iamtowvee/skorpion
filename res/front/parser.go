@@ -330,6 +330,9 @@ func (p *Parser) parseStatement() Node {
 		return p.parseIncludeC()
 	case TOKEN_IDENT:
 		return p.parseAssignmentOrCall()
+	case TOKEN_STRING, TOKEN_NUMBER:
+		// Expression statement: "zero".sendln() или 42.sendln()
+		return p.parseExpression()
 	}
 
 	// Если не распознали, пропускаем
@@ -925,12 +928,104 @@ func (p *Parser) parsePrimary() Node {
 	case TOKEN_NUMBER:
 		val := p.peek.Literal
 		p.advance()
-		return &Number{Value: val}
+		num := &Number{Value: val}
+
+		// 42.sendln() — метод на числе
+		if p.peek.Type == TOKEN_DOT {
+			p.advance()
+			if p.peek.Type != TOKEN_IDENT {
+				p.hasErrors = true
+				errors.NewFatalError("0040",
+					fmt.Sprintf("Expected method name after '.'"),
+					p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			funcName := p.peek.Literal
+			p.advance()
+
+			if p.peek.Type != TOKEN_LPAREN {
+				p.hasErrors = true
+				errors.NewFatalError("0040",
+					fmt.Sprintf("Expected '(' after '%s'", funcName),
+					p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			p.advance()
+
+			var callArgs []Node
+			if p.peek.Type != TOKEN_RPAREN {
+				for {
+					arg := p.parseExpression()
+					if arg == nil {
+						return nil
+					}
+					callArgs = append(callArgs, arg)
+					if p.peek.Type == TOKEN_COMMA {
+						p.advance()
+						continue
+					}
+					break
+				}
+			}
+			p.expect(TOKEN_RPAREN)
+
+			allArgs := []Node{num}
+			allArgs = append(allArgs, callArgs...)
+			return &CallExpr{Name: funcName, Args: allArgs}
+		}
+
+		return num
 
 	case TOKEN_STRING:
 		val := p.peek.Literal
 		p.advance()
-		return &String{Value: val}
+		str := &String{Value: val}
+
+		// "text".sendln() — метод на строке
+		if p.peek.Type == TOKEN_DOT {
+			p.advance()
+			if p.peek.Type != TOKEN_IDENT {
+				p.hasErrors = true
+				errors.NewFatalError("0040",
+					fmt.Sprintf("Expected method name after '.'"),
+					p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			funcName := p.peek.Literal
+			p.advance()
+
+			if p.peek.Type != TOKEN_LPAREN {
+				p.hasErrors = true
+				errors.NewFatalError("0040",
+					fmt.Sprintf("Expected '(' after '%s'", funcName),
+					p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			p.advance()
+
+			var callArgs []Node
+			if p.peek.Type != TOKEN_RPAREN {
+				for {
+					arg := p.parseExpression()
+					if arg == nil {
+						return nil
+					}
+					callArgs = append(callArgs, arg)
+					if p.peek.Type == TOKEN_COMMA {
+						p.advance()
+						continue
+					}
+					break
+				}
+			}
+			p.expect(TOKEN_RPAREN)
+
+			allArgs := []Node{str}
+			allArgs = append(allArgs, callArgs...)
+			return &CallExpr{Name: funcName, Args: allArgs}
+		}
+
+		return str
 
 	case TOKEN_DOLLAR:
 		p.advance()
@@ -1000,13 +1095,22 @@ func (p *Parser) parsePrimary() Node {
 				}
 				p.expect(TOKEN_RPAREN)
 
-				// Используем полное имя с точкой
 				return &CallExpr{
 					Name:     name + "." + funcName,
 					Args:     callArgs,
 					Receiver: name,
 				}
 			}
+		}
+
+		// arr + el
+		if p.peek.Type == TOKEN_PLUS {
+			p.advance()
+			elem := p.parseExpression()
+			if elem == nil {
+				return nil
+			}
+			return &ArrayAdd{Name: name, Elem: elem}
 		}
 
 		if p.peek.Type == TOKEN_LPAREN {
@@ -1098,7 +1202,7 @@ func (p *Parser) parsePrimary() Node {
 			return nil
 		}
 
-		// (1..5).func() — метод на RangeExpr
+		// (1..5).func() — метод на результате
 		if p.peek.Type == TOKEN_DOT {
 			p.advance()
 			if p.peek.Type == TOKEN_IDENT {
