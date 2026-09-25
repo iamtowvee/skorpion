@@ -304,6 +304,17 @@ func (sa *SemanticAnalyzer) analyzeNode(node front.Node) front.Node {
 		return sa.analyzeWhile(n)
 	case *front.ForStmt:
 		return sa.analyzeFor(n)
+	case *front.RangeExpr:
+		sa.analyzeNode(n.Start)
+		sa.analyzeNode(n.End)
+		return n
+	case *front.CallRangeExpr:
+		sa.analyzeNode(n.Range.Start)
+		sa.analyzeNode(n.Range.End)
+		for _, arg := range n.Extra {
+			sa.analyzeNode(arg)
+		}
+		return n
 	case *front.IncludeC:
 		debug.Debug("IncludeC node found\n")
 		return n
@@ -315,6 +326,26 @@ func (sa *SemanticAnalyzer) analyzeNode(node front.Node) front.Node {
 
 func (sa *SemanticAnalyzer) analyzeUnary(unary *front.UnaryExpr) front.Node {
 	if unary.Op == "$" {
+		sa.analyzeNode(unary.Expr)
+		return unary
+	}
+	if unary.Op == "!" {
+		operandType := sa.getNodeType(unary.Expr)
+		if operandType != "bool" && operandType != "" {
+			sa.addError("1033",
+				fmt.Sprintf("Operator '!' requires bool, got '%s'", operandType),
+				0, 0, "")
+		}
+		sa.analyzeNode(unary.Expr)
+		return unary
+	}
+	if unary.Op == "-" {
+		operandType := sa.getNodeType(unary.Expr)
+		if !sa.isNumericType(operandType) && operandType != "" {
+			sa.addError("1034",
+				fmt.Sprintf("Unary '-' requires numeric, got '%s'", operandType),
+				0, 0, "")
+		}
 		sa.analyzeNode(unary.Expr)
 		return unary
 	}
@@ -454,6 +485,17 @@ func (sa *SemanticAnalyzer) analyzeBinary(bin *front.BinaryExpr) front.Node {
 		if !sa.isNumericType(leftType) || !sa.isNumericType(rightType) {
 			sa.addError("1014", fmt.Sprintf("Arithmetic operation '%s' requires numeric types (got %s and %s)",
 				bin.Op, leftType, rightType), 0, 0, "")
+		}
+	case "&&", "||":
+		if leftType != "bool" && leftType != "" {
+			sa.addError("1035",
+				fmt.Sprintf("Operator '%s' requires bool, got '%s'", bin.Op, leftType),
+				0, 0, "")
+		}
+		if rightType != "bool" && rightType != "" {
+			sa.addError("1036",
+				fmt.Sprintf("Operator '%s' requires bool, got '%s'", bin.Op, rightType),
+				0, 0, "")
 		}
 	case "<", ">":
 		// Сравнения допустимы для чисел
@@ -728,9 +770,13 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 		rightType := sa.getNodeType(n.Right)
 		debug.Debug("  leftType=%s, rightType=%s\n", leftType, rightType)
 
-		// СРАВНЕНИЯ ВОЗВРАЩАЮТ BOOL!
+		// Логические операторы
+		if n.Op == "&&" || n.Op == "||" {
+			return "bool"
+		}
+
+		// Сравнения
 		if n.Op == "<" || n.Op == ">" || n.Op == "==" || n.Op == "!=" || n.Op == "<=" || n.Op == ">=" {
-			debug.Debug("  comparison operator, returning bool\n")
 			return "bool"
 		}
 
@@ -800,6 +846,19 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 			return "string"
 		}
 		return sa.getNodeType(n.Expr)
+
+	case *front.RangeExpr:
+		return "arr"
+	case *front.CallRangeExpr:
+		for _, fn := range sa.Program.Functions {
+			if fn.Name == n.Name {
+				return fn.ReturnType
+			}
+		}
+		if fn, ok := sa.ImportedFuncs[n.Name]; ok {
+			return fn.ReturnType
+		}
+		return ""
 
 	case *front.VarDecl:
 		return n.Type

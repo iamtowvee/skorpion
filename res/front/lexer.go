@@ -31,11 +31,15 @@ const (
 	TOKEN_LT
 	TOKEN_GT
 	TOKEN_NOT
+	TOKEN_AND
+	TOKEN_OR
 	TOKEN_AMPERSAND
 	TOKEN_HASH
 	TOKEN_DOLLAR
 	TOKEN_DOT
+	TOKEN_DOTDOT
 	TOKEN_INCLUDE_C
+	TOKEN_PERCENT
 	TOKEN_BACKTICK
 )
 
@@ -104,7 +108,6 @@ func (l *Lexer) NextToken() Token {
 		return l.readIdent()
 	}
 
-	// Остальные символы...
 	switch ch {
 	case '(':
 		return l.makeToken(TOKEN_LPAREN, "(")
@@ -139,12 +142,34 @@ func (l *Lexer) NextToken() Token {
 	case '!':
 		return l.makeToken(TOKEN_NOT, "!")
 	case '&':
+		if l.peek() == '&' {
+			l.pos += 2
+			l.col += 2
+			return Token{Type: TOKEN_AND, Literal: "&&", Line: l.line, Column: l.col - 2}
+		}
 		return l.makeToken(TOKEN_AMPERSAND, "&")
+	case '|':
+		if l.peek() == '|' {
+			l.pos += 2
+			l.col += 2
+			return Token{Type: TOKEN_OR, Literal: "||", Line: l.line, Column: l.col - 2}
+		}
+		errors.NewError("0001", "Unknown character '|'", l.line, l.col, "")
+		l.pos++
+		l.col++
+		return l.NextToken()
+	case '%':
+		return l.makeToken(TOKEN_PERCENT, "%")
 	case '#':
 		return l.makeToken(TOKEN_HASH, "#")
 	case '$':
 		return l.makeToken(TOKEN_DOLLAR, "$")
 	case '.':
+		if l.peek() == '.' {
+			l.pos += 2
+			l.col += 2
+			return Token{Type: TOKEN_DOTDOT, Literal: "..", Line: l.line, Column: l.col - 2}
+		}
 		return l.makeToken(TOKEN_DOT, ".")
 	default:
 		errors.NewError("0001", "Unknown character", l.line, l.col, "")
@@ -210,7 +235,7 @@ func (l *Lexer) readNumber() Token {
 	for l.pos < len(l.input) && unicode.IsDigit(rune(l.input[l.pos])) {
 		l.pos++
 	}
-	if l.pos < len(l.input) && l.input[l.pos] == '.' {
+	if l.pos+1 < len(l.input) && l.input[l.pos] == '.' && unicode.IsDigit(rune(l.input[l.pos+1])) {
 		l.pos++
 		for l.pos < len(l.input) && unicode.IsDigit(rune(l.input[l.pos])) {
 			l.pos++
@@ -387,6 +412,14 @@ func (tt TokenType) String() string {
 		return "$"
 	case TOKEN_DOT:
 		return "."
+	case TOKEN_DOTDOT:
+		return ".."
+	case TOKEN_AND:
+		return "&&"
+	case TOKEN_OR:
+		return "||"
+	case TOKEN_PERCENT:
+		return "%"
 	case TOKEN_INCLUDE_C:
 		return "includeC"
 	default:

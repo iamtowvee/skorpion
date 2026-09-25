@@ -3,6 +3,7 @@ package backend
 import (
 	"fmt"
 	"skrp/res/front"
+	"strconv"
 	"strings"
 )
 
@@ -110,6 +111,10 @@ func (p *Pipeline) processNode(node front.Node, irFn *IRFunction) {
 		p.processWhile(n, irFn)
 	case *front.ForStmt:
 		p.processFor(n, irFn)
+	case *front.RangeExpr:
+		p.processRange(n, irFn)
+	case *front.CallRangeExpr:
+		p.processCallRange(n, irFn)
 	case *front.IncludeC:
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:   "inline_c",
@@ -151,6 +156,14 @@ func (p *Pipeline) processTypeOf(typeOf *front.TypeOf, irFn *IRFunction) string 
 }
 
 func (p *Pipeline) processUnary(unary *front.UnaryExpr, irFn *IRFunction) string {
+	if unary.Op == "!" {
+		expr := p.processExpression(unary.Expr, irFn)
+		return fmt.Sprintf("(!%s)", expr)
+	}
+	if unary.Op == "-" {
+		expr := p.processExpression(unary.Expr, irFn)
+		return fmt.Sprintf("(-%s)", expr)
+	}
 	if unary.Op == "$" {
 		exprType := p.getExprType(unary.Expr, irFn)
 		expr := p.processExpression(unary.Expr, irFn)
@@ -205,120 +218,61 @@ func (p *Pipeline) processUnary(unary *front.UnaryExpr, irFn *IRFunction) string
 
 func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 	if decl.IsArray {
+		irFn.Locals = append(irFn.Locals, "sk_array* "+decl.Name)
+
+		if irFn.ArrayElemTypes == nil {
+			irFn.ArrayElemTypes = make(map[string]string)
+		}
+		irFn.ArrayElemTypes[decl.Name] = decl.ElemType
+
 		if decl.Expr != nil {
-			if arrLit, ok := decl.Expr.(*front.ArrayLiteral); ok {
-				var elemType int
-				elemSize := "sizeof(sk_any)"
-				elemType = 5
-
-				if decl.ElemType != "" {
-					if isArrayType(decl.ElemType) {
-						elemType = 6
-						elemSize = "sizeof(sk_array*)"
-					} else {
-						switch decl.ElemType {
-						case "int":
-							elemType = 0
-							elemSize = "sizeof(int)"
-						case "string":
-							elemType = 1
-							elemSize = "sizeof(sk_string)"
-						case "float":
-							elemType = 2
-							elemSize = "sizeof(float)"
-						case "double":
-							elemType = 3
-							elemSize = "sizeof(double)"
-						case "bool":
-							elemType = 4
-							elemSize = "sizeof(sk_bool)"
-						default:
-							elemType = 5
-							elemSize = "sizeof(sk_any)"
-						}
-					}
-				}
-
-				irFn.Locals = append(irFn.Locals, "sk_array* "+decl.Name)
-
-				if irFn.ArrayElemTypes == nil {
-					irFn.ArrayElemTypes = make(map[string]string)
-				}
-				irFn.ArrayElemTypes[decl.Name] = decl.ElemType
-
-				irFn.Instructions = append(irFn.Instructions, IRInstruction{
-					Op:         "call",
-					Result:     decl.Name,
-					Arg1:       "sk_array_new",
-					Arg2:       fmt.Sprintf("%s, %d", elemSize, elemType),
-					ReturnType: "sk_array*",
-				})
-
-				// Ожидаемый тип элемента
-				expectedElemType := parseArrayElemType(decl.ElemType)
-
-				for _, elem := range arrLit.Elements {
-					val := p.processExpressionTyped(elem, expectedElemType, irFn)
-
-					if decl.ElemType != "" {
-						// Типизированный массив
-						var pushFunc string
-						if isArrayType(decl.ElemType) {
-							pushFunc = "sk_array_push_arr"
-						} else {
-							switch decl.ElemType {
-							case "int":
-								pushFunc = "sk_array_push_int"
-							case "string":
-								pushFunc = "sk_array_push_string"
-							case "float":
-								pushFunc = "sk_array_push_float"
-							case "double":
-								pushFunc = "sk_array_push_double"
-							case "bool":
-								pushFunc = "sk_array_push_bool"
-							default:
-								pushFunc = "sk_array_push_any"
-							}
-						}
-						irFn.Instructions = append(irFn.Instructions, IRInstruction{
-							Op:   "call",
-							Arg1: pushFunc,
-							Arg2: decl.Name + ", " + val,
-						})
-					} else {
-						// Нетипизированный массив — оборачиваем в any
-						elemTypeName := p.getExprType(elem, irFn)
-						if elemTypeName == "any" {
-							irFn.Instructions = append(irFn.Instructions, IRInstruction{
-								Op:   "call",
-								Arg1: "sk_array_push_any",
-								Arg2: decl.Name + ", " + val,
-							})
-						} else {
-							wrapper := p.getAnyWrapperByType(elemTypeName)
-							tempVar := p.newTemp()
-							irFn.Instructions = append(irFn.Instructions, IRInstruction{
-								Op:         "call",
-								Result:     tempVar,
-								Arg1:       wrapper,
-								Arg2:       val,
-								ReturnType: "sk_any",
-							})
-							irFn.Instructions = append(irFn.Instructions, IRInstruction{
-								Op:   "call",
-								Arg1: "sk_array_push_any",
-								Arg2: decl.Name + ", " + tempVar,
-							})
-						}
+			exprResult := p.processExpressionTyped(decl.Expr, decl.ElemType, irFn)
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:     "=",
+				Result: decl.Name,
+				Arg1:   exprResult,
+			})
+		} else {
+			var elemType int = 5
+			elemSize := "sizeof(sk_any)"
+			if decl.ElemType != "" {
+				if isArrayType(decl.ElemType) {
+					elemType = 6
+					elemSize = "sizeof(sk_array*)"
+				} else {
+					switch decl.ElemType {
+					case "int":
+						elemType = 0
+						elemSize = "sizeof(int)"
+					case "string":
+						elemType = 1
+						elemSize = "sizeof(sk_string)"
+					case "float":
+						elemType = 2
+						elemSize = "sizeof(float)"
+					case "double":
+						elemType = 3
+						elemSize = "sizeof(double)"
+					case "bool":
+						elemType = 4
+						elemSize = "sizeof(sk_bool)"
+					default:
+						elemType = 5
+						elemSize = "sizeof(sk_any)"
 					}
 				}
 			}
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:         "call",
+				Result:     decl.Name,
+				Arg1:       "sk_array_new",
+				Arg2:       fmt.Sprintf("%s, %d", elemSize, elemType),
+				ReturnType: "sk_array*",
+			})
 		}
 		return
 	}
 
-	// Обычная переменная
 	cType := p.typeToC(decl.Type)
 	irFn.Locals = append(irFn.Locals, cType+" "+decl.Name)
 
@@ -465,6 +419,10 @@ func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string
 	left := p.processExpression(bin.Left, irFn)
 	right := p.processExpression(bin.Right, irFn)
 
+	if bin.Op == "&&" || bin.Op == "||" {
+		return fmt.Sprintf("(%s %s %s)", left, bin.Op, right)
+	}
+
 	// Конкатенация строк
 	if bin.Op == "+" && (leftType == "string" || rightType == "string") {
 		leftVal := left
@@ -559,16 +517,32 @@ func (p *Pipeline) processExpression(expr front.Node, irFn *IRFunction) string {
 	case *front.CallExpr:
 		return p.processCallExpr(n, irFn)
 	case *front.UnaryExpr:
-		if n.Op == "$" {
-			return p.processUnary(n, irFn)
-		}
-		return "0"
+		return p.processUnary(n, irFn)
 	case *front.ArrayLiteral:
 		return p.processArrayLiteralTyped(n, "", irFn)
 	case *front.ArrayIndex:
 		return p.processArrayIndex(n, irFn)
 	case *front.ArrayLength:
 		return p.processArrayLength(n, irFn)
+	case *front.RangeExpr:
+		startVal := p.getConstantInt(n.Start, irFn)
+		endVal := p.getConstantInt(n.End, irFn)
+		if startVal >= 0 && endVal >= 0 {
+			lit := &front.ArrayLiteral{Elements: []front.Node{}}
+			if startVal <= endVal {
+				for i := startVal; i <= endVal; i++ {
+					lit.Elements = append(lit.Elements, &front.Number{Value: strconv.Itoa(i)})
+				}
+			} else {
+				for i := startVal; i >= endVal; i-- {
+					lit.Elements = append(lit.Elements, &front.Number{Value: strconv.Itoa(i)})
+				}
+			}
+			return p.processArrayLiteralTyped(lit, "", irFn)
+		}
+		return p.processRange(n, irFn)
+	case *front.CallRangeExpr:
+		return p.processCallRange(n, irFn)
 	case *front.ArrayAdd:
 		return p.processArrayAdd(n, irFn)
 	default:
@@ -1710,13 +1684,56 @@ func (p *Pipeline) processExpressionTyped(expr front.Node, expectedType string, 
 	switch n := expr.(type) {
 	case *front.ArrayLiteral:
 		return p.processArrayLiteralTyped(n, expectedType, irFn)
+	case *front.RangeExpr:
+		startVal := p.getConstantInt(n.Start, irFn)
+		endVal := p.getConstantInt(n.End, irFn)
+		if startVal >= 0 && endVal >= 0 {
+			lit := &front.ArrayLiteral{Elements: []front.Node{}}
+			if startVal <= endVal {
+				for i := startVal; i <= endVal; i++ {
+					lit.Elements = append(lit.Elements, &front.Number{Value: strconv.Itoa(i)})
+				}
+			} else {
+				for i := startVal; i >= endVal; i-- {
+					lit.Elements = append(lit.Elements, &front.Number{Value: strconv.Itoa(i)})
+				}
+			}
+			return p.processArrayLiteralTyped(lit, expectedType, irFn)
+		}
+		return p.processRange(n, irFn)
 	default:
 		return p.processExpression(expr, irFn)
 	}
 }
 
-// processArrayLiteralTyped создаёт массив с заданным типом элемента
 func (p *Pipeline) processArrayLiteralTyped(lit *front.ArrayLiteral, expectedElemType string, irFn *IRFunction) string {
+	// Разворачиваем элементы: если встретили RangeExpr — раскрываем в отдельные элементы
+	expandedElements := []front.Node{}
+	for _, elem := range lit.Elements {
+		if rangeExpr, ok := elem.(*front.RangeExpr); ok {
+			// Пробуем раскрыть как константы
+			startVal := p.getConstantInt(rangeExpr.Start, irFn)
+			endVal := p.getConstantInt(rangeExpr.End, irFn)
+			if startVal >= 0 && endVal >= 0 {
+				// Константы — раскрываем в Number-узлы
+				if startVal <= endVal {
+					for i := startVal; i <= endVal; i++ {
+						expandedElements = append(expandedElements, &front.Number{Value: strconv.Itoa(i)})
+					}
+				} else {
+					for i := startVal; i >= endVal; i-- {
+						expandedElements = append(expandedElements, &front.Number{Value: strconv.Itoa(i)})
+					}
+				}
+			} else {
+				// Не константы — оставляем RangeExpr как элемент (раскроется в runtime)
+				expandedElements = append(expandedElements, elem)
+			}
+		} else {
+			expandedElements = append(expandedElements, elem)
+		}
+	}
+
 	result := p.newTemp()
 
 	// Определяем elem_type / elem_size для C
@@ -1757,10 +1774,9 @@ func (p *Pipeline) processArrayLiteralTyped(lit *front.ArrayLiteral, expectedEle
 		ReturnType: "sk_array*",
 	})
 
-	// Внутренний тип элемента (для вложенных массивов)
 	innerElemType := parseArrayElemType(expectedElemType)
 
-	for _, elem := range lit.Elements {
+	for _, elem := range expandedElements {
 		val := p.processExpressionTyped(elem, innerElemType, irFn)
 
 		if isArrayType(expectedElemType) {
@@ -1770,7 +1786,6 @@ func (p *Pipeline) processArrayLiteralTyped(lit *front.ArrayLiteral, expectedEle
 				Arg2: result + ", " + val,
 			})
 		} else if expectedElemType == "" || expectedElemType == "any" {
-			// Нетипизированный — оборачиваем в any
 			elemTypeName := p.getExprType(elem, irFn)
 			if elemTypeName == "any" {
 				irFn.Instructions = append(irFn.Instructions, IRInstruction{
@@ -1795,7 +1810,6 @@ func (p *Pipeline) processArrayLiteralTyped(lit *front.ArrayLiteral, expectedEle
 				})
 			}
 		} else {
-			// Типизированный простой
 			var pushFunc string
 			switch expectedElemType {
 			case "int":
@@ -1820,4 +1834,91 @@ func (p *Pipeline) processArrayLiteralTyped(lit *front.ArrayLiteral, expectedEle
 	}
 
 	return result
+}
+
+func (p *Pipeline) processRange(r *front.RangeExpr, irFn *IRFunction) string {
+	start := p.processExpression(r.Start, irFn)
+	end := p.processExpression(r.End, irFn)
+
+	result := p.newTemp()
+
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:         "call",
+		Result:     result,
+		Arg1:       "sk_range_new",
+		Arg2:       fmt.Sprintf("%s, %s", start, end),
+		ReturnType: "sk_array*",
+	})
+
+	return result
+}
+
+func (p *Pipeline) processCallRange(call *front.CallRangeExpr, irFn *IRFunction) string {
+	start := p.processExpression(call.Range.Start, irFn)
+	end := p.processExpression(call.Range.End, irFn)
+
+	rangeArr := p.newTemp()
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:         "call",
+		Result:     rangeArr,
+		Arg1:       "sk_range_new",
+		Arg2:       fmt.Sprintf("%s, %s", start, end),
+		ReturnType: "sk_array*",
+	})
+
+	targetFunc := p.findFunction(call.Name)
+	if targetFunc == nil {
+		return rangeArr
+	}
+
+	startVal := p.getConstantInt(call.Range.Start, irFn)
+	endVal := p.getConstantInt(call.Range.End, irFn)
+
+	if startVal < 0 || endVal < 0 {
+		return rangeArr
+	}
+
+	args := []string{}
+	for i := startVal; i <= endVal; i++ {
+		args = append(args, fmt.Sprintf("%d", i))
+	}
+	for _, extra := range call.Extra {
+		args = append(args, p.processExpression(extra, irFn))
+	}
+
+	argsStr := strings.Join(args, ", ")
+
+	funcName := call.Name
+	if strings.Contains(funcName, ".") {
+		parts := strings.Split(funcName, ".")
+		funcName = parts[len(parts)-1]
+	}
+
+	result := p.newTemp()
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:         "call",
+		Result:     result,
+		Arg1:       funcName,
+		Arg2:       argsStr,
+		ReturnType: p.typeToC(targetFunc.ReturnType),
+	})
+
+	return result
+}
+
+func (p *Pipeline) getConstantInt(expr front.Node, irFn *IRFunction) int {
+	switch n := expr.(type) {
+	case *front.Number:
+		if v, err := strconv.Atoi(n.Value); err == nil {
+			return v
+		}
+	case *front.UnaryExpr:
+		if n.Op == "-" {
+			inner := p.getConstantInt(n.Expr, irFn)
+			if inner >= 0 {
+				return -inner
+			}
+		}
+	}
+	return -1
 }

@@ -30,6 +30,8 @@ const (
 	NODE_ARRAY_ADD     NodeType = "ArrayAdd"
 	NODE_IMPORT        NodeType = "Import"
 	NODE_INCLUDE_C     NodeType = "IncludeC"
+	NODE_RANGE         NodeType = "Range"
+	NODE_CALL_RANGE    NodeType = "CallRange"
 )
 
 type Node interface {
@@ -150,6 +152,21 @@ func (u *UnaryExpr) GetTypeString() string {
 	}
 	return "int"
 }
+
+type RangeExpr struct {
+	Start Node
+	End   Node
+}
+
+func (r *RangeExpr) GetType() NodeType { return NODE_RANGE }
+
+type CallRangeExpr struct {
+	Name  string
+	Range *RangeExpr
+	Extra []Node
+}
+
+func (c *CallRangeExpr) GetType() NodeType { return NODE_CALL_RANGE }
 
 type CallExpr struct {
 	Name     string

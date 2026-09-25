@@ -808,12 +808,36 @@ func (p *Parser) parseExpression() Node {
 	return p.parseBinary(0)
 }
 
+func (p *Parser) parseUnary() Node {
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	if p.peek.Type == TOKEN_NOT {
+		p.advance()
+		expr := p.parseUnary()
+		if expr == nil {
+			return nil
+		}
+		return &UnaryExpr{Op: "!", Expr: expr}
+	}
+	if p.peek.Type == TOKEN_MINUS {
+		p.advance()
+		expr := p.parseUnary()
+		if expr == nil {
+			return nil
+		}
+		return &UnaryExpr{Op: "-", Expr: expr}
+	}
+	return p.parsePrimary()
+}
+
 func (p *Parser) parseBinary(prec int) Node {
 	if p.hasErrors || errors.HasFatal() {
 		return nil
 	}
 
-	left := p.parsePrimary()
+	left := p.parseUnary()
 	if left == nil {
 		return nil
 	}
@@ -824,21 +848,22 @@ func (p *Parser) parseBinary(prec int) Node {
 		}
 
 		op := p.peek.Literal
-		if p.peek.Type != TOKEN_PLUS && p.peek.Type != TOKEN_MINUS &&
-			p.peek.Type != TOKEN_STAR && p.peek.Type != TOKEN_SLASH &&
-			p.peek.Type != TOKEN_LT && p.peek.Type != TOKEN_GT &&
-			p.peek.Type != TOKEN_EQUALS {
-			break
-		}
-
-		nextPrec := 0
+		var nextPrec int
 		switch p.peek.Type {
+		case TOKEN_DOTDOT:
+			nextPrec = 5
+		case TOKEN_STAR, TOKEN_SLASH, TOKEN_PERCENT:
+			nextPrec = 4
 		case TOKEN_PLUS, TOKEN_MINUS:
-			nextPrec = 1
-		case TOKEN_STAR, TOKEN_SLASH:
+			nextPrec = 3
+		case TOKEN_LT, TOKEN_GT, TOKEN_EQUALS:
 			nextPrec = 2
-		default:
+		case TOKEN_AND:
+			nextPrec = 1
+		case TOKEN_OR:
 			nextPrec = 0
+		default:
+			return left
 		}
 
 		if nextPrec < prec {
@@ -850,7 +875,12 @@ func (p *Parser) parseBinary(prec int) Node {
 		if right == nil {
 			return nil
 		}
-		left = &BinaryExpr{Left: left, Op: op, Right: right}
+
+		if op == ".." {
+			left = &RangeExpr{Start: left, End: right}
+		} else {
+			left = &BinaryExpr{Left: left, Op: op, Right: right}
+		}
 	}
 	return left
 }
@@ -980,7 +1010,7 @@ func (p *Parser) parsePrimary() Node {
 			return nil
 		}
 
-		// Если после первого выражения запятая — это кортеж (a, b, c).func()
+		// Кортеж (a, b, c).func()
 		if p.peek.Type == TOKEN_COMMA {
 			items := []Node{first}
 			for p.peek.Type == TOKEN_COMMA {
@@ -1024,13 +1054,11 @@ func (p *Parser) parsePrimary() Node {
 				}
 				p.expect(TOKEN_RPAREN)
 
-				// items — уже аргументы
 				allArgs := items
 				allArgs = append(allArgs, callArgs...)
 				return &CallExpr{Name: funcName, Args: allArgs}
 			}
 
-			// (a, b) без .func() — это массив
 			return &ArrayLiteral{Elements: items}
 		}
 
@@ -1038,6 +1066,55 @@ func (p *Parser) parsePrimary() Node {
 		if p.hasErrors || errors.HasFatal() {
 			return nil
 		}
+
+		// (1..5).func() — метод на RangeExpr
+		if p.peek.Type == TOKEN_DOT {
+			p.advance()
+			if p.peek.Type == TOKEN_IDENT {
+				funcName := p.peek.Literal
+				p.advance()
+
+				if p.peek.Type != TOKEN_LPAREN {
+					p.hasErrors = true
+					errors.NewFatalError("0040",
+						fmt.Sprintf("Expected '(' after '%s'", funcName),
+						p.peek.Line, p.peek.Column, p.FileName)
+					return nil
+				}
+				p.advance()
+
+				var callArgs []Node
+				if p.peek.Type != TOKEN_RPAREN {
+					for {
+						arg := p.parseExpression()
+						if arg == nil {
+							return nil
+						}
+						callArgs = append(callArgs, arg)
+						if p.peek.Type == TOKEN_COMMA {
+							p.advance()
+							continue
+						}
+						break
+					}
+				}
+				p.expect(TOKEN_RPAREN)
+
+				// Если first — RangeExpr, раскрываем в аргументы
+				if rangeExpr, ok := first.(*RangeExpr); ok {
+					return &CallRangeExpr{
+						Name:  funcName,
+						Range: rangeExpr,
+						Extra: callArgs,
+					}
+				}
+
+				allArgs := []Node{first}
+				allArgs = append(allArgs, callArgs...)
+				return &CallExpr{Name: funcName, Args: allArgs}
+			}
+		}
+
 		return first
 
 	case TOKEN_LBRACKET:
