@@ -38,7 +38,7 @@ func (b *Builder) Build(ir *IRProgram) bool {
 
 	cFile := filepath.Join(b.Config.OutputDir, "temp_skorpion.c")
 	if err := os.WriteFile(cFile, []byte(b.CSource), 0644); err != nil {
-		errors.NewError("2001", fmt.Sprintf("Cannot write C file: %v", err), 0, 0, "")
+		errors.NewError("0020", fmt.Sprintf("Cannot write C file: %v", err), 0, 0, "")
 		return false
 	}
 	defer os.Remove(cFile)
@@ -150,7 +150,7 @@ func (b *Builder) buildForTarget(targetOS string, cFile string) bool {
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
-		errors.NewError("2003", fmt.Sprintf("Compilation failed for %s: %v", targetOS, err), 0, 0, "")
+		errors.NewError("3000", fmt.Sprintf("Compilation failed for %s: %v", targetOS, err), 0, 0, "")
 		return false
 	}
 

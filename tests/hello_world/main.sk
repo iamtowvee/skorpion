@@ -1,11 +1,17 @@
-use std/io
+use #std/io
 
-void test() {
-    int x = 10
-    io.sendln($x)
+void test(int a, int b, int c, int d) {
+    sendln($a)
+    sendln($b)
+    sendln($c)
+    sendln($d)
 }
 
 void main(arr args) {
-    int x = 10
-    test()
+    1..3.test(4)
+    1..5.test()
+    "zero".sendln()
+
+    arr[int] a = 1..5
+    io.sendln($a.length)
 }

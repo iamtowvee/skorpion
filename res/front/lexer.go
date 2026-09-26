@@ -160,7 +160,7 @@ func (l *Lexer) NextToken() Token {
 			l.col += 2
 			return Token{Type: TOKEN_OR, Literal: "||", Line: l.line, Column: l.col - 2}
 		}
-		errors.NewError("0001", "Unknown character '|'", l.line, l.col, "")
+		errors.NewError("0101", "Unknown character '|'", l.line, l.col, "")
 		l.pos++
 		l.col++
 		return l.NextToken()
@@ -178,7 +178,7 @@ func (l *Lexer) NextToken() Token {
 		}
 		return l.makeToken(TOKEN_DOT, ".")
 	default:
-		errors.NewError("0001", "Unknown character", l.line, l.col, "")
+		errors.NewError("0100", "Unknown character", l.line, l.col, "")
 		l.pos++
 		l.col++
 		return l.NextToken()
@@ -270,7 +270,7 @@ func (l *Lexer) readString() Token {
 	}
 
 	if l.pos >= len(l.input) {
-		errors.NewError("0002", "Unterminated string", l.line, l.col, "")
+		errors.NewError("0102", "Unterminated string", l.line, l.col, "")
 		return Token{Type: TOKEN_STRING, Literal: "", Line: l.line, Column: l.col}
 	}
 
@@ -294,7 +294,7 @@ func (l *Lexer) readMultilineComment() Token {
 		l.pos++
 	}
 	if l.pos >= len(l.input)-1 {
-		errors.NewError("0003", "Unterminated multi-line comment", l.line, l.col, "")
+		errors.NewError("0104", "Unterminated multi-line comment", l.line, l.col, "")
 		return Token{Type: TOKEN_EOF, Literal: "", Line: l.line, Column: l.col}
 	}
 	l.pos += 2
@@ -334,7 +334,7 @@ func (l *Lexer) readBackticks() Token {
 		l.pos++
 	}
 
-	errors.NewError("0002", "Unterminated backticks (```)", l.line, l.col, "")
+	errors.NewError("0103", "Unterminated backticks (```)", l.line, l.col, "")
 	return Token{Type: TOKEN_BACKTICK, Literal: "", Line: l.line, Column: l.col}
 }
 

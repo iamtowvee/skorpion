@@ -175,7 +175,7 @@ func buildProject() {
 	configPath := filepath.Join(projectPath, "manifest.spc")
 	cfg := front.ParseConfig(configPath)
 	if cfg == nil {
-		errors.NewError("1001", "Cannot read manifest.spc", 0, 0, "manifest.spc")
+		errors.NewError("0010", "Cannot read manifest.spc", 0, 0, "manifest.spc")
 		printErrorReport(startTime, "manifest.spc", nil)
 		return
 	}
@@ -190,7 +190,7 @@ func buildProject() {
 	// Читаем исходник для вывода ошибок
 	content, err := os.ReadFile(mainFile)
 	if err != nil {
-		errors.NewError("1001", fmt.Sprintf("Cannot read %s", mainFile), 0, 0, mainFile)
+		errors.NewError("0011", fmt.Sprintf("Cannot read %s", mainFile), 0, 0, mainFile)
 		printErrorReport(startTime, mainFile, nil)
 		return
 	}
@@ -199,7 +199,7 @@ func buildProject() {
 	// Загружаем программу с импортами
 	mainProg, err := front.LoadProgram(mainFile)
 	if err != nil {
-		errors.NewFatalError("1001", fmt.Sprintf("Import error: %v", err), 0, 0, mainFile)
+		errors.NewFatalError("0011", fmt.Sprintf("Import error: %v", err), 0, 0, mainFile)
 		printErrorReport(startTime, mainFile, sourceLines)
 		os.Exit(1)
 		return
@@ -241,6 +241,16 @@ func buildProject() {
 	semantic.SetImportManager(im)
 
 	if !semantic.Analyze() {
+		// Копируем локальные ошибки семантики в глобальный errors
+		if len(semantic.Errors) > 0 {
+			for _, e := range semantic.Errors {
+				code := e.Code
+				if code == "" {
+					code = "0000"
+				}
+				errors.NewError(code, e.Message, e.Line, e.Column, e.File)
+			}
+		}
 		printErrorReport(startTime, mainFile, sourceLines)
 		os.Exit(1)
 		return
@@ -298,7 +308,7 @@ func buildProject() {
 
 	// Создаём директорию
 	if err := os.MkdirAll(buildConfig.OutputDir, 0755); err != nil {
-		errors.NewFatalError("2004", fmt.Sprintf("Cannot create output directory: %v", err), 0, 0, "")
+		errors.NewFatalError("0022", fmt.Sprintf("Cannot create output directory: %v", err), 0, 0, "")
 		printErrorReport(startTime, mainFile, sourceLines)
 		os.Exit(1)
 		return
@@ -333,12 +343,16 @@ func testProject() {
 }
 
 func printErrorReport(startTime time.Time, filePath string, sourceLines []string) {
+	// Fallback: если ошибок нет, но мы здесь — это баг компилятора
 	if !errors.HasErrors() {
-		return
+		errors.NewError("0000",
+			"Build failed with no error information — this is a compiler bug",
+			0, 0, filePath)
 	}
 
 	report := errors.ErrorReport{
 		Errors:     errors.TakeErrorsList(),
+		Warnings:   errors.TakeWarningsList(),
 		FilePath:   filePath,
 		SourceCode: sourceLines,
 		TotalTime:  time.Since(startTime),

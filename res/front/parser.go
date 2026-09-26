@@ -44,7 +44,16 @@ func (p *Parser) expect(tt TokenType) Token {
 		return p.current
 	}
 	p.hasErrors = true
-	errors.NewFatalError("0004",
+
+	// Особая диагностика для EOF
+	if p.peek.Type == TOKEN_EOF {
+		errors.NewFatalError("0523",
+			fmt.Sprintf("Unexpected end of file — expected '%s'", tt.String()),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return p.current
+	}
+
+	errors.NewFatalError("0500",
 		fmt.Sprintf("Expected '%s', got '%s'", tt.String(), p.peek.Literal),
 		p.peek.Line, p.peek.Column, p.FileName)
 	return p.current
@@ -173,7 +182,7 @@ func (p *Parser) parseFunction() *Function {
 	// Имя
 	if p.peek.Type != TOKEN_IDENT {
 		p.hasErrors = true
-		errors.NewFatalError("0006",
+		errors.NewFatalError("0501",
 			fmt.Sprintf("Expected function name, got '%s'", p.peek.Literal),
 			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
@@ -184,7 +193,7 @@ func (p *Parser) parseFunction() *Function {
 	// Открывающая скобка
 	if p.peek.Type != TOKEN_LPAREN {
 		p.hasErrors = true
-		errors.NewFatalError("0014",
+		errors.NewFatalError("0507",
 			fmt.Sprintf("Expected '(', got '%s'", p.peek.Literal),
 			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
@@ -198,7 +207,7 @@ func (p *Parser) parseFunction() *Function {
 			// Тип параметра
 			if !p.isType(p.peek) {
 				p.hasErrors = true
-				errors.NewFatalError("0008",
+				errors.NewFatalError("0502",
 					fmt.Sprintf("Expected parameter type, got '%s'", p.peek.Literal),
 					p.peek.Line, p.peek.Column, p.FileName)
 				return nil
@@ -209,7 +218,7 @@ func (p *Parser) parseFunction() *Function {
 			// Имя параметра
 			if p.peek.Type != TOKEN_IDENT {
 				p.hasErrors = true
-				errors.NewFatalError("0009",
+				errors.NewFatalError("0503",
 					fmt.Sprintf("Expected parameter name, got '%s'", p.peek.Literal),
 					p.peek.Line, p.peek.Column, p.FileName)
 				return nil
@@ -245,7 +254,7 @@ func (p *Parser) parseFunction() *Function {
 	// Закрывающая скобка
 	if p.peek.Type != TOKEN_RPAREN {
 		p.hasErrors = true
-		errors.NewFatalError("0015",
+		errors.NewFatalError("0508",
 			fmt.Sprintf("Expected ')', got '%s'", p.peek.Literal),
 			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
@@ -255,7 +264,7 @@ func (p *Parser) parseFunction() *Function {
 	// Тело функции
 	if p.peek.Type != TOKEN_LBRACE {
 		p.hasErrors = true
-		errors.NewFatalError("0016",
+		errors.NewFatalError("0509",
 			fmt.Sprintf("Expected '{', got '%s'", p.peek.Literal),
 			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
@@ -295,6 +304,15 @@ func (p *Parser) parseBlock() *Block {
 		if stmt != nil {
 			block.Statements = append(block.Statements, stmt)
 		}
+	}
+
+	// Особая диагностика: EOF вместо }
+	if p.peek.Type == TOKEN_EOF {
+		p.hasErrors = true
+		errors.NewFatalError("0523",
+			"Unexpected end of file — expected '}'",
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
 	}
 
 	p.expect(TOKEN_RBRACE)
@@ -350,7 +368,7 @@ func (p *Parser) parseIncludeC() *IncludeC {
 	// Ожидаем ```
 	if p.peek.Type != TOKEN_BACKTICK {
 		p.hasErrors = true
-		errors.NewFatalError("0017",
+		errors.NewFatalError("0510",
 			fmt.Sprintf("Expected ``` after includeC, got '%s'", p.peek.Literal),
 			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
@@ -471,7 +489,7 @@ func (p *Parser) parseCase() Node {
 			// После default запятая обязательна!
 			if p.peek.Type != TOKEN_COMMA {
 				p.hasErrors = true
-				errors.NewFatalError("0019",
+				errors.NewFatalError("0512",
 					fmt.Sprintf("Expected ',' after default branch (at %d:%d)", p.peek.Line, p.peek.Column),
 					p.peek.Line, p.peek.Column, p.FileName)
 				return nil
@@ -499,11 +517,29 @@ func (p *Parser) parseCase() Node {
 		} else {
 			debug.Debug("parseCase: expected comma, got: %s (%s)", p.peek.Literal, p.peek.Type.String())
 			p.hasErrors = true
-			errors.NewFatalError("0019",
+			errors.NewFatalError("0512",
 				fmt.Sprintf("Expected ',' after case branch (at %d:%d)", p.peek.Line, p.peek.Column),
 				p.peek.Line, p.peek.Column, p.FileName)
 			return nil
 		}
+	}
+
+	// Проверка на пустой case
+	if len(branches) == 0 && defaultBlock == nil {
+		p.hasErrors = true
+		errors.NewFatalError("0522",
+			"Empty case statement — at least one branch is required",
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
+	}
+
+	// Проверка на EOF
+	if p.peek.Type == TOKEN_EOF {
+		p.hasErrors = true
+		errors.NewFatalError("0523",
+			"Unexpected end of file — expected '}' in case statement",
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
 	}
 
 	p.expect(TOKEN_RBRACE)
@@ -636,7 +672,7 @@ func (p *Parser) parseVarDecl() Node {
 		// Имя переменной
 		if p.peek.Type != TOKEN_IDENT {
 			p.hasErrors = true
-			errors.NewFatalError("0011",
+			errors.NewFatalError("0504",
 				fmt.Sprintf("Expected variable name, got '%s'", p.peek.Literal),
 				p.peek.Line, p.peek.Column, p.FileName)
 			return nil
@@ -672,7 +708,7 @@ func (p *Parser) parseVarDecl() Node {
 
 	if p.peek.Type != TOKEN_IDENT {
 		p.hasErrors = true
-		errors.NewFatalError("0011",
+		errors.NewFatalError("0504",
 			fmt.Sprintf("Expected variable name, got '%s'", p.peek.Literal),
 			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
@@ -720,7 +756,7 @@ func (p *Parser) parseAssignmentOrCall() Node {
 
 			// Если после точки не вызов, то это ошибка
 			p.hasErrors = true
-			errors.NewFatalError("0018",
+			errors.NewFatalError("0511",
 				fmt.Sprintf("Expected function call after '.', got '%s'", p.peek.Literal),
 				p.peek.Line, p.peek.Column, p.FileName)
 			return nil
@@ -814,6 +850,53 @@ func (p *Parser) parseExpression() Node {
 		return nil
 	}
 
+	// Если получили RangeExpr и дальше идёт .method() — это вызов на range
+	// 1..4.test() → CallRangeExpr{test, 1..4}
+	if rangeExpr, ok := cond.(*RangeExpr); ok && p.peek.Type == TOKEN_DOT {
+		p.advance() // .
+		if p.peek.Type != TOKEN_IDENT {
+			p.hasErrors = true
+			errors.NewFatalError("0520",
+				fmt.Sprintf("Expected method name after '.'"),
+				p.peek.Line, p.peek.Column, p.FileName)
+			return nil
+		}
+		funcName := p.peek.Literal
+		p.advance()
+
+		if p.peek.Type != TOKEN_LPAREN {
+			p.hasErrors = true
+			errors.NewFatalError("0520",
+				fmt.Sprintf("Expected '(' after '%s'", funcName),
+				p.peek.Line, p.peek.Column, p.FileName)
+			return nil
+		}
+		p.advance()
+
+		var callArgs []Node
+		if p.peek.Type != TOKEN_RPAREN {
+			for {
+				arg := p.parseExpression()
+				if arg == nil {
+					return nil
+				}
+				callArgs = append(callArgs, arg)
+				if p.peek.Type == TOKEN_COMMA {
+					p.advance()
+					continue
+				}
+				break
+			}
+		}
+		p.expect(TOKEN_RPAREN)
+
+		return &CallRangeExpr{
+			Name:  funcName,
+			Range: rangeExpr,
+			Extra: callArgs,
+		}
+	}
+
 	// Тернарник: cond ? then : else
 	if p.peek.Type == TOKEN_QUESTION {
 		p.advance()
@@ -824,7 +907,7 @@ func (p *Parser) parseExpression() Node {
 
 		if p.peek.Type != TOKEN_COLON {
 			p.hasErrors = true
-			errors.NewFatalError("0041",
+			errors.NewFatalError("0521",
 				fmt.Sprintf("Expected ':' in ternary, got '%s'", p.peek.Literal),
 				p.peek.Line, p.peek.Column, p.FileName)
 			return nil
@@ -928,53 +1011,7 @@ func (p *Parser) parsePrimary() Node {
 	case TOKEN_NUMBER:
 		val := p.peek.Literal
 		p.advance()
-		num := &Number{Value: val}
-
-		// 42.sendln() — метод на числе
-		if p.peek.Type == TOKEN_DOT {
-			p.advance()
-			if p.peek.Type != TOKEN_IDENT {
-				p.hasErrors = true
-				errors.NewFatalError("0040",
-					fmt.Sprintf("Expected method name after '.'"),
-					p.peek.Line, p.peek.Column, p.FileName)
-				return nil
-			}
-			funcName := p.peek.Literal
-			p.advance()
-
-			if p.peek.Type != TOKEN_LPAREN {
-				p.hasErrors = true
-				errors.NewFatalError("0040",
-					fmt.Sprintf("Expected '(' after '%s'", funcName),
-					p.peek.Line, p.peek.Column, p.FileName)
-				return nil
-			}
-			p.advance()
-
-			var callArgs []Node
-			if p.peek.Type != TOKEN_RPAREN {
-				for {
-					arg := p.parseExpression()
-					if arg == nil {
-						return nil
-					}
-					callArgs = append(callArgs, arg)
-					if p.peek.Type == TOKEN_COMMA {
-						p.advance()
-						continue
-					}
-					break
-				}
-			}
-			p.expect(TOKEN_RPAREN)
-
-			allArgs := []Node{num}
-			allArgs = append(allArgs, callArgs...)
-			return &CallExpr{Name: funcName, Args: allArgs}
-		}
-
-		return num
+		return &Number{Value: val}
 
 	case TOKEN_STRING:
 		val := p.peek.Literal
@@ -986,7 +1023,7 @@ func (p *Parser) parsePrimary() Node {
 			p.advance()
 			if p.peek.Type != TOKEN_IDENT {
 				p.hasErrors = true
-				errors.NewFatalError("0040",
+				errors.NewFatalError("0520",
 					fmt.Sprintf("Expected method name after '.'"),
 					p.peek.Line, p.peek.Column, p.FileName)
 				return nil
@@ -996,7 +1033,7 @@ func (p *Parser) parsePrimary() Node {
 
 			if p.peek.Type != TOKEN_LPAREN {
 				p.hasErrors = true
-				errors.NewFatalError("0040",
+				errors.NewFatalError("0520",
 					fmt.Sprintf("Expected '(' after '%s'", funcName),
 					p.peek.Line, p.peek.Column, p.FileName)
 				return nil
@@ -1048,7 +1085,7 @@ func (p *Parser) parsePrimary() Node {
 			}
 			if p.peek.Type != TOKEN_RBRACKET {
 				p.hasErrors = true
-				errors.NewFatalError("0023",
+				errors.NewFatalError("0516",
 					fmt.Sprintf("Expected ']', got '%s'", p.peek.Literal),
 					p.peek.Line, p.peek.Column, p.FileName)
 				return nil
@@ -1071,7 +1108,7 @@ func (p *Parser) parsePrimary() Node {
 
 				if p.peek.Type != TOKEN_LPAREN {
 					p.hasErrors = true
-					errors.NewFatalError("0040",
+					errors.NewFatalError("0520",
 						fmt.Sprintf("Expected '(' after '%s'", funcName),
 						p.peek.Line, p.peek.Column, p.FileName)
 					return nil
@@ -1132,7 +1169,7 @@ func (p *Parser) parsePrimary() Node {
 			return p.parseTypeOf()
 		}
 		p.hasErrors = true
-		errors.NewFatalError("0012",
+		errors.NewFatalError("0505",
 			fmt.Sprintf("Unexpected keyword in expression: '%s'", p.peek.Literal),
 			p.peek.Line, p.peek.Column, p.FileName)
 		p.advance()
@@ -1163,7 +1200,7 @@ func (p *Parser) parsePrimary() Node {
 				p.advance()
 				if p.peek.Type != TOKEN_IDENT {
 					p.hasErrors = true
-					errors.NewFatalError("0040",
+					errors.NewFatalError("0520",
 						fmt.Sprintf("Expected method name after '.'"),
 						p.peek.Line, p.peek.Column, p.FileName)
 					return nil
@@ -1211,7 +1248,7 @@ func (p *Parser) parsePrimary() Node {
 
 				if p.peek.Type != TOKEN_LPAREN {
 					p.hasErrors = true
-					errors.NewFatalError("0040",
+					errors.NewFatalError("0520",
 						fmt.Sprintf("Expected '(' after '%s'", funcName),
 						p.peek.Line, p.peek.Column, p.FileName)
 					return nil
@@ -1272,7 +1309,7 @@ func (p *Parser) parsePrimary() Node {
 		}
 		if p.peek.Type != TOKEN_RBRACKET {
 			p.hasErrors = true
-			errors.NewFatalError("0022",
+			errors.NewFatalError("0515",
 				fmt.Sprintf("Expected ']', got '%s'", p.peek.Literal),
 				p.peek.Line, p.peek.Column, p.FileName)
 			return nil
@@ -1282,7 +1319,16 @@ func (p *Parser) parsePrimary() Node {
 
 	default:
 		p.hasErrors = true
-		errors.NewFatalError("0013",
+
+		// Особая диагностика для EOF
+		if p.peek.Type == TOKEN_EOF {
+			errors.NewFatalError("0523",
+				"Unexpected end of file — expected an expression",
+				p.peek.Line, p.peek.Column, p.FileName)
+			return nil
+		}
+
+		errors.NewFatalError("0506",
 			fmt.Sprintf("Unexpected token in expression: '%s'", p.peek.Literal),
 			p.peek.Line, p.peek.Column, p.FileName)
 		p.advance()
@@ -1309,14 +1355,14 @@ func (p *Parser) parseArrayType() string {
 			innerType = p.parseArrayType() // возвращает "arr[int]" или "arr" или "arr[arr]"
 		default:
 			p.hasErrors = true
-			errors.NewFatalError("0020",
+			errors.NewFatalError("0513",
 				fmt.Sprintf("Expected type in arr[], got '%s'", p.peek.Literal),
 				p.peek.Line, p.peek.Column, p.FileName)
 			return ""
 		}
 	} else {
 		p.hasErrors = true
-		errors.NewFatalError("0020",
+		errors.NewFatalError("0513",
 			fmt.Sprintf("Expected type in arr[], got '%s'", p.peek.Literal),
 			p.peek.Line, p.peek.Column, p.FileName)
 		return ""
@@ -1324,7 +1370,7 @@ func (p *Parser) parseArrayType() string {
 
 	if p.peek.Type != TOKEN_RBRACKET {
 		p.hasErrors = true
-		errors.NewFatalError("0021",
+		errors.NewFatalError("0514",
 			fmt.Sprintf("Expected ']', got '%s'", p.peek.Literal),
 			p.peek.Line, p.peek.Column, p.FileName)
 		return ""

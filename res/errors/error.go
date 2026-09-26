@@ -10,6 +10,7 @@ import (
 var (
 	mu       sync.Mutex
 	errors   []SkorpionError
+	warnings []SkorpionError
 	hasFatal bool
 )
 
@@ -20,6 +21,7 @@ type SkorpionError struct {
 	Column  int
 	File    string
 	Fatal   bool
+	Warning bool
 }
 
 func (e *SkorpionError) GetCodeInfo() ErrorCode {
@@ -38,6 +40,7 @@ func InitErrors() {
 	mu.Lock()
 	defer mu.Unlock()
 	errors = make([]SkorpionError, 0)
+	warnings = make([]SkorpionError, 0)
 	hasFatal = false
 }
 
@@ -68,16 +71,36 @@ func NewFatalError(code, message string, line, col int, file string) {
 	hasFatal = true
 }
 
+func NewWarning(code, message string, line, col int, file string) {
+	mu.Lock()
+	defer mu.Unlock()
+	warnings = append(warnings, SkorpionError{
+		Code:    code,
+		Message: message,
+		Line:    line,
+		Column:  col,
+		File:    file,
+		Warning: true,
+	})
+}
+
 func TakeErrorsList() []SkorpionError {
 	mu.Lock()
 	defer mu.Unlock()
 	return append([]SkorpionError{}, errors...)
 }
 
+func TakeWarningsList() []SkorpionError {
+	mu.Lock()
+	defer mu.Unlock()
+	return append([]SkorpionError{}, warnings...)
+}
+
 func CloseErrors() {
 	mu.Lock()
 	defer mu.Unlock()
 	errors = nil
+	warnings = nil
 	hasFatal = false
 }
 
@@ -85,6 +108,12 @@ func HasErrors() bool {
 	mu.Lock()
 	defer mu.Unlock()
 	return len(errors) > 0
+}
+
+func HasWarnings() bool {
+	mu.Lock()
+	defer mu.Unlock()
+	return len(warnings) > 0
 }
 
 func HasFatal() bool {
@@ -97,6 +126,7 @@ func ClearErrors() {
 	mu.Lock()
 	defer mu.Unlock()
 	errors = make([]SkorpionError, 0)
+	warnings = make([]SkorpionError, 0)
 	hasFatal = false
 }
 
@@ -112,9 +142,9 @@ func PrintErrors() {
 	}
 }
 
-// ErrorReport для красивого вывода ошибок
 type ErrorReport struct {
 	Errors     []SkorpionError
+	Warnings   []SkorpionError
 	FilePath   string
 	SourceCode []string
 	TotalTime  time.Duration

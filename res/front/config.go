@@ -34,7 +34,7 @@ func ParseConfig(path string) *Config {
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		errors.NewError("1002", "Cannot read config file", 0, 0, path)
+		errors.NewError("0010", "Cannot read config file", 0, 0, path)
 		return cfg
 	}
 
