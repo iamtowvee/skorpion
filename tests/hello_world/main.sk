@@ -1,5 +1,11 @@
-use #std/io
+use std/io
+
+void test() {
+    int x = 10
+    io.sendln($x)
+}
 
 void main(arr args) {
-    "zero".sendln()
+    int x = 10
+    test()
 }

@@ -330,8 +330,8 @@ func (p *Parser) parseStatement() Node {
 		return p.parseIncludeC()
 	case TOKEN_IDENT:
 		return p.parseAssignmentOrCall()
-	case TOKEN_STRING, TOKEN_NUMBER:
-		// Expression statement: "zero".sendln() или 42.sendln()
+	case TOKEN_STRING, TOKEN_NUMBER, TOKEN_LPAREN:
+		// Expression statement: "zero".sendln(), 42.sendln(), (1,2,3).test()
 		return p.parseExpression()
 	}
 

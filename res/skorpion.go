@@ -426,6 +426,12 @@ func printAST(node front.Node, indent int) {
 			n.Name,
 			exprStr)
 
+	case *front.RangeExpr:
+		fmt.Printf("%s%s\n", prefix, cli.Colors.Cyan("RangeExpr"))
+
+	case *front.CallRangeExpr:
+		fmt.Printf("%s%s %s(...)\n", prefix, cli.Colors.Cyan("CallRange"), n.Name)
+
 	case *front.BinaryExpr:
 		leftStr := "..."
 		rightStr := "..."
