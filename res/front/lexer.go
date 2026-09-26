@@ -60,7 +60,6 @@ type Lexer struct {
 	peekPos int
 }
 
-// Единственный конструктор
 func NewLexer(input string) *Lexer {
 	return &Lexer{
 		input:   input,
@@ -79,33 +78,27 @@ func (l *Lexer) NextToken() Token {
 
 	ch := l.input[l.pos]
 
-	// Многострочные комментарии
 	if ch == '/' && l.peek() == '*' {
 		return l.readMultilineComment()
 	}
 
-	// Однострочные комментарии
 	if ch == '/' && l.peek() == '/' {
 		l.readSingleLineComment()
 		return l.NextToken()
 	}
 
-	// Бэктики для includeC — ДО ВСЕГО!
 	if ch == '`' {
 		return l.readBackticks()
 	}
 
-	// Числа
 	if unicode.IsDigit(rune(ch)) || (ch == '-' && l.pos+1 < len(l.input) && unicode.IsDigit(rune(l.input[l.pos+1]))) {
 		return l.readNumber()
 	}
 
-	// Строки
 	if ch == '"' {
 		return l.readString()
 	}
 
-	// Идентификаторы и ключевые слова
 	if unicode.IsLetter(rune(ch)) || ch == '_' {
 		return l.readIdent()
 	}
@@ -149,16 +142,18 @@ func (l *Lexer) NextToken() Token {
 		return l.makeToken(TOKEN_NOT, "!")
 	case '&':
 		if l.peek() == '&' {
+			col := l.col
 			l.pos += 2
 			l.col += 2
-			return Token{Type: TOKEN_AND, Literal: "&&", Line: l.line, Column: l.col - 2}
+			return Token{Type: TOKEN_AND, Literal: "&&", Line: l.line, Column: col}
 		}
 		return l.makeToken(TOKEN_AMPERSAND, "&")
 	case '|':
 		if l.peek() == '|' {
+			col := l.col
 			l.pos += 2
 			l.col += 2
-			return Token{Type: TOKEN_OR, Literal: "||", Line: l.line, Column: l.col - 2}
+			return Token{Type: TOKEN_OR, Literal: "||", Line: l.line, Column: col}
 		}
 		errors.NewError("0101", "Unknown character '|'", l.line, l.col, "")
 		l.pos++
@@ -172,9 +167,10 @@ func (l *Lexer) NextToken() Token {
 		return l.makeToken(TOKEN_DOLLAR, "$")
 	case '.':
 		if l.peek() == '.' {
+			col := l.col
 			l.pos += 2
 			l.col += 2
-			return Token{Type: TOKEN_DOTDOT, Literal: "..", Line: l.line, Column: l.col - 2}
+			return Token{Type: TOKEN_DOTDOT, Literal: "..", Line: l.line, Column: col}
 		}
 		return l.makeToken(TOKEN_DOT, ".")
 	default:
@@ -194,12 +190,13 @@ func (l *Lexer) makeToken(tt TokenType, lit string) Token {
 
 func (l *Lexer) readIdent() Token {
 	start := l.pos
+	startCol := l.col
 	for l.pos < len(l.input) && (unicode.IsLetter(rune(l.input[l.pos])) || unicode.IsDigit(rune(l.input[l.pos])) || l.input[l.pos] == '_') {
 		l.pos++
+		l.col++
 	}
 	literal := l.input[start:l.pos]
 	tokType := TOKEN_IDENT
-	// Ключевые слова
 	keywords := map[string]TokenType{
 		"use":      TOKEN_KEYWORD,
 		"const":    TOKEN_KEYWORD,
@@ -230,52 +227,61 @@ func (l *Lexer) readIdent() Token {
 	if kwType, ok := keywords[literal]; ok {
 		tokType = kwType
 	}
-	return Token{Type: tokType, Literal: literal, Line: l.line, Column: start - l.col + 1}
+	return Token{Type: tokType, Literal: literal, Line: l.line, Column: startCol}
 }
 
 func (l *Lexer) readNumber() Token {
 	start := l.pos
+	startCol := l.col
 	if l.input[l.pos] == '-' {
 		l.pos++
+		l.col++
 	}
 	for l.pos < len(l.input) && unicode.IsDigit(rune(l.input[l.pos])) {
 		l.pos++
+		l.col++
 	}
 	if l.pos+1 < len(l.input) && l.input[l.pos] == '.' && unicode.IsDigit(rune(l.input[l.pos+1])) {
 		l.pos++
+		l.col++
 		for l.pos < len(l.input) && unicode.IsDigit(rune(l.input[l.pos])) {
 			l.pos++
+			l.col++
 		}
 	}
 	literal := l.input[start:l.pos]
-	return Token{Type: TOKEN_NUMBER, Literal: literal, Line: l.line, Column: start - l.col + 1}
+	return Token{Type: TOKEN_NUMBER, Literal: literal, Line: l.line, Column: startCol}
 }
 
 func (l *Lexer) readString() Token {
-	start := l.pos
+	startCol := l.col
 	l.pos++ // пропустить "
+	l.col++
 	var result strings.Builder
 
 	for l.pos < len(l.input) && l.input[l.pos] != '"' {
 		if l.input[l.pos] == '\\' && l.pos+1 < len(l.input) {
-			// Сохраняем экранирование как есть для includeC
 			result.WriteByte('\\')
 			l.pos++
+			l.col++
 			result.WriteByte(l.input[l.pos])
 			l.pos++
+			l.col++
 		} else {
 			result.WriteByte(l.input[l.pos])
 			l.pos++
+			l.col++
 		}
 	}
 
 	if l.pos >= len(l.input) {
 		errors.NewError("0102", "Unterminated string", l.line, l.col, "")
-		return Token{Type: TOKEN_STRING, Literal: "", Line: l.line, Column: l.col}
+		return Token{Type: TOKEN_STRING, Literal: "", Line: l.line, Column: startCol}
 	}
 
 	l.pos++ // пропустить "
-	return Token{Type: TOKEN_STRING, Literal: result.String(), Line: l.line, Column: start - l.col + 1}
+	l.col++
+	return Token{Type: TOKEN_STRING, Literal: result.String(), Line: l.line, Column: startCol}
 }
 
 func (l *Lexer) readSingleLineComment() {
@@ -286,10 +292,13 @@ func (l *Lexer) readSingleLineComment() {
 
 func (l *Lexer) readMultilineComment() Token {
 	l.pos += 2
+	l.col += 2
 	for l.pos < len(l.input)-1 && !(l.input[l.pos] == '*' && l.input[l.pos+1] == '/') {
 		if l.input[l.pos] == '\n' {
 			l.line++
 			l.col = 1
+		} else {
+			l.col++
 		}
 		l.pos++
 	}
@@ -298,44 +307,48 @@ func (l *Lexer) readMultilineComment() Token {
 		return Token{Type: TOKEN_EOF, Literal: "", Line: l.line, Column: l.col}
 	}
 	l.pos += 2
+	l.col += 2
 	return l.NextToken()
 }
 
 func (l *Lexer) readBackticks() Token {
-	start := l.pos
-	l.pos++ // пропускаем первый `
+	startCol := l.col
+	l.pos++ // первый `
+	l.col++
 
-	// Пропускаем следующие два ` (всего ```)
 	if l.pos < len(l.input) && l.input[l.pos] == '`' {
 		l.pos++
+		l.col++
 	}
 	if l.pos < len(l.input) && l.input[l.pos] == '`' {
 		l.pos++
+		l.col++
 	}
 
-	// Собираем код до закрывающих ```
 	var code strings.Builder
 	for l.pos < len(l.input) {
-		// Проверяем, не встретили ли закрывающие ```
 		if l.pos+2 < len(l.input) && l.input[l.pos] == '`' && l.input[l.pos+1] == '`' && l.input[l.pos+2] == '`' {
-			// Нашли закрывающие ```, выходим
-			l.pos += 3 // пропускаем ```
+			l.pos += 3
+			l.col += 3
 			return Token{
 				Type:    TOKEN_BACKTICK,
 				Literal: strings.TrimSpace(code.String()),
 				Line:    l.line,
-				Column:  start - l.col + 1,
+				Column:  startCol,
 			}
 		}
 		if l.input[l.pos] == '\n' {
 			l.line++
+			l.col = 1
+		} else {
+			l.col++
 		}
 		code.WriteByte(l.input[l.pos])
 		l.pos++
 	}
 
 	errors.NewError("0103", "Unterminated backticks (```)", l.line, l.col, "")
-	return Token{Type: TOKEN_BACKTICK, Literal: "", Line: l.line, Column: l.col}
+	return Token{Type: TOKEN_BACKTICK, Literal: "", Line: l.line, Column: startCol}
 }
 
 func (l *Lexer) skipWhitespace() {
@@ -365,7 +378,6 @@ func (p *Param) HasDefault() bool {
 	return p.DefaultValue != nil
 }
 
-// String возвращает строковое представление TokenType
 func (tt TokenType) String() string {
 	switch tt {
 	case TOKEN_EOF:

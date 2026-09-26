@@ -15,7 +15,6 @@ type Parser struct {
 	FileName  string
 }
 
-// Конструктор без advance()
 func NewParserInternal(input string) *Parser {
 	p := &Parser{
 		lexer:     NewLexer(input),
@@ -38,6 +37,16 @@ func (p *Parser) match(tt TokenType) bool {
 	return false
 }
 
+// pos возвращает текущую позицию peek
+func (p *Parser) pos() Position {
+	return Position{Line: p.peek.Line, Column: p.peek.Column}
+}
+
+// posPrev возвращает позицию current (только что съеденного)
+func (p *Parser) posPrev() Position {
+	return Position{Line: p.current.Line, Column: p.current.Column}
+}
+
 func (p *Parser) expect(tt TokenType) Token {
 	if p.peek.Type == tt {
 		p.advance()
@@ -45,7 +54,6 @@ func (p *Parser) expect(tt TokenType) Token {
 	}
 	p.hasErrors = true
 
-	// Особая диагностика для EOF
 	if p.peek.Type == TOKEN_EOF {
 		errors.NewFatalError("0523",
 			fmt.Sprintf("Unexpected end of file — expected '%s'", tt.String()),
@@ -70,19 +78,20 @@ func (p *Parser) isType(token Token) bool {
 }
 
 func (p *Parser) Parse() *Program {
-	// Инициализируем первый токен
 	p.advance()
 
-	// Проверяем, были ли ошибки в лексере
 	if errors.HasFatal() {
 		return &Program{Imports: []*Import{}, Functions: []*Function{}}
 	}
 
-	prog := &Program{Imports: []*Import{}, Functions: []*Function{}}
+	prog := &Program{
+		Position:  p.pos(),
+		Imports:   []*Import{},
+		Functions: []*Function{},
+	}
 
 	debug.Debug("Starting parse, first token: %s type: %s", p.peek.Literal, p.peek.Type.String())
 
-	// Сначала импорты
 	for p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "use" {
 		if p.hasErrors || errors.HasFatal() {
 			break
@@ -98,7 +107,6 @@ func (p *Parser) Parse() *Program {
 
 	debug.Debug("After imports, current token: %s type: %s", p.peek.Literal, p.peek.Type.String())
 
-	// Затем функции
 	funcCount := 0
 	for p.peek.Type != TOKEN_EOF {
 		debug.Debug("Loop iteration %d: token='%s', type=%d", funcCount, p.peek.Literal, p.peek.Type)
@@ -107,7 +115,6 @@ func (p *Parser) Parse() *Program {
 			break
 		}
 
-		// Проверяем, что это функция (тип возврата)
 		if p.isType(p.peek) {
 			debug.Debug("Found type: '%s', parsing function...", p.peek.Literal)
 			fn := p.parseFunction()
@@ -117,7 +124,6 @@ func (p *Parser) Parse() *Program {
 				debug.Debug("Function parsed: %s", fn.Name)
 			}
 		} else {
-			// Если не функция, пропускаем
 			debug.Debug("Skipping token: '%s'", p.peek.Literal)
 			p.advance()
 		}
@@ -133,15 +139,15 @@ func (p *Parser) parseImport() *Import {
 		return nil
 	}
 
+	pos := p.pos()
 	p.advance() // use
-	imp := &Import{}
+	imp := &Import{Position: pos}
 
 	if p.peek.Type == TOKEN_HASH {
 		p.advance()
 		imp.All = true
 	}
 
-	// Путь: path/to/module
 	path := ""
 	for p.peek.Type == TOKEN_IDENT || p.peek.Literal == "/" {
 		if p.peek.Type == TOKEN_IDENT {
@@ -168,6 +174,8 @@ func (p *Parser) parseFunction() *Function {
 	if p.hasErrors || errors.HasFatal() {
 		return nil
 	}
+
+	pos := p.pos()
 
 	// Тип возврата
 	retType := p.peek.Literal
@@ -204,7 +212,8 @@ func (p *Parser) parseFunction() *Function {
 	params := []*Param{}
 	if p.peek.Type != TOKEN_RPAREN {
 		for {
-			// Тип параметра
+			paramPos := p.pos()
+
 			if !p.isType(p.peek) {
 				p.hasErrors = true
 				errors.NewFatalError("0502",
@@ -215,7 +224,6 @@ func (p *Parser) parseFunction() *Function {
 			paramType := p.peek.Literal
 			p.advance()
 
-			// Имя параметра
 			if p.peek.Type != TOKEN_IDENT {
 				p.hasErrors = true
 				errors.NewFatalError("0503",
@@ -226,10 +234,9 @@ func (p *Parser) parseFunction() *Function {
 			paramName := p.peek.Literal
 			p.advance()
 
-			// Проверяем значение по умолчанию
 			var defaultValue Node
 			if p.peek.Type == TOKEN_EQUALS {
-				p.advance() // пропускаем =
+				p.advance()
 				defaultValue = p.parseExpression()
 				if defaultValue == nil {
 					return nil
@@ -237,6 +244,7 @@ func (p *Parser) parseFunction() *Function {
 			}
 
 			params = append(params, &Param{
+				Position:     paramPos,
 				Name:         paramName,
 				Type:         paramType,
 				DefaultValue: defaultValue,
@@ -251,7 +259,6 @@ func (p *Parser) parseFunction() *Function {
 		}
 	}
 
-	// Закрывающая скобка
 	if p.peek.Type != TOKEN_RPAREN {
 		p.hasErrors = true
 		errors.NewFatalError("0508",
@@ -261,7 +268,6 @@ func (p *Parser) parseFunction() *Function {
 	}
 	p.advance()
 
-	// Тело функции
 	if p.peek.Type != TOKEN_LBRACE {
 		p.hasErrors = true
 		errors.NewFatalError("0509",
@@ -276,11 +282,13 @@ func (p *Parser) parseFunction() *Function {
 	}
 
 	return &Function{
+		Position:   pos,
 		Name:       name,
 		ReturnType: retType,
 		Params:     params,
 		Body:       body,
 		IsExport:   isExport,
+		File:       p.FileName,
 	}
 }
 
@@ -289,12 +297,13 @@ func (p *Parser) parseBlock() *Block {
 		return nil
 	}
 
+	pos := p.pos()
 	p.expect(TOKEN_LBRACE)
 	if p.hasErrors || errors.HasFatal() {
 		return nil
 	}
 
-	block := &Block{Statements: []Node{}}
+	block := &Block{Position: pos, Statements: []Node{}}
 
 	for p.peek.Type != TOKEN_RBRACE && p.peek.Type != TOKEN_EOF {
 		if p.hasErrors || errors.HasFatal() {
@@ -306,7 +315,6 @@ func (p *Parser) parseBlock() *Block {
 		}
 	}
 
-	// Особая диагностика: EOF вместо }
 	if p.peek.Type == TOKEN_EOF {
 		p.hasErrors = true
 		errors.NewFatalError("0523",
@@ -349,11 +357,9 @@ func (p *Parser) parseStatement() Node {
 	case TOKEN_IDENT:
 		return p.parseAssignmentOrCall()
 	case TOKEN_STRING, TOKEN_NUMBER, TOKEN_LPAREN:
-		// Expression statement: "zero".sendln(), 42.sendln(), (1,2,3).test()
 		return p.parseExpression()
 	}
 
-	// Если не распознали, пропускаем
 	p.advance()
 	return nil
 }
@@ -363,9 +369,9 @@ func (p *Parser) parseIncludeC() *IncludeC {
 		return nil
 	}
 
+	pos := p.pos()
 	p.advance() // includeC
 
-	// Ожидаем ```
 	if p.peek.Type != TOKEN_BACKTICK {
 		p.hasErrors = true
 		errors.NewFatalError("0510",
@@ -374,11 +380,10 @@ func (p *Parser) parseIncludeC() *IncludeC {
 		return nil
 	}
 
-	// Берем код из токена
 	code := p.peek.Literal
-	p.advance() // пропускаем TOKEN_BACKTICK
+	p.advance()
 
-	return &IncludeC{Code: code}
+	return &IncludeC{Position: pos, Code: code}
 }
 
 func (p *Parser) parseIf() Node {
@@ -386,6 +391,7 @@ func (p *Parser) parseIf() Node {
 		return nil
 	}
 
+	pos := p.pos()
 	p.advance() // if
 	cond := p.parseExpression()
 	if cond == nil {
@@ -399,9 +405,9 @@ func (p *Parser) parseIf() Node {
 
 	elsifs := []*Elsif{}
 
-	// Парсим все elsif
 	for p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "elsif" {
-		p.advance() // elsif
+		elsifPos := p.pos()
+		p.advance()
 
 		elsifCond := p.parseExpression()
 		if elsifCond == nil {
@@ -414,6 +420,7 @@ func (p *Parser) parseIf() Node {
 		}
 
 		elsifs = append(elsifs, &Elsif{
+			Position:  elsifPos,
 			Condition: elsifCond,
 			Then:      elsifThen,
 		})
@@ -429,6 +436,7 @@ func (p *Parser) parseIf() Node {
 	}
 
 	return &IfStmt{
+		Position:  pos,
 		Condition: cond,
 		Then:      then,
 		Elsifs:    elsifs,
@@ -441,6 +449,7 @@ func (p *Parser) parseCase() Node {
 		return nil
 	}
 
+	pos := p.pos()
 	p.advance() // case
 	p.expect(TOKEN_LPAREN)
 	if p.hasErrors || errors.HasFatal() {
@@ -470,23 +479,17 @@ func (p *Parser) parseCase() Node {
 			break
 		}
 
-		debug.Debug("parseCase: parsing pattern, current token: %s (%s)", p.peek.Literal, p.peek.Type.String())
-
-		// Парсим паттерн
+		branchPos := p.pos()
 		pattern := p.parseExpression()
-		debug.Debug("parseCase: pattern parsed: %T", pattern)
 		if pattern == nil {
 			return nil
 		}
 
-		// Проверяем, не _ ли это (дефолт)
 		if ident, ok := pattern.(*Ident); ok && ident.Name == "_" {
 			defaultBlock = p.parseBlock()
 			if defaultBlock == nil {
 				return nil
 			}
-			debug.Debug("parseCase: default block parsed, current token: %s (%s)", p.peek.Literal, p.peek.Type.String())
-			// После default запятая обязательна!
 			if p.peek.Type != TOKEN_COMMA {
 				p.hasErrors = true
 				errors.NewFatalError("0512",
@@ -494,28 +497,24 @@ func (p *Parser) parseCase() Node {
 					p.peek.Line, p.peek.Column, p.FileName)
 				return nil
 			}
-			p.advance() // съедаем запятую
+			p.advance()
 			break
 		}
 
-		// Обычная ветка
 		body := p.parseBlock()
 		if body == nil {
 			return nil
 		}
-		debug.Debug("parseCase: body parsed, current token after body: %s (%s)", p.peek.Literal, p.peek.Type.String())
 
 		branches = append(branches, &CaseBranch{
-			Pattern: pattern,
-			Body:    body,
+			Position: branchPos,
+			Pattern:  pattern,
+			Body:     body,
 		})
 
-		// ЗАПЯТАЯ ОБЯЗАТЕЛЬНА ПОСЛЕ КАЖДОЙ ВЕТКИ
 		if p.peek.Type == TOKEN_COMMA {
-			debug.Debug("parseCase: found comma")
 			p.advance()
 		} else {
-			debug.Debug("parseCase: expected comma, got: %s (%s)", p.peek.Literal, p.peek.Type.String())
 			p.hasErrors = true
 			errors.NewFatalError("0512",
 				fmt.Sprintf("Expected ',' after case branch (at %d:%d)", p.peek.Line, p.peek.Column),
@@ -524,7 +523,6 @@ func (p *Parser) parseCase() Node {
 		}
 	}
 
-	// Проверка на пустой case
 	if len(branches) == 0 && defaultBlock == nil {
 		p.hasErrors = true
 		errors.NewFatalError("0522",
@@ -533,7 +531,6 @@ func (p *Parser) parseCase() Node {
 		return nil
 	}
 
-	// Проверка на EOF
 	if p.peek.Type == TOKEN_EOF {
 		p.hasErrors = true
 		errors.NewFatalError("0523",
@@ -548,6 +545,7 @@ func (p *Parser) parseCase() Node {
 	}
 
 	return &CaseStmt{
+		Position: pos,
 		Value:    value,
 		Branches: branches,
 		Default:  defaultBlock,
@@ -559,6 +557,7 @@ func (p *Parser) parseWhile() Node {
 		return nil
 	}
 
+	pos := p.pos()
 	p.advance() // while
 	cond := p.parseExpression()
 	if cond == nil {
@@ -570,7 +569,7 @@ func (p *Parser) parseWhile() Node {
 		return nil
 	}
 
-	return &WhileStmt{Condition: cond, Body: body}
+	return &WhileStmt{Position: pos, Condition: cond, Body: body}
 }
 
 func (p *Parser) parseFor() Node {
@@ -578,6 +577,7 @@ func (p *Parser) parseFor() Node {
 		return nil
 	}
 
+	pos := p.pos()
 	p.advance() // for
 	p.expect(TOKEN_LPAREN)
 	if p.hasErrors || errors.HasFatal() {
@@ -625,7 +625,7 @@ func (p *Parser) parseFor() Node {
 		return nil
 	}
 
-	return &ForStmt{Init: init, Cond: cond, Post: post, Body: body}
+	return &ForStmt{Position: pos, Init: init, Cond: cond, Post: post, Body: body}
 }
 
 func (p *Parser) parseReturn() Node {
@@ -633,6 +633,7 @@ func (p *Parser) parseReturn() Node {
 		return nil
 	}
 
+	pos := p.pos()
 	p.advance() // return
 
 	var expr Node
@@ -647,7 +648,7 @@ func (p *Parser) parseReturn() Node {
 		p.advance()
 	}
 
-	return &ReturnStmt{Expr: expr}
+	return &ReturnStmt{Position: pos, Expr: expr}
 }
 
 func (p *Parser) parseVarDecl() Node {
@@ -655,21 +656,21 @@ func (p *Parser) parseVarDecl() Node {
 		return nil
 	}
 
-	// Проверяем, не arr ли это с типом
+	pos := p.pos()
+
 	if p.peek.Literal == "arr" {
 		p.advance()
 
 		var elemType string
 
 		if p.peek.Type == TOKEN_LBRACKET {
-			fullArrayType := p.parseArrayType() // "arr[int]" или "arr[arr[int]]"
+			fullArrayType := p.parseArrayType()
 			if p.hasErrors || errors.HasFatal() {
 				return nil
 			}
 			elemType = parseArrayElemTypeFromFullType(fullArrayType)
 		}
 
-		// Имя переменной
 		if p.peek.Type != TOKEN_IDENT {
 			p.hasErrors = true
 			errors.NewFatalError("0504",
@@ -694,6 +695,7 @@ func (p *Parser) parseVarDecl() Node {
 		}
 
 		return &VarDecl{
+			Position: pos,
 			Name:     name,
 			Type:     "arr",
 			ElemType: elemType,
@@ -702,7 +704,6 @@ func (p *Parser) parseVarDecl() Node {
 		}
 	}
 
-	// Обычная переменная
 	varType := p.peek.Literal
 	p.advance()
 
@@ -729,7 +730,7 @@ func (p *Parser) parseVarDecl() Node {
 		p.advance()
 	}
 
-	return &VarDecl{Name: name, Type: varType, Expr: expr, IsArray: false}
+	return &VarDecl{Position: pos, Name: name, Type: varType, Expr: expr, IsArray: false}
 }
 
 func (p *Parser) parseAssignmentOrCall() Node {
@@ -737,24 +738,22 @@ func (p *Parser) parseAssignmentOrCall() Node {
 		return nil
 	}
 
+	pos := p.pos()
 	name := p.peek.Literal
 	p.advance()
 
-	// Проверяем, не точка ли это (module.function)
 	if p.peek.Type == TOKEN_DOT {
 		p.advance()
 		if p.peek.Type == TOKEN_IDENT {
-			// module.function
 			moduleName := name
 			funcName := p.peek.Literal
 			p.advance()
 			fullName := moduleName + "." + funcName
 
 			if p.peek.Type == TOKEN_LPAREN {
-				return p.parseCall(fullName)
+				return p.parseCall(fullName, pos)
 			}
 
-			// Если после точки не вызов, то это ошибка
 			p.hasErrors = true
 			errors.NewFatalError("0511",
 				fmt.Sprintf("Expected function call after '.', got '%s'", p.peek.Literal),
@@ -764,7 +763,7 @@ func (p *Parser) parseAssignmentOrCall() Node {
 	}
 
 	if p.peek.Type == TOKEN_LPAREN {
-		return p.parseCall(name)
+		return p.parseCall(name, pos)
 	}
 
 	var expr Node
@@ -780,10 +779,10 @@ func (p *Parser) parseAssignmentOrCall() Node {
 		p.advance()
 	}
 
-	return &Assign{Name: name, Expr: expr}
+	return &Assign{Position: pos, Name: name, Expr: expr}
 }
 
-func (p *Parser) parseCall(name string) Node {
+func (p *Parser) parseCall(name string, pos Position) Node {
 	if p.hasErrors || errors.HasFatal() {
 		return nil
 	}
@@ -813,7 +812,7 @@ func (p *Parser) parseCall(name string) Node {
 		return nil
 	}
 
-	return &CallExpr{Name: name, Args: args}
+	return &CallExpr{Position: pos, Name: name, Args: args}
 }
 
 func (p *Parser) parseTypeOf() Node {
@@ -821,6 +820,7 @@ func (p *Parser) parseTypeOf() Node {
 		return nil
 	}
 
+	pos := p.pos()
 	p.advance() // type
 	p.expect(TOKEN_LPAREN)
 	if p.hasErrors || errors.HasFatal() {
@@ -837,7 +837,7 @@ func (p *Parser) parseTypeOf() Node {
 		return nil
 	}
 
-	return &TypeOf{Expr: expr}
+	return &TypeOf{Position: pos, Expr: expr}
 }
 
 func (p *Parser) parseExpression() Node {
@@ -850,8 +850,7 @@ func (p *Parser) parseExpression() Node {
 		return nil
 	}
 
-	// Если получили RangeExpr и дальше идёт .method() — это вызов на range
-	// 1..4.test() → CallRangeExpr{test, 1..4}
+	// 1..4.test() → CallRangeExpr
 	if rangeExpr, ok := cond.(*RangeExpr); ok && p.peek.Type == TOKEN_DOT {
 		p.advance() // .
 		if p.peek.Type != TOKEN_IDENT {
@@ -862,6 +861,7 @@ func (p *Parser) parseExpression() Node {
 			return nil
 		}
 		funcName := p.peek.Literal
+		funcPos := p.pos()
 		p.advance()
 
 		if p.peek.Type != TOKEN_LPAREN {
@@ -891,14 +891,15 @@ func (p *Parser) parseExpression() Node {
 		p.expect(TOKEN_RPAREN)
 
 		return &CallRangeExpr{
-			Name:  funcName,
-			Range: rangeExpr,
-			Extra: callArgs,
+			Position: funcPos,
+			Name:     funcName,
+			Range:    rangeExpr,
+			Extra:    callArgs,
 		}
 	}
 
-	// Тернарник: cond ? then : else
 	if p.peek.Type == TOKEN_QUESTION {
+		pos := p.pos()
 		p.advance()
 		thenExpr := p.parseExpression()
 		if thenExpr == nil {
@@ -919,7 +920,7 @@ func (p *Parser) parseExpression() Node {
 			return nil
 		}
 
-		return &TernaryExpr{Condition: cond, Then: thenExpr, Else: elseExpr}
+		return &TernaryExpr{Position: pos, Condition: cond, Then: thenExpr, Else: elseExpr}
 	}
 
 	return cond
@@ -930,13 +931,15 @@ func (p *Parser) parseUnary() Node {
 		return nil
 	}
 
+	pos := p.pos()
+
 	if p.peek.Type == TOKEN_NOT {
 		p.advance()
 		expr := p.parseUnary()
 		if expr == nil {
 			return nil
 		}
-		return &UnaryExpr{Op: "!", Expr: expr}
+		return &UnaryExpr{Position: pos, Op: "!", Expr: expr}
 	}
 	if p.peek.Type == TOKEN_MINUS {
 		p.advance()
@@ -944,7 +947,7 @@ func (p *Parser) parseUnary() Node {
 		if expr == nil {
 			return nil
 		}
-		return &UnaryExpr{Op: "-", Expr: expr}
+		return &UnaryExpr{Position: pos, Op: "-", Expr: expr}
 	}
 	return p.parsePrimary()
 }
@@ -965,6 +968,7 @@ func (p *Parser) parseBinary(prec int) Node {
 		}
 
 		op := p.peek.Literal
+		opPos := p.pos()
 		var nextPrec int
 		switch p.peek.Type {
 		case TOKEN_DOTDOT:
@@ -994,9 +998,9 @@ func (p *Parser) parseBinary(prec int) Node {
 		}
 
 		if op == ".." {
-			left = &RangeExpr{Start: left, End: right}
+			left = &RangeExpr{Position: opPos, Start: left, End: right}
 		} else {
-			left = &BinaryExpr{Left: left, Op: op, Right: right}
+			left = &BinaryExpr{Position: opPos, Left: left, Op: op, Right: right}
 		}
 	}
 	return left
@@ -1009,16 +1013,17 @@ func (p *Parser) parsePrimary() Node {
 
 	switch p.peek.Type {
 	case TOKEN_NUMBER:
+		pos := p.pos()
 		val := p.peek.Literal
 		p.advance()
-		return &Number{Value: val}
+		return &Number{Position: pos, Value: val}
 
 	case TOKEN_STRING:
+		pos := p.pos()
 		val := p.peek.Literal
 		p.advance()
-		str := &String{Value: val}
+		str := &String{Position: pos, Value: val}
 
-		// "text".sendln() — метод на строке
 		if p.peek.Type == TOKEN_DOT {
 			p.advance()
 			if p.peek.Type != TOKEN_IDENT {
@@ -1029,6 +1034,7 @@ func (p *Parser) parsePrimary() Node {
 				return nil
 			}
 			funcName := p.peek.Literal
+			funcPos := p.pos()
 			p.advance()
 
 			if p.peek.Type != TOKEN_LPAREN {
@@ -1059,24 +1065,25 @@ func (p *Parser) parsePrimary() Node {
 
 			allArgs := []Node{str}
 			allArgs = append(allArgs, callArgs...)
-			return &CallExpr{Name: funcName, Args: allArgs}
+			return &CallExpr{Position: funcPos, Name: funcName, Args: allArgs}
 		}
 
 		return str
 
 	case TOKEN_DOLLAR:
+		pos := p.pos()
 		p.advance()
 		expr := p.parsePrimary()
 		if expr == nil {
 			return nil
 		}
-		return &UnaryExpr{Op: "$", Expr: expr}
+		return &UnaryExpr{Position: pos, Op: "$", Expr: expr}
 
 	case TOKEN_IDENT:
+		pos := p.pos()
 		name := p.peek.Literal
 		p.advance()
 
-		// arr[index]
 		if p.peek.Type == TOKEN_LBRACKET {
 			p.advance()
 			index := p.parseExpression()
@@ -1091,17 +1098,15 @@ func (p *Parser) parsePrimary() Node {
 				return nil
 			}
 			p.advance()
-			return &ArrayIndex{Name: name, Index: index}
+			return &ArrayIndex{Position: pos, Name: name, Index: index}
 		}
 
-		// arr.length или x.func()
 		if p.peek.Type == TOKEN_DOT {
 			p.advance()
 			if p.peek.Literal == "length" {
 				p.advance()
-				return &ArrayLength{Name: name}
+				return &ArrayLength{Position: pos, Name: name}
 			}
-			// x.func() — вызов метода
 			if p.peek.Type == TOKEN_IDENT {
 				funcName := p.peek.Literal
 				p.advance()
@@ -1113,7 +1118,7 @@ func (p *Parser) parsePrimary() Node {
 						p.peek.Line, p.peek.Column, p.FileName)
 					return nil
 				}
-				p.advance() // (
+				p.advance()
 
 				var callArgs []Node
 				if p.peek.Type != TOKEN_RPAREN {
@@ -1133,6 +1138,7 @@ func (p *Parser) parsePrimary() Node {
 				p.expect(TOKEN_RPAREN)
 
 				return &CallExpr{
+					Position: pos,
 					Name:     name + "." + funcName,
 					Args:     callArgs,
 					Receiver: name,
@@ -1140,26 +1146,26 @@ func (p *Parser) parsePrimary() Node {
 			}
 		}
 
-		// arr + el
 		if p.peek.Type == TOKEN_PLUS {
 			p.advance()
 			elem := p.parseExpression()
 			if elem == nil {
 				return nil
 			}
-			return &ArrayAdd{Name: name, Elem: elem}
+			return &ArrayAdd{Position: pos, Name: name, Elem: elem}
 		}
 
 		if p.peek.Type == TOKEN_LPAREN {
-			return p.parseCall(name)
+			return p.parseCall(name, pos)
 		}
-		return &Ident{Name: name}
+		return &Ident{Position: pos, Name: name}
 
 	case TOKEN_KEYWORD:
+		pos := p.pos()
 		if p.peek.Literal == "true" || p.peek.Literal == "false" {
 			val := p.peek.Literal
 			p.advance()
-			return &Ident{Name: val}
+			return &Ident{Position: pos, Name: val}
 		}
 		if p.peek.Literal == "const" {
 			p.advance()
@@ -1176,13 +1182,13 @@ func (p *Parser) parsePrimary() Node {
 		return nil
 
 	case TOKEN_LPAREN:
+		pos := p.pos()
 		p.advance()
 		first := p.parseExpression()
 		if first == nil {
 			return nil
 		}
 
-		// Кортеж (a, b, c).func()
 		if p.peek.Type == TOKEN_COMMA {
 			items := []Node{first}
 			for p.peek.Type == TOKEN_COMMA {
@@ -1195,7 +1201,6 @@ func (p *Parser) parsePrimary() Node {
 			}
 			p.expect(TOKEN_RPAREN)
 
-			// Проверяем .func()
 			if p.peek.Type == TOKEN_DOT {
 				p.advance()
 				if p.peek.Type != TOKEN_IDENT {
@@ -1228,10 +1233,10 @@ func (p *Parser) parsePrimary() Node {
 
 				allArgs := items
 				allArgs = append(allArgs, callArgs...)
-				return &CallExpr{Name: funcName, Args: allArgs}
+				return &CallExpr{Position: pos, Name: funcName, Args: allArgs}
 			}
 
-			return &ArrayLiteral{Elements: items}
+			return &ArrayLiteral{Position: pos, Elements: items}
 		}
 
 		p.expect(TOKEN_RPAREN)
@@ -1239,7 +1244,6 @@ func (p *Parser) parsePrimary() Node {
 			return nil
 		}
 
-		// (1..5).func() — метод на результате
 		if p.peek.Type == TOKEN_DOT {
 			p.advance()
 			if p.peek.Type == TOKEN_IDENT {
@@ -1272,24 +1276,25 @@ func (p *Parser) parsePrimary() Node {
 				}
 				p.expect(TOKEN_RPAREN)
 
-				// Если first — RangeExpr, раскрываем в аргументы
 				if rangeExpr, ok := first.(*RangeExpr); ok {
 					return &CallRangeExpr{
-						Name:  funcName,
-						Range: rangeExpr,
-						Extra: callArgs,
+						Position: pos,
+						Name:     funcName,
+						Range:    rangeExpr,
+						Extra:    callArgs,
 					}
 				}
 
 				allArgs := []Node{first}
 				allArgs = append(allArgs, callArgs...)
-				return &CallExpr{Name: funcName, Args: allArgs}
+				return &CallExpr{Position: pos, Name: funcName, Args: allArgs}
 			}
 		}
 
 		return first
 
 	case TOKEN_LBRACKET:
+		pos := p.pos()
 		p.advance()
 		elements := []Node{}
 		if p.peek.Type != TOKEN_RBRACKET {
@@ -1315,12 +1320,11 @@ func (p *Parser) parsePrimary() Node {
 			return nil
 		}
 		p.advance()
-		return &ArrayLiteral{Elements: elements}
+		return &ArrayLiteral{Position: pos, Elements: elements}
 
 	default:
 		p.hasErrors = true
 
-		// Особая диагностика для EOF
 		if p.peek.Type == TOKEN_EOF {
 			errors.NewFatalError("0523",
 				"Unexpected end of file — expected an expression",
@@ -1337,7 +1341,6 @@ func (p *Parser) parsePrimary() Node {
 }
 
 func (p *Parser) parseArrayType() string {
-	// уже прочитали "arr", не читаем
 	if p.peek.Type != TOKEN_LBRACKET {
 		return "arr"
 	}
@@ -1352,7 +1355,7 @@ func (p *Parser) parseArrayType() string {
 			p.advance()
 		case "arr":
 			p.advance()
-			innerType = p.parseArrayType() // возвращает "arr[int]" или "arr" или "arr[arr]"
+			innerType = p.parseArrayType()
 		default:
 			p.hasErrors = true
 			errors.NewFatalError("0513",
@@ -1377,18 +1380,12 @@ func (p *Parser) parseArrayType() string {
 	}
 	p.advance() // ]
 
-	// Возвращаем тип ВСЕГО массива: "arr[innerType]"
 	return "arr[" + innerType + "]"
 }
 
-// parseArrayElemTypeFromFullType извлекает тип элемента из полного типа массива
-// "arr[int]" → "int"
-// "arr[arr[int]]" → "arr[int]"
-// "arr[arr]" → "arr"
-// "arr" → ""
 func parseArrayElemTypeFromFullType(fullType string) string {
 	if fullType == "arr" {
-		return "" // нетипизированный
+		return ""
 	}
 	if !strings.HasPrefix(fullType, "arr[") {
 		return fullType

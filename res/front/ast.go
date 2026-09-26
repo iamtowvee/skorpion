@@ -37,6 +37,8 @@ const (
 
 type Node interface {
 	GetType() NodeType
+	GetLine() int
+	GetColumn() int
 }
 
 type TypedNode interface {
@@ -44,7 +46,24 @@ type TypedNode interface {
 	GetTypeString() string
 }
 
+// ============================================================================
+// Position — базовая структура для всех узлов
+// ============================================================================
+
+type Position struct {
+	Line   int
+	Column int
+}
+
+func (p Position) GetLine() int   { return p.Line }
+func (p Position) GetColumn() int { return p.Column }
+
+// ============================================================================
+// Program
+// ============================================================================
+
 type Program struct {
+	Position
 	Imports      []*Import
 	Functions    []*Function
 	AllFunctions []*Function
@@ -52,7 +71,12 @@ type Program struct {
 
 func (p *Program) GetType() NodeType { return NODE_PROGRAM }
 
+// ============================================================================
+// Import
+// ============================================================================
+
 type Import struct {
+	Position
 	Path  string
 	Alias string
 	All   bool
@@ -60,29 +84,52 @@ type Import struct {
 
 func (i *Import) GetType() NodeType { return NODE_IMPORT }
 
+// ============================================================================
+// Function
+// ============================================================================
+
 type Function struct {
+	Position
 	Name       string
 	ReturnType string
 	Params     []*Param
 	Body       *Block
 	IsExport   bool
+	File       string
 }
 
 func (f *Function) GetType() NodeType { return NODE_FUNCTION }
 
+// ============================================================================
+// Param
+// ============================================================================
+
 type Param struct {
+	Position
 	Name         string
 	Type         string
 	DefaultValue Node
 }
 
+func (p *Param) GetType() NodeType { return "Param" }
+
+// ============================================================================
+// Block
+// ============================================================================
+
 type Block struct {
+	Position
 	Statements []Node
 }
 
 func (b *Block) GetType() NodeType { return NODE_BLOCK }
 
+// ============================================================================
+// TernaryExpr
+// ============================================================================
+
 type TernaryExpr struct {
+	Position
 	Condition Node
 	Then      Node
 	Else      Node
@@ -90,39 +137,69 @@ type TernaryExpr struct {
 
 func (t *TernaryExpr) GetType() NodeType { return NODE_TERNARY }
 
+// ============================================================================
+// TypeOf
+// ============================================================================
+
 type TypeOf struct {
+	Position
 	Expr Node
 }
 
 func (t *TypeOf) GetType() NodeType { return NODE_TYPEOF }
 
+// ============================================================================
+// ArrayLiteral
+// ============================================================================
+
 type ArrayLiteral struct {
+	Position
 	Elements []Node
 }
 
 func (a *ArrayLiteral) GetType() NodeType { return NODE_ARRAY_LITERAL }
 
+// ============================================================================
+// ArrayIndex
+// ============================================================================
+
 type ArrayIndex struct {
+	Position
 	Name  string
 	Index Node
 }
 
 func (a *ArrayIndex) GetType() NodeType { return NODE_ARRAY_INDEX }
 
+// ============================================================================
+// ArrayLength
+// ============================================================================
+
 type ArrayLength struct {
+	Position
 	Name string
 }
 
 func (a *ArrayLength) GetType() NodeType { return NODE_ARRAY_LENGTH }
 
+// ============================================================================
+// ArrayAdd
+// ============================================================================
+
 type ArrayAdd struct {
+	Position
 	Name string
 	Elem Node
 }
 
 func (a *ArrayAdd) GetType() NodeType { return NODE_ARRAY_ADD }
 
+// ============================================================================
+// VarDecl
+// ============================================================================
+
 type VarDecl struct {
+	Position
 	Name     string
 	Type     string
 	ElemType string
@@ -133,14 +210,24 @@ type VarDecl struct {
 func (v *VarDecl) GetType() NodeType     { return NODE_VAR_DECL }
 func (v *VarDecl) GetTypeString() string { return v.Type }
 
+// ============================================================================
+// Assign
+// ============================================================================
+
 type Assign struct {
+	Position
 	Name string
 	Expr Node
 }
 
 func (a *Assign) GetType() NodeType { return NODE_ASSIGN }
 
+// ============================================================================
+// BinaryExpr
+// ============================================================================
+
 type BinaryExpr struct {
+	Position
 	Left  Node
 	Op    string
 	Right Node
@@ -148,28 +235,42 @@ type BinaryExpr struct {
 
 func (b *BinaryExpr) GetType() NodeType { return NODE_BINARY }
 
+// ============================================================================
+// UnaryExpr
+// ============================================================================
+
 type UnaryExpr struct {
+	Position
 	Op   string
 	Expr Node
 }
 
 func (u *UnaryExpr) GetType() NodeType { return NODE_UNARY }
 func (u *UnaryExpr) GetTypeString() string {
-	// $ преобразует в строку
 	if u.Op == "$" {
 		return "string"
 	}
 	return "int"
 }
 
+// ============================================================================
+// RangeExpr
+// ============================================================================
+
 type RangeExpr struct {
+	Position
 	Start Node
 	End   Node
 }
 
 func (r *RangeExpr) GetType() NodeType { return NODE_RANGE }
 
+// ============================================================================
+// CallRangeExpr
+// ============================================================================
+
 type CallRangeExpr struct {
+	Position
 	Name  string
 	Range *RangeExpr
 	Extra []Node
@@ -177,7 +278,12 @@ type CallRangeExpr struct {
 
 func (c *CallRangeExpr) GetType() NodeType { return NODE_CALL_RANGE }
 
+// ============================================================================
+// CallExpr
+// ============================================================================
+
 type CallExpr struct {
+	Position
 	Name     string
 	Args     []Node
 	Receiver string
@@ -185,19 +291,34 @@ type CallExpr struct {
 
 func (c *CallExpr) GetType() NodeType { return NODE_CALL }
 
+// ============================================================================
+// ReturnStmt
+// ============================================================================
+
 type ReturnStmt struct {
+	Position
 	Expr Node
 }
 
 func (r *ReturnStmt) GetType() NodeType { return NODE_RETURN }
 
+// ============================================================================
+// Ident
+// ============================================================================
+
 type Ident struct {
+	Position
 	Name string
 }
 
 func (i *Ident) GetType() NodeType { return NODE_IDENT }
 
+// ============================================================================
+// Number
+// ============================================================================
+
 type Number struct {
+	Position
 	Value string
 }
 
@@ -209,14 +330,24 @@ func (n *Number) GetTypeString() string {
 	return "int"
 }
 
+// ============================================================================
+// String
+// ============================================================================
+
 type String struct {
+	Position
 	Value string
 }
 
 func (s *String) GetType() NodeType     { return NODE_STRING }
 func (s *String) GetTypeString() string { return "string" }
 
+// ============================================================================
+// IfStmt
+// ============================================================================
+
 type IfStmt struct {
+	Position
 	Condition Node
 	Then      *Block
 	Elsifs    []*Elsif
@@ -224,6 +355,7 @@ type IfStmt struct {
 }
 
 type Elsif struct {
+	Position
 	Condition Node
 	Then      *Block
 }
@@ -231,13 +363,19 @@ type Elsif struct {
 func (i *IfStmt) GetType() NodeType { return NODE_IF }
 func (e *Elsif) GetType() NodeType  { return NODE_ELSIF }
 
+// ============================================================================
+// CaseStmt
+// ============================================================================
+
 type CaseStmt struct {
+	Position
 	Value    Node
 	Branches []*CaseBranch
 	Default  *Block
 }
 
 type CaseBranch struct {
+	Position
 	Pattern Node
 	Body    *Block
 }
@@ -245,14 +383,24 @@ type CaseBranch struct {
 func (c *CaseStmt) GetType() NodeType   { return NODE_CASE }
 func (c *CaseBranch) GetType() NodeType { return NODE_CASE_BRANCH }
 
+// ============================================================================
+// WhileStmt
+// ============================================================================
+
 type WhileStmt struct {
+	Position
 	Condition Node
 	Body      *Block
 }
 
 func (w *WhileStmt) GetType() NodeType { return NODE_WHILE }
 
+// ============================================================================
+// ForStmt
+// ============================================================================
+
 type ForStmt struct {
+	Position
 	Init Node
 	Cond Node
 	Post Node
@@ -261,7 +409,12 @@ type ForStmt struct {
 
 func (f *ForStmt) GetType() NodeType { return NODE_FOR }
 
+// ============================================================================
+// IncludeC
+// ============================================================================
+
 type IncludeC struct {
+	Position
 	Code string
 }
 

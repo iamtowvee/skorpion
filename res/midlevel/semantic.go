@@ -13,6 +13,7 @@ type SemanticAnalyzer struct {
 	GlobalScope     *Scope
 	CurrentScope    *Scope
 	CurrentFunction *front.Function
+	CurrentFile     string
 	Program         *front.Program
 	Errors          []errors.SkorpionError
 	ImportedFuncs   map[string]*front.Function
@@ -124,6 +125,7 @@ func (sa *SemanticAnalyzer) Analyze() bool {
 
 		debug.Debug("Analyzing function: %s\n", fn.Name)
 		sa.CurrentFunction = fn
+		sa.CurrentFile = fn.File
 		sa.CurrentScope = NewScope(sa.GlobalScope, false)
 		sa.analyzeFunction(fn)
 
@@ -182,7 +184,8 @@ func (sa *SemanticAnalyzer) initBuiltinTypes() {
 
 func (sa *SemanticAnalyzer) registerFunction(fn *front.Function) {
 	if existing := sa.GlobalScope.Resolve(fn.Name); existing != nil {
-		sa.addError("1500", fmt.Sprintf("Function '%s' already declared", fn.Name), 0, 0, "")
+		sa.addError("1500", fmt.Sprintf("Function '%s' already declared", fn.Name),
+			fn.GetLine(), fn.GetColumn(), fn.File)
 		return
 	}
 	sa.GlobalScope.Define(fn.Name, SYM_FUNCTION, fn.ReturnType, fn.IsExport)
@@ -203,11 +206,13 @@ func (sa *SemanticAnalyzer) checkMain() bool {
 	for _, fn := range sa.Program.Functions {
 		if fn.Name == "main" {
 			if len(fn.Params) != 1 {
-				sa.addError("1503", "main() must take exactly one parameter (arr args)", 0, 0, "")
+				sa.addError("1503", "main() must take exactly one parameter (arr args)",
+					fn.GetLine(), fn.GetColumn(), fn.File)
 				return false
 			}
 			if fn.Params[0].Type != "arr" {
-				sa.addError("1504", "main() parameter must be of type 'arr'", 0, 0, "")
+				sa.addError("1504", "main() parameter must be of type 'arr'",
+					fn.GetLine(), fn.GetColumn(), fn.File)
 				return false
 			}
 			break
@@ -233,7 +238,7 @@ func (sa *SemanticAnalyzer) analyzeFunction(fn *front.Function) {
 		if seenParams[param.Name] {
 			sa.addError("1536",
 				fmt.Sprintf("Duplicate parameter '%s' in function '%s'", param.Name, fn.Name),
-				0, 0, "")
+				param.GetLine(), param.GetColumn(), sa.CurrentFile)
 		}
 		seenParams[param.Name] = true
 
@@ -243,7 +248,7 @@ func (sa *SemanticAnalyzer) analyzeFunction(fn *front.Function) {
 			sa.addError("1537",
 				fmt.Sprintf("Parameter '%s' has no default value but comes after parameters with defaults in '%s'",
 					param.Name, fn.Name),
-				0, 0, "")
+				param.GetLine(), param.GetColumn(), sa.CurrentFile)
 		}
 	}
 
@@ -262,14 +267,14 @@ func (sa *SemanticAnalyzer) analyzeFunction(fn *front.Function) {
 		if fn.ReturnType != "void" && !sa.hasReturn(fn.Body) {
 			sa.addError("1535",
 				fmt.Sprintf("Function '%s' must return a value of type '%s'", fn.Name, fn.ReturnType),
-				0, 0, "")
+				fn.GetLine(), fn.GetColumn(), sa.CurrentFile)
 		}
 
 		// Проверка: пустое тело функции
 		if len(fn.Body.Statements) == 0 {
 			errors.NewWarning("2003",
 				fmt.Sprintf("Empty function body in '%s'", fn.Name),
-				0, 0, "")
+				fn.GetLine(), fn.GetColumn(), sa.CurrentFile)
 		}
 
 		// Проверка: неиспользуемые параметры
@@ -279,7 +284,7 @@ func (sa *SemanticAnalyzer) analyzeFunction(fn *front.Function) {
 			if !used[param.Name] {
 				errors.NewWarning("2001",
 					fmt.Sprintf("Unused parameter '%s' in function '%s'", param.Name, fn.Name),
-					0, 0, "")
+					param.GetLine(), param.GetColumn(), sa.CurrentFile)
 			}
 		}
 
@@ -368,7 +373,7 @@ func (sa *SemanticAnalyzer) analyzeUnary(unary *front.UnaryExpr) front.Node {
 		if operandType != "bool" && operandType != "" {
 			sa.addError("1526",
 				fmt.Sprintf("Operator '!' requires bool, got '%s'", operandType),
-				0, 0, "")
+				unary.GetLine(), unary.GetColumn(), sa.CurrentFile)
 		}
 		sa.analyzeNode(unary.Expr)
 		return unary
@@ -378,7 +383,7 @@ func (sa *SemanticAnalyzer) analyzeUnary(unary *front.UnaryExpr) front.Node {
 		if !sa.isNumericType(operandType) && operandType != "" {
 			sa.addError("1527",
 				fmt.Sprintf("Unary '-' requires numeric, got '%s'", operandType),
-				0, 0, "")
+				unary.GetLine(), unary.GetColumn(), sa.CurrentFile)
 		}
 		sa.analyzeNode(unary.Expr)
 		return unary
@@ -399,7 +404,7 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 								sa.addError("1534",
 									fmt.Sprintf("Array element type mismatch: expected '%s', got '%s'",
 										expectedElemType, sa.getNodeType(elem)),
-									0, 0, "")
+									elem.GetLine(), elem.GetColumn(), sa.CurrentFile)
 							}
 						} else {
 							elemType := sa.getNodeType(elem)
@@ -407,7 +412,7 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 								sa.addError("1534",
 									fmt.Sprintf("Array element type mismatch: expected '%s', got '%s'",
 										expectedElemType, elemType),
-									0, 0, "")
+									elem.GetLine(), elem.GetColumn(), sa.CurrentFile)
 							}
 						}
 					}
@@ -423,12 +428,14 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 	}
 
 	if existing := sa.CurrentScope.ResolveLocal(decl.Name); existing != nil {
-		sa.addError("1505", fmt.Sprintf("Variable '%s' already declared in this scope", decl.Name), 0, 0, "")
+		sa.addError("1505", fmt.Sprintf("Variable '%s' already declared in this scope", decl.Name),
+			decl.GetLine(), decl.GetColumn(), sa.CurrentFile)
 		return decl
 	}
 
 	if !sa.isValidType(decl.Type) {
-		sa.addError("1506", fmt.Sprintf("Unknown type '%s'", decl.Type), 0, 0, "")
+		sa.addError("1506", fmt.Sprintf("Unknown type '%s'", decl.Type),
+			decl.GetLine(), decl.GetColumn(), sa.CurrentFile)
 		return decl
 	}
 
@@ -439,7 +446,8 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 		if decl.Type == "any" {
 			// any принимает любой тип
 		} else if decl.Type != exprType && exprType != "" {
-			sa.addError("1507", fmt.Sprintf("Type mismatch: cannot assign '%s' to '%s'", exprType, decl.Type), 0, 0, "")
+			sa.addError("1507", fmt.Sprintf("Type mismatch: cannot assign '%s' to '%s'", exprType, decl.Type),
+				decl.GetLine(), decl.GetColumn(), sa.CurrentFile)
 			return decl
 		}
 	}
@@ -454,14 +462,16 @@ func (sa *SemanticAnalyzer) analyzeAssign(assign *front.Assign) front.Node {
 	sym := sa.CurrentScope.Resolve(assign.Name)
 	if sym == nil {
 		debug.Debug("Variable %s not found\n", assign.Name)
-		sa.addError("1508", fmt.Sprintf("Undefined variable '%s'", assign.Name), 0, 0, "")
+		sa.addError("1508", fmt.Sprintf("Undefined variable '%s'", assign.Name),
+			assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
 		return assign
 	}
 	debug.Debug("Variable %s found, type=%s\n", assign.Name, sym.Type)
 
 	if sym.IsConst {
 		debug.Debug("Variable %s is const\n", assign.Name)
-		sa.addError("1509", fmt.Sprintf("Cannot assign to constant '%s'", assign.Name), 0, 0, "")
+		sa.addError("1509", fmt.Sprintf("Cannot assign to constant '%s'", assign.Name),
+			assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
 		return assign
 	}
 
@@ -474,7 +484,8 @@ func (sa *SemanticAnalyzer) analyzeAssign(assign *front.Assign) front.Node {
 		} else if sym.Type != exprType && exprType != "" {
 			debug.Debug("Type mismatch: %s vs %s\n", exprType, sym.Type)
 			sa.addError("1510", fmt.Sprintf("Type mismatch: cannot assign '%s' to '%s' (variable '%s')",
-				exprType, sym.Type, assign.Name), 0, 0, "")
+				exprType, sym.Type, assign.Name),
+				assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
 			return assign
 		} else {
 			debug.Debug("Types match: %s == %s\n", exprType, sym.Type)
@@ -503,7 +514,8 @@ func (sa *SemanticAnalyzer) analyzeBinary(bin *front.BinaryExpr) front.Node {
 	if bin.Op == "/" {
 		if num, ok := bin.Right.(*front.Number); ok {
 			if num.Value == "0" || num.Value == "0.0" {
-				errors.NewWarning("1541", "Division by zero", 0, 0, "")
+				errors.NewWarning("1541", "Division by zero",
+					bin.GetLine(), bin.GetColumn(), sa.CurrentFile)
 			}
 		}
 	}
@@ -512,23 +524,25 @@ func (sa *SemanticAnalyzer) analyzeBinary(bin *front.BinaryExpr) front.Node {
 	case "+", "-", "*", "/":
 		if !sa.isNumericType(leftType) || !sa.isNumericType(rightType) {
 			sa.addError("1511", fmt.Sprintf("Arithmetic operation '%s' requires numeric types (got %s and %s)",
-				bin.Op, leftType, rightType), 0, 0, "")
+				bin.Op, leftType, rightType),
+				bin.GetLine(), bin.GetColumn(), sa.CurrentFile)
 		}
 	case "&&", "||":
 		if leftType != "bool" && leftType != "" {
 			sa.addError("1528",
 				fmt.Sprintf("Operator '%s' requires bool, got '%s'", bin.Op, leftType),
-				0, 0, "")
+				bin.GetLine(), bin.GetColumn(), sa.CurrentFile)
 		}
 		if rightType != "bool" && rightType != "" {
 			sa.addError("1529",
 				fmt.Sprintf("Operator '%s' requires bool, got '%s'", bin.Op, rightType),
-				0, 0, "")
+				bin.GetLine(), bin.GetColumn(), sa.CurrentFile)
 		}
 	case "<", ">":
 		if !sa.isNumericType(leftType) || !sa.isNumericType(rightType) {
 			sa.addError("1512", fmt.Sprintf("Comparison operation '%s' requires numeric types (got %s and %s)",
-				bin.Op, leftType, rightType), 0, 0, "")
+				bin.Op, leftType, rightType),
+				bin.GetLine(), bin.GetColumn(), sa.CurrentFile)
 		}
 	}
 
@@ -538,7 +552,8 @@ func (sa *SemanticAnalyzer) analyzeBinary(bin *front.BinaryExpr) front.Node {
 func (sa *SemanticAnalyzer) analyzeNumber(num *front.Number) front.Node {
 	if _, err := strconv.Atoi(num.Value); err != nil {
 		if _, err := strconv.ParseFloat(num.Value, 64); err != nil {
-			sa.addError("1513", fmt.Sprintf("Invalid number '%s'", num.Value), 0, 0, "")
+			sa.addError("1513", fmt.Sprintf("Invalid number '%s'", num.Value),
+				num.GetLine(), num.GetColumn(), sa.CurrentFile)
 		}
 	}
 	return num
@@ -555,7 +570,8 @@ func (sa *SemanticAnalyzer) analyzeIdent(ident *front.Ident) front.Node {
 
 	sym := sa.CurrentScope.Resolve(ident.Name)
 	if sym == nil {
-		sa.addError("1514", fmt.Sprintf("Undefined identifier '%s'", ident.Name), 0, 0, "")
+		sa.addError("1514", fmt.Sprintf("Undefined identifier '%s'", ident.Name),
+			ident.GetLine(), ident.GetColumn(), sa.CurrentFile)
 	}
 	return ident
 }
@@ -565,18 +581,21 @@ func (sa *SemanticAnalyzer) analyzeReturn(ret *front.ReturnStmt) front.Node {
 		exprType := sa.getNodeType(ret.Expr)
 
 		if sa.CurrentFunction.ReturnType == "void" {
-			sa.addError("1515", "Cannot return value from void function", 0, 0, "")
+			sa.addError("1515", "Cannot return value from void function",
+				ret.GetLine(), ret.GetColumn(), sa.CurrentFile)
 			return ret
 		}
 
 		if sa.CurrentFunction.ReturnType != exprType && exprType != "" {
 			sa.addError("1516", fmt.Sprintf("Return type mismatch: expected '%s', got '%s'",
-				sa.CurrentFunction.ReturnType, exprType), 0, 0, "")
+				sa.CurrentFunction.ReturnType, exprType),
+				ret.GetLine(), ret.GetColumn(), sa.CurrentFile)
 			return ret
 		}
 	} else {
 		if sa.CurrentFunction.ReturnType != "void" {
-			sa.addError("1517", fmt.Sprintf("Expected return value of type '%s'", sa.CurrentFunction.ReturnType), 0, 0, "")
+			sa.addError("1517", fmt.Sprintf("Expected return value of type '%s'", sa.CurrentFunction.ReturnType),
+				ret.GetLine(), ret.GetColumn(), sa.CurrentFile)
 			return ret
 		}
 	}
@@ -606,14 +625,15 @@ func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
 	if sym != nil && sym.Kind != SYM_FUNCTION {
 		sa.addError("1539",
 			fmt.Sprintf("'%s' is not a function", call.Name),
-			0, 0, "")
+			call.GetLine(), call.GetColumn(), sa.CurrentFile)
 		return call
 	}
 
 	targetFunc := sa.resolveFunction(call.Name)
 	if targetFunc == nil {
 		debug.Debug("Function %s not found\n", call.Name)
-		sa.addError("1518", fmt.Sprintf("Undefined function '%s'", call.Name), 0, 0, "")
+		sa.addError("1518", fmt.Sprintf("Undefined function '%s'", call.Name),
+			call.GetLine(), call.GetColumn(), sa.CurrentFile)
 		return call
 	}
 	debug.Debug("Function %s found, params=%d\n", call.Name, len(targetFunc.Params))
@@ -621,7 +641,8 @@ func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
 	if len(call.Args) != len(targetFunc.Params) {
 		debug.Debug("Argument count mismatch: expected %d, got %d\n", len(targetFunc.Params), len(call.Args))
 		sa.addError("1519", fmt.Sprintf("Function '%s' expects %d arguments, got %d",
-			call.Name, len(targetFunc.Params), len(call.Args)), 0, 0, "")
+			call.Name, len(targetFunc.Params), len(call.Args)),
+			call.GetLine(), call.GetColumn(), sa.CurrentFile)
 		return call
 	}
 
@@ -634,7 +655,8 @@ func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
 		if argType != paramType && argType != "" && paramType != "any" {
 			debug.Debug("Type mismatch in argument %d\n", i)
 			sa.addError("1520", fmt.Sprintf("Argument %d type mismatch: expected '%s', got '%s'",
-				i+1, paramType, argType), 0, 0, "")
+				i+1, paramType, argType),
+				arg.GetLine(), arg.GetColumn(), sa.CurrentFile)
 			return call
 		}
 	}
@@ -659,11 +681,10 @@ func (sa *SemanticAnalyzer) analyzeCallRange(call *front.CallRangeExpr) front.No
 	if startVal < 0 || endVal < 0 {
 		sa.addError("1533",
 			fmt.Sprintf("Range call '%s' requires constant bounds", call.Name),
-			0, 0, "")
+			call.GetLine(), call.GetColumn(), sa.CurrentFile)
 		return call
 	}
 
-	// Считаем количество аргументов от range
 	rangeCount := 0
 	if startVal <= endVal {
 		rangeCount = endVal - startVal + 1
@@ -675,7 +696,8 @@ func (sa *SemanticAnalyzer) analyzeCallRange(call *front.CallRangeExpr) front.No
 
 	targetFunc := sa.resolveFunction(call.Name)
 	if targetFunc == nil {
-		sa.addError("1518", fmt.Sprintf("Undefined function '%s'", call.Name), 0, 0, "")
+		sa.addError("1518", fmt.Sprintf("Undefined function '%s'", call.Name),
+			call.GetLine(), call.GetColumn(), sa.CurrentFile)
 		return call
 	}
 
@@ -684,7 +706,7 @@ func (sa *SemanticAnalyzer) analyzeCallRange(call *front.CallRangeExpr) front.No
 			"Function '%s' expects %d arguments, got %d (range %d..%d expands to %d + %d extra)",
 			call.Name, len(targetFunc.Params), totalArgs,
 			startVal, endVal, rangeCount, len(call.Extra)),
-			0, 0, "")
+			call.GetLine(), call.GetColumn(), sa.CurrentFile)
 		return call
 	}
 
@@ -695,7 +717,7 @@ func (sa *SemanticAnalyzer) analyzeCallRange(call *front.CallRangeExpr) front.No
 			sa.addError("1520", fmt.Sprintf(
 				"Range argument %d: expected 'int', but function '%s' param is '%s'",
 				i+1, call.Name, paramType),
-				0, 0, "")
+				call.GetLine(), call.GetColumn(), sa.CurrentFile)
 			return call
 		}
 	}
@@ -708,7 +730,7 @@ func (sa *SemanticAnalyzer) analyzeCallRange(call *front.CallRangeExpr) front.No
 			sa.addError("1520", fmt.Sprintf(
 				"Argument %d type mismatch: expected '%s', got '%s'",
 				rangeCount+i+1, paramType, argType),
-				0, 0, "")
+				arg.GetLine(), arg.GetColumn(), sa.CurrentFile)
 			return call
 		}
 	}
@@ -736,7 +758,8 @@ func (sa *SemanticAnalyzer) getConstantInt(node front.Node) int {
 func (sa *SemanticAnalyzer) analyzeIf(ifStmt *front.IfStmt) front.Node {
 	condType := sa.getNodeType(ifStmt.Condition)
 	if condType != "bool" && condType != "" {
-		sa.addError("1521", fmt.Sprintf("If condition must be boolean, got '%s'", condType), 0, 0, "")
+		sa.addError("1521", fmt.Sprintf("If condition must be boolean, got '%s'", condType),
+			ifStmt.GetLine(), ifStmt.GetColumn(), sa.CurrentFile)
 	}
 
 	if ifStmt.Then != nil {
@@ -746,7 +769,8 @@ func (sa *SemanticAnalyzer) analyzeIf(ifStmt *front.IfStmt) front.Node {
 	for _, elsif := range ifStmt.Elsifs {
 		condType = sa.getNodeType(elsif.Condition)
 		if condType != "bool" && condType != "" {
-			sa.addError("1524", fmt.Sprintf("Elsif condition must be boolean, got '%s'", condType), 0, 0, "")
+			sa.addError("1524", fmt.Sprintf("Elsif condition must be boolean, got '%s'", condType),
+				elsif.GetLine(), elsif.GetColumn(), sa.CurrentFile)
 		}
 		if elsif.Then != nil {
 			sa.analyzeBlock(elsif.Then, false)
@@ -775,7 +799,7 @@ func (sa *SemanticAnalyzer) analyzeCase(caseStmt *front.CaseStmt) front.Node {
 			sa.addError("1525",
 				fmt.Sprintf("Pattern type mismatch: expected '%s', got '%s'",
 					valueType, patternType),
-				0, 0, "")
+				branch.GetLine(), branch.GetColumn(), sa.CurrentFile)
 		}
 
 		// Проверка дубликатов паттернов
@@ -784,7 +808,7 @@ func (sa *SemanticAnalyzer) analyzeCase(caseStmt *front.CaseStmt) front.Node {
 			if seenPatterns[patKey] {
 				sa.addError("1540",
 					fmt.Sprintf("Duplicate case pattern '%s'", patKey),
-					0, 0, "")
+					branch.GetLine(), branch.GetColumn(), sa.CurrentFile)
 			}
 			seenPatterns[patKey] = true
 		}
@@ -815,7 +839,8 @@ func (sa *SemanticAnalyzer) analyzeWhile(while *front.WhileStmt) front.Node {
 	if while.Condition != nil {
 		condType := sa.getNodeType(while.Condition)
 		if condType != "bool" && condType != "" {
-			sa.addError("1522", fmt.Sprintf("While condition must be boolean, got '%s'", condType), 0, 0, "")
+			sa.addError("1522", fmt.Sprintf("While condition must be boolean, got '%s'", condType),
+				while.GetLine(), while.GetColumn(), sa.CurrentFile)
 		}
 	}
 
@@ -834,7 +859,8 @@ func (sa *SemanticAnalyzer) analyzeFor(forStmt *front.ForStmt) front.Node {
 	if forStmt.Cond != nil {
 		condType := sa.getNodeType(forStmt.Cond)
 		if condType != "bool" && condType != "" {
-			sa.addError("1523", fmt.Sprintf("For condition must be boolean, got '%s'", condType), 0, 0, "")
+			sa.addError("1523", fmt.Sprintf("For condition must be boolean, got '%s'", condType),
+				forStmt.GetLine(), forStmt.GetColumn(), sa.CurrentFile)
 		}
 	}
 
@@ -849,7 +875,6 @@ func (sa *SemanticAnalyzer) analyzeFor(forStmt *front.ForStmt) front.Node {
 	return forStmt
 }
 
-// Вспомогательные методы
 func (sa *SemanticAnalyzer) isValidType(typ string) bool {
 	validTypes := map[string]bool{
 		"int": true, "string": true, "float": true, "double": true,
@@ -1003,6 +1028,12 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 }
 
 func (sa *SemanticAnalyzer) addError(code, message string, line, col int, file string) {
+	if code == "" {
+		code = "0000"
+	}
+	if file == "" {
+		file = sa.CurrentFile
+	}
 	sa.Errors = append(sa.Errors, errors.SkorpionError{
 		Code:    code,
 		Message: message,
@@ -1010,6 +1041,8 @@ func (sa *SemanticAnalyzer) addError(code, message string, line, col int, file s
 		Column:  col,
 		File:    file,
 	})
+	// Пишем в глобальный errors, чтобы printErrorReport видел
+	errors.NewError(code, message, line, col, file)
 }
 
 func parseArrayElemTypeSemantic(elemType string) string {
@@ -1031,7 +1064,7 @@ func (sa *SemanticAnalyzer) analyzeTernary(t *front.TernaryExpr) front.Node {
 	if condType != "bool" && condType != "" {
 		sa.addError("1530",
 			fmt.Sprintf("Ternary condition must be bool, got '%s'", condType),
-			0, 0, "")
+			t.GetLine(), t.GetColumn(), sa.CurrentFile)
 	}
 
 	sa.analyzeNode(t.Condition)
@@ -1042,7 +1075,7 @@ func (sa *SemanticAnalyzer) analyzeTernary(t *front.TernaryExpr) front.Node {
 	if thenType != elseType && thenType != "" && elseType != "" {
 		sa.addError("1531",
 			fmt.Sprintf("Ternary branches type mismatch: '%s' vs '%s'", thenType, elseType),
-			0, 0, "")
+			t.GetLine(), t.GetColumn(), sa.CurrentFile)
 	}
 
 	sa.analyzeNode(t.Then)
@@ -1052,10 +1085,9 @@ func (sa *SemanticAnalyzer) analyzeTernary(t *front.TernaryExpr) front.Node {
 }
 
 // ============================================================================
-// Helpers для новых проверок
+// Helpers
 // ============================================================================
 
-// hasReturn проверяет, есть ли в блоке return
 func (sa *SemanticAnalyzer) hasReturn(block *front.Block) bool {
 	if block == nil {
 		return false
@@ -1107,7 +1139,6 @@ func (sa *SemanticAnalyzer) nodeHasReturn(node front.Node) bool {
 	return false
 }
 
-// collectUsedIdents собирает все используемые идентификаторы
 func (sa *SemanticAnalyzer) collectUsedIdents(node front.Node, used map[string]bool) {
 	if node == nil {
 		return
@@ -1191,7 +1222,6 @@ func (sa *SemanticAnalyzer) collectUsedIdents(node front.Node, used map[string]b
 	}
 }
 
-// checkUnusedVariables проверяет неиспользуемые VarDecl
 func (sa *SemanticAnalyzer) checkUnusedVariables(block *front.Block, used map[string]bool) {
 	if block == nil {
 		return
@@ -1202,7 +1232,7 @@ func (sa *SemanticAnalyzer) checkUnusedVariables(block *front.Block, used map[st
 			if !used[n.Name] {
 				errors.NewWarning("2000",
 					fmt.Sprintf("Unused variable '%s'", n.Name),
-					0, 0, "")
+					n.GetLine(), n.GetColumn(), sa.CurrentFile)
 			}
 		case *front.IfStmt:
 			sa.checkUnusedVariables(n.Then, used)
