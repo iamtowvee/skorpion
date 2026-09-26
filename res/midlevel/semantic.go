@@ -605,6 +605,27 @@ func (sa *SemanticAnalyzer) analyzeReturn(ret *front.ReturnStmt) front.Node {
 func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
 	debug.Debug("analyzeCall: %s\n", call.Name)
 
+	// Если Receiver задан — это метод на переменной, добавляем его в Args
+	args := call.Args
+	if call.Receiver != "" {
+		receiverNode := &front.Ident{
+			Position: front.Position{
+				Line:   call.GetLine(),
+				Column: call.GetColumn(),
+			},
+			Name: call.Receiver,
+		}
+		args = append([]front.Node{receiverNode}, args...)
+	}
+
+	// Нормализуем "s.to_int" → "to_int", "io.sendln" → "sendln"
+	simpleName := call.Name
+	if strings.Contains(simpleName, ".") {
+		parts := strings.Split(simpleName, ".")
+		simpleName = parts[len(parts)-1]
+	}
+
+	// Builtins принимают любое количество аргументов
 	builtinFuncs := map[string]bool{
 		"to_int":    true,
 		"to_float":  true,
@@ -613,40 +634,40 @@ func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
 		"to_bool":   true,
 		"to_arr":    true,
 	}
-	if builtinFuncs[call.Name] {
-		for _, arg := range call.Args {
+	if builtinFuncs[simpleName] {
+		for _, arg := range args {
 			sa.analyzeNode(arg)
 		}
 		return call
 	}
 
 	// Проверяем, не является ли имя переменной (не функцией)
-	sym := sa.CurrentScope.Resolve(call.Name)
+	sym := sa.CurrentScope.Resolve(simpleName)
 	if sym != nil && sym.Kind != SYM_FUNCTION {
 		sa.addError("1539",
-			fmt.Sprintf("'%s' is not a function", call.Name),
+			fmt.Sprintf("'%s' is not a function", simpleName),
 			call.GetLine(), call.GetColumn(), sa.CurrentFile)
 		return call
 	}
 
-	targetFunc := sa.resolveFunction(call.Name)
+	targetFunc := sa.resolveFunction(simpleName)
 	if targetFunc == nil {
-		debug.Debug("Function %s not found\n", call.Name)
-		sa.addError("1518", fmt.Sprintf("Undefined function '%s'", call.Name),
+		debug.Debug("Function %s not found\n", simpleName)
+		sa.addError("1518", fmt.Sprintf("Undefined function '%s'", simpleName),
 			call.GetLine(), call.GetColumn(), sa.CurrentFile)
 		return call
 	}
-	debug.Debug("Function %s found, params=%d\n", call.Name, len(targetFunc.Params))
+	debug.Debug("Function %s found, params=%d\n", simpleName, len(targetFunc.Params))
 
-	if len(call.Args) != len(targetFunc.Params) {
-		debug.Debug("Argument count mismatch: expected %d, got %d\n", len(targetFunc.Params), len(call.Args))
+	if len(args) != len(targetFunc.Params) {
+		debug.Debug("Argument count mismatch: expected %d, got %d\n", len(targetFunc.Params), len(args))
 		sa.addError("1519", fmt.Sprintf("Function '%s' expects %d arguments, got %d",
-			call.Name, len(targetFunc.Params), len(call.Args)),
+			simpleName, len(targetFunc.Params), len(args)),
 			call.GetLine(), call.GetColumn(), sa.CurrentFile)
 		return call
 	}
 
-	for i, arg := range call.Args {
+	for i, arg := range args {
 		argType := sa.getNodeType(arg)
 		paramType := targetFunc.Params[i].Type
 
@@ -960,34 +981,44 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 	case *front.CallExpr:
 		debug.Debug("getNodeType CallExpr: %s\n", n.Name)
 
+		// Нормализуем "s.to_int" → "to_int", "io.sendln" → "sendln"
+		simpleName := n.Name
+		if strings.Contains(simpleName, ".") {
+			parts := strings.Split(simpleName, ".")
+			simpleName = parts[len(parts)-1]
+		}
+
+		// Builtins
+		switch simpleName {
+		case "to_int":
+			return "int"
+		case "to_float":
+			return "float"
+		case "to_double":
+			return "double"
+		case "to_string":
+			return "string"
+		case "to_bool":
+			return "bool"
+		case "to_arr":
+			return "arr"
+		}
+
 		for _, fn := range sa.Program.Functions {
-			if fn.Name == n.Name {
-				debug.Debug("  found in current file: %s -> %s\n", fn.Name, fn.ReturnType)
+			if fn.Name == simpleName {
+				debug.Debug("  found in current file: %s -> %s\n", simpleName, fn.ReturnType)
 				return fn.ReturnType
 			}
 		}
 
-		if fn, ok := sa.ImportedFuncs[n.Name]; ok {
-			debug.Debug("  found in imports: %s -> %s\n", n.Name, fn.ReturnType)
+		if fn, ok := sa.ImportedFuncs[simpleName]; ok {
+			debug.Debug("  found in imports: %s -> %s\n", simpleName, fn.ReturnType)
 			return fn.ReturnType
 		}
 
-		if strings.Contains(n.Name, ".") {
-			parts := strings.Split(n.Name, ".")
-			simpleName := parts[len(parts)-1]
-			debug.Debug("  checking simple name: %s\n", simpleName)
-
-			for _, fn := range sa.Program.Functions {
-				if fn.Name == simpleName {
-					debug.Debug("  found in current file (simple): %s -> %s\n", simpleName, fn.ReturnType)
-					return fn.ReturnType
-				}
-			}
-
-			if fn, ok := sa.ImportedFuncs[simpleName]; ok {
-				debug.Debug("  found in imports (simple): %s -> %s\n", simpleName, fn.ReturnType)
-				return fn.ReturnType
-			}
+		if fn, ok := sa.ImportedFuncs[n.Name]; ok {
+			debug.Debug("  found in imports (full): %s -> %s\n", n.Name, fn.ReturnType)
+			return fn.ReturnType
 		}
 
 		debug.Debug("  function %s not found\n", n.Name)

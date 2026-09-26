@@ -1,12 +1,29 @@
+/* ------------------------------------
+                std/ref
+    ---------------------------------
+      SPDX-License-Identifier: MIT
+      Copyrights (c) 2026 iamtowvee
+  ------------------------------------- */
+
 int toInt(any value) {
+  int result = 0
   case (type(value)) {
-    "string" {
-      includeC ```
-        return atoi(value)
-      ```
+    "int" {
+      result = value
     },
     "int" {
-      return value
+      result = value
+    },
+    "int" {
+      result = value
+    },
+    _ {
+      result = 0
     },
   }
+  return result
+}
+
+int toBool(any value) {
+  return value.to_int()
 }

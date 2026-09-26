@@ -611,86 +611,87 @@ func (p *Pipeline) processCall(call *front.CallExpr, irFn *IRFunction) {
 }
 
 func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) string {
-	switch call.Name {
+	// Если Receiver задан — добавляем его в Args
+	args := call.Args
+	if call.Receiver != "" {
+		receiverNode := &front.Ident{
+			Position: front.Position{
+				Line:   call.GetLine(),
+				Column: call.GetColumn(),
+			},
+			Name: call.Receiver,
+		}
+		args = append([]front.Node{receiverNode}, args...)
+	}
+
+	// Нормализуем "s.to_int" → "to_int", "io.sendln" → "sendln"
+	simpleName := call.Name
+	if strings.Contains(simpleName, ".") {
+		parts := strings.Split(simpleName, ".")
+		simpleName = parts[len(parts)-1]
+	}
+
+	// Builtins
+	switch simpleName {
 	case "to_int":
-		return p.processToInt(call, irFn)
+		return p.processToInt(&front.CallExpr{Name: "to_int", Args: args}, irFn)
 	case "to_float":
-		return p.processToFloat(call, irFn)
+		return p.processToFloat(&front.CallExpr{Name: "to_float", Args: args}, irFn)
 	case "to_double":
-		return p.processToDouble(call, irFn)
+		return p.processToDouble(&front.CallExpr{Name: "to_double", Args: args}, irFn)
 	case "to_string":
-		return p.processToString(call, irFn)
+		return p.processToString(&front.CallExpr{Name: "to_string", Args: args}, irFn)
 	case "to_bool":
-		return p.processToBool(call, irFn)
+		return p.processToBool(&front.CallExpr{Name: "to_bool", Args: args}, irFn)
 	case "to_arr":
-		return p.processToArr(call, irFn)
+		return p.processToArr(&front.CallExpr{Name: "to_arr", Args: args}, irFn)
 	}
 
-	targetFunc := p.findFunction(call.Name)
+	// Ищем целевую функцию
+	targetFunc := p.findFunction(simpleName)
 
-	// Нормализуем имя функции (io.input → input)
-	funcName := call.Name
-	if strings.Contains(funcName, ".") {
-		parts := strings.Split(funcName, ".")
-		funcName = parts[len(parts)-1]
-	}
-
-	// Ищем целевую функцию — уже сделано выше через findFunction(call.Name)
-	// Но findFunction умеет искать по простому имени тоже
-
-	args := []string{}
+	argsStr := []string{}
 
 	if targetFunc != nil {
 		argIndex := 0
 		for _, param := range targetFunc.Params {
 			var argExpr front.Node
 
-			if argIndex < len(call.Args) {
-				argExpr = call.Args[argIndex]
+			if argIndex < len(args) {
+				argExpr = args[argIndex]
 				argIndex++
 			} else if param.DefaultValue != nil {
 				argExpr = param.DefaultValue
 			} else {
-				args = append(args, "0")
+				argsStr = append(argsStr, "0")
 				continue
 			}
 
-			args = append(args, p.prepareArg(argExpr, param.Type, irFn))
+			argsStr = append(argsStr, p.prepareArg(argExpr, param.Type, irFn))
 		}
 	} else {
-		for _, arg := range call.Args {
-			args = append(args, p.processExpression(arg, irFn))
+		for _, arg := range args {
+			argsStr = append(argsStr, p.processExpression(arg, irFn))
 		}
 	}
 
-	argsStr := strings.Join(args, ", ")
+	argsJoined := strings.Join(argsStr, ", ")
 
 	// Определяем тип возврата
 	returnType := "sk_string"
-	simpleName := funcName
-	if strings.Contains(funcName, ".") {
-		parts := strings.Split(funcName, ".")
-		simpleName = parts[len(parts)-1]
-	}
-
 	for _, fn := range p.Program.Functions {
-		if fn.Name == simpleName || fn.Name == funcName {
+		if fn.Name == simpleName {
 			returnType = p.typeToC(fn.ReturnType)
 			break
 		}
-	}
-
-	if strings.Contains(funcName, ".") {
-		parts := strings.Split(funcName, ".")
-		funcName = parts[len(parts)-1]
 	}
 
 	result := p.newTemp()
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:         "call",
 		Result:     result,
-		Arg1:       funcName,
-		Arg2:       argsStr,
+		Arg1:       simpleName,
+		Arg2:       argsJoined,
 		ReturnType: returnType,
 	})
 
@@ -1521,7 +1522,14 @@ func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 		}
 		return p.getExprType(n.Expr, irFn)
 	case *front.CallExpr:
-		switch n.Name {
+		// Нормализуем "s.to_int" → "to_int", "io.sendln" → "sendln"
+		simpleName := n.Name
+		if strings.Contains(simpleName, ".") {
+			parts := strings.Split(simpleName, ".")
+			simpleName = parts[len(parts)-1]
+		}
+
+		switch simpleName {
 		case "to_int":
 			return "int"
 		case "to_float":
@@ -1535,8 +1543,9 @@ func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 		case "to_arr":
 			return "arr"
 		}
+
 		for _, fn := range p.Program.Functions {
-			if fn.Name == n.Name {
+			if fn.Name == simpleName {
 				return fn.ReturnType
 			}
 		}

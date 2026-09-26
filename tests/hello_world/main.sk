@@ -1,17 +1,6 @@
 use #std/io
-
-void test(int a, int b, int c, int d) {
-    sendln($a)
-    sendln($b)
-    sendln($c)
-    sendln($d)
-}
+use #std/ref
 
 void main(arr args) {
-    1..3.test(4)
-    1..5.test()
-    "zero".sendln()
-
-    arr[int] a = 1..5
-    io.sendln($a.length)
+    sendln(type("14".toInt()))
 }
