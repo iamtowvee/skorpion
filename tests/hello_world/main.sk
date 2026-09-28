@@ -1,15 +1,18 @@
 use #std/io
 
-const BaseError{msg: string} = new Error
-const SpecificError{msg: string, code: int} = new BaseError
+const MyError{msg: string} = new Error
+
+void f() {
+    string s = "hello"
+    arr[int] a = [1, 2, 3]
+    throw MyError{msg: "boom"}
+}
 
 void main(arr args) {
     try {
-        throw SpecificError{msg: "specific ф", code: 502}
-    } catch (BaseError as e) {
-        sendln(e.msg)   // должно вывести "specific"
-    } finally {
-        sendln("done")
+        f()
+    } catch (MyError as e) {
+        sendln(e.msg)
     }
     sendln("done")
 }

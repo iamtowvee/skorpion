@@ -209,31 +209,93 @@ typedef struct SkError {
     sk_string msg;
 } SkError;
 
-typedef struct BaseError {
+typedef struct MyError {
     const char* __type;
     sk_string msg;
-} BaseError;
-
-typedef struct SpecificError {
-    const char* __type;
-    sk_string msg;
-    int code;
-} SpecificError;
+} MyError;
 
 // Skorpion exception runtime
+typedef struct SkCleanup {
+    void** ptr;
+    int type;
+    struct SkCleanup* next;
+} SkCleanup;
+
 typedef struct SkTryFrame {
     jmp_buf env;
     void* error;
     struct SkTryFrame* prev;
+    SkCleanup* cleanup;
 } SkTryFrame;
 
 SkTryFrame* sk_try_stack = NULL;
+
+void sk_any_free(sk_any* a) {
+    if (a->type == 1 && a->data.s) { free(a->data.s); a->data.s = NULL; }
+    else if (a->type == 5 && a->data.p) { sk_array_free((sk_array*)a->data.p); a->data.p = NULL; }
+    a->type = -1;
+}
+
+void sk_try_register(void** ptr, int type) {
+    if (sk_try_stack == NULL) return;
+    SkCleanup* c = malloc(sizeof(SkCleanup));
+    c->ptr = ptr;
+    c->type = type;
+    c->next = sk_try_stack->cleanup;
+    sk_try_stack->cleanup = c;
+}
+
+void sk_try_cleanup(SkTryFrame* frame) {
+    SkCleanup* c = frame->cleanup;
+    while (c) {
+        if (*c->ptr != NULL) {
+            switch (c->type) {
+                case 0: free(*c->ptr); break;
+                case 1: sk_array_free(*(sk_array**)c->ptr); break;
+                case 2: sk_any_free((sk_any*)c->ptr); break;
+            }
+            *c->ptr = NULL;
+        }
+        SkCleanup* next = c->next;
+        free(c);
+        c = next;
+    }
+    frame->cleanup = NULL;
+}
+
+void sk_try_push(SkTryFrame* frame) {
+    frame->prev = sk_try_stack;
+    frame->cleanup = NULL;
+    frame->error = NULL;
+    sk_try_stack = frame;
+}
+
+void sk_try_pop(SkTryFrame* frame) {
+    SkCleanup* c = frame->cleanup;
+    while (c) {
+        SkCleanup* next = c->next;
+        free(c);
+        c = next;
+    }
+    frame->cleanup = NULL;
+    sk_try_stack = frame->prev;
+}
+
+void sk_error_free(void* err) {
+    free(err);
+}
 
 void sk_throw(void* err, const char* file, int line, int col) {
     if (sk_try_stack == NULL) {
         const char* __type = *(const char**)err;
         fprintf(stderr, "Panicked with error (%s) at %s:%d:%d\n", __type, file, line, col);
         exit(1);
+    }
+    // Освобождаем все фреймы до целевого
+    SkTryFrame* frame = sk_try_stack;
+    while (frame != NULL) {
+        sk_try_cleanup(frame);
+        frame = frame->prev;
     }
     sk_try_stack->error = err;
     longjmp(sk_try_stack->env, 1);
@@ -246,49 +308,54 @@ int sk_error_type_match(const char* actual, const char* expected) {
 }
 
 // Function prototypes
+void f(void);
 void sendln(sk_string msg);
 void sendf(sk_string msg);
 sk_string input(sk_string prompt);
 
+void f(void) {
+    MyError* t1;
+
+t1 = malloc(sizeof(MyError));
+t1->__type = "Error.MyError";
+t1->msg = "boom";
+    sk_throw(t1, "main.sk", 8, 5);
+    return;
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
-    SkTryFrame t1;
-    void* t2;
-    SpecificError* t3;
+    SkTryFrame t2;
+    void* t3;
     int t4;
-    BaseError* e;
+    MyError* e;
     sk_string t5;
 
-t1.prev = sk_try_stack;
-    sk_try_stack = &t1;
-    if (setjmp(t1.env) != 0) {
+    sk_try_push(&t2);
+    if (setjmp(sk_try_stack->env) != 0) {
         goto L2;
     }
-SpecificError t3_val;
-t3_val.__type = "Error.BaseError.SpecificError";
-t3_val.msg = "specific ф";
-t3_val.code = 502;
-t3 = &t3_val;
-    sk_throw(t3, "main.sk", 8, 9);
+    f();
     goto L1;
 L2:
-    sk_try_stack = t1.prev;
-    t2 = t1.error;
-    t4 = sk_error_type_match(((SkError*)t2)->__type, "Error.BaseError");
+    sk_try_pop((SkTryFrame*)&t2);
+    t3 = t2.error;
+    t4 = sk_error_type_match(((SkError*)t3)->__type, "Error.MyError");
     if (t4 != 0) {
         goto L2_body;
     } else {
         goto L3;
     }
 L2_body:
-    e = (BaseError*)t2;
+    e = (MyError*)t3;
 t5 = e->msg;
     sendln(t5);
+    sk_error_free(t3);
     goto L1;
 L3:
-    t2 = t1.error;
-    sk_throw(t2, "main.sk", 7, 5);
+    t3 = t2.error;
+    sk_throw(t3, "main.sk", 12, 5);
 L1:
     sendln("done");
     return 0;

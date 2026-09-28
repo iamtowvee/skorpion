@@ -13,6 +13,7 @@ type Pipeline struct {
 	TempCounter  int
 	LabelCounter int
 	TryFrames    []string
+	TryDepth     int
 }
 
 func NewPipeline(prog *front.Program) *Pipeline {
@@ -22,6 +23,7 @@ func NewPipeline(prog *front.Program) *Pipeline {
 		TempCounter:  0,
 		LabelCounter: 0,
 		TryFrames:    []string{},
+		TryDepth:     0,
 	}
 }
 
@@ -85,6 +87,7 @@ func (p *Pipeline) processFunction(fn *front.Function) {
 	}
 
 	p.TryFrames = []string{}
+	p.TryDepth = 0
 
 	if fn.Body != nil {
 		p.processBlock(fn.Body, &irFn)
@@ -202,6 +205,9 @@ func (p *Pipeline) processFieldAccess(fa *front.FieldAccess, irFn *IRFunction) s
 }
 
 func (p *Pipeline) processTry(try *front.TryStmt, irFn *IRFunction) {
+	p.TryDepth++
+	defer func() { p.TryDepth-- }()
+
 	endLabel := p.newLabel()
 
 	catchLabels := make([]string, len(try.Catches))
@@ -297,6 +303,12 @@ func (p *Pipeline) processTry(try *front.TryStmt, irFn *IRFunction) {
 
 		p.processBlock(clause.Body, irFn)
 
+		// Освобождаем ошибку после catch
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:   "error_free",
+			Arg1: errorVar,
+		})
+
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:     "goto",
 			Result: endLabel,
@@ -372,28 +384,24 @@ func (p *Pipeline) processErrorInstance(inst *front.ErrorInstance, irFn *IRFunct
 	result := p.newTemp()
 	irFn.Locals = append(irFn.Locals, inst.TypeName+"* "+result)
 
+	// Выделяем в куче
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
-		Op:     "error_instance_create",
-		Result: result + "_val",
-		Arg1:   fmt.Sprintf(`"%s"`, p.fullErrorTypePath(inst.TypeName)),
-		Arg2:   inst.TypeName,
+		Op:         "error_instance_create",
+		Result:     result,
+		Arg1:       fmt.Sprintf(`"%s"`, p.fullErrorTypePath(inst.TypeName)),
+		Arg2:       inst.TypeName,
+		ReturnType: inst.TypeName + "*",
 	})
 
 	for fieldName, value := range inst.Fields {
 		val := p.processExpression(value, irFn)
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:     "field_set",
-			Result: result + "_val",
+			Result: result,
 			Arg1:   fieldName,
 			Arg2:   val,
 		})
 	}
-
-	irFn.Instructions = append(irFn.Instructions, IRInstruction{
-		Op:     "addr_of",
-		Result: result,
-		Arg1:   result + "_val",
-	})
 
 	return result
 }
@@ -524,6 +532,15 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 		}
 		irFn.ArrayElemTypes[decl.Name] = decl.ElemType
 
+		// Регистрация в cleanup ДО инициализации (чтобы при throw в инициализаторе — освободить)
+		if p.TryDepth > 0 {
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:     "try_register",
+				Result: decl.Name,
+				Arg1:   "1",
+			})
+		}
+
 		if decl.Expr != nil {
 			exprResult := p.processExpressionTyped(decl.Expr, decl.ElemType, irFn)
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
@@ -574,6 +591,24 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 
 	cType := p.typeToC(decl.Type)
 	irFn.Locals = append(irFn.Locals, cType+" "+decl.Name)
+
+	// Регистрация строк
+	if p.TryDepth > 0 && decl.Type == "string" {
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "try_register",
+			Result: decl.Name,
+			Arg1:   "0",
+		})
+	}
+
+	// Регистрация any
+	if p.TryDepth > 0 && decl.Type == "any" {
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "try_register",
+			Result: decl.Name,
+			Arg1:   "2",
+		})
+	}
 
 	if decl.Expr != nil {
 		exprType := p.getExprType(decl.Expr, irFn)

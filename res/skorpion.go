@@ -407,8 +407,26 @@ func printAST(node front.Node, indent int) {
 				defStr)
 		}
 
+	case *front.TryStmt:
+		fmt.Println(prefix + cli.Colors.Yellow("Try"))
+		if n.Body != nil {
+			printAST(n.Body, indent+1)
+		}
+		for _, clause := range n.Catches {
+			fmt.Println(prefix + cli.Colors.Yellow("Catch"))
+			if clause.TypeName != "" {
+				fmt.Printf("%s  Type: %s\n", prefix, cli.Colors.Cyan(clause.TypeName))
+			}
+			if clause.VarName != "" {
+				fmt.Printf("%s  As: %s\n", prefix, cli.Colors.Green(clause.VarName))
+			}
+			if clause.Body != nil {
+				printAST(clause.Body, indent+1)
+			}
+		}
+
 	case *front.ThrowStmt:
-		fmt.Printf("%s%s\n", prefix, cli.Colors.Red("Throw"))
+		fmt.Println(prefix + cli.Colors.Red("Throw"))
 		if n.Expr != nil {
 			printAST(n.Expr, indent+1)
 		}
@@ -426,7 +444,7 @@ func printAST(node front.Node, indent int) {
 		fmt.Printf("%s%s %s.%s\n", prefix,
 			cli.Colors.Cyan("FieldAccess"),
 			n.Object,
-			n.Name())
+			n.Field)
 
 	case *front.Import:
 		alias := n.Alias
