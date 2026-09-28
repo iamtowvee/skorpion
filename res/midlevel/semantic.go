@@ -423,11 +423,6 @@ func (sa *SemanticAnalyzer) analyzeTry(try *front.TryStmt) front.Node {
 		}
 	}
 
-	// finally
-	if try.Finally != nil {
-		sa.analyzeBlock(try.Finally, false)
-	}
-
 	return try
 }
 
@@ -1363,9 +1358,6 @@ func (sa *SemanticAnalyzer) collectUsedIdents(node front.Node, used map[string]b
 			if clause.Body != nil {
 				sa.collectUsedIdents(clause.Body, used)
 			}
-		}
-		if n.Finally != nil {
-			sa.collectUsedIdents(n.Finally, used)
 		}
 	case *front.CaseStmt:
 		if n.Value != nil {

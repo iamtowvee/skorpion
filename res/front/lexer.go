@@ -256,7 +256,6 @@ func (l *Lexer) readIdent() Token {
 		"throw":    TOKEN_KEYWORD,
 		"try":      TOKEN_KEYWORD,
 		"catch":    TOKEN_KEYWORD,
-		"finally":  TOKEN_KEYWORD,
 		"as":       TOKEN_KEYWORD,
 		"includeC": TOKEN_INCLUDE_C,
 	}

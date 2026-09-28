@@ -203,7 +203,6 @@ func (p *Pipeline) processFieldAccess(fa *front.FieldAccess, irFn *IRFunction) s
 
 func (p *Pipeline) processTry(try *front.TryStmt, irFn *IRFunction) {
 	endLabel := p.newLabel()
-	finallyLabel := p.newLabel()
 
 	catchLabels := make([]string, len(try.Catches))
 	nextCatchLabels := make([]string, len(try.Catches))
@@ -217,7 +216,6 @@ func (p *Pipeline) processTry(try *front.TryStmt, irFn *IRFunction) {
 	errorVar := p.newTemp()
 	irFn.Locals = append(irFn.Locals, "void* "+errorVar)
 
-	// Регистрируем frame как активный
 	p.TryFrames = append(p.TryFrames, frameVar)
 
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
@@ -228,17 +226,10 @@ func (p *Pipeline) processTry(try *front.TryStmt, irFn *IRFunction) {
 
 	p.processBlock(try.Body, irFn)
 
-	if try.Finally != nil {
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:     "goto",
-			Result: finallyLabel,
-		})
-	} else {
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:     "goto",
-			Result: endLabel,
-		})
-	}
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:     "goto",
+		Result: endLabel,
+	})
 
 	framePopped := false
 
@@ -248,12 +239,10 @@ func (p *Pipeline) processTry(try *front.TryStmt, irFn *IRFunction) {
 			Result: catchLabels[i],
 		})
 
-		// POP — восстанавливаем стек до rethrow
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:   "try_pop",
 			Arg1: frameVar,
 		})
-		// Убираем frame из активных (только один раз — при первом catch)
 		if !framePopped {
 			if len(p.TryFrames) > 0 && p.TryFrames[len(p.TryFrames)-1] == frameVar {
 				p.TryFrames = p.TryFrames[:len(p.TryFrames)-1]
@@ -308,17 +297,10 @@ func (p *Pipeline) processTry(try *front.TryStmt, irFn *IRFunction) {
 
 		p.processBlock(clause.Body, irFn)
 
-		if try.Finally != nil {
-			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:     "goto",
-				Result: finallyLabel,
-			})
-		} else {
-			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:     "goto",
-				Result: endLabel,
-			})
-		}
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "goto",
+			Result: endLabel,
+		})
 
 		if clause.TypeName != "" && clause.TypeName != "Error" {
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
@@ -330,13 +312,11 @@ func (p *Pipeline) processTry(try *front.TryStmt, irFn *IRFunction) {
 
 	lastIsCatchAll := len(try.Catches) > 0 && (try.Catches[len(try.Catches)-1].TypeName == "" || try.Catches[len(try.Catches)-1].TypeName == "Error")
 	if !lastIsCatchAll {
-		// Ни один catch не сработал — rethrow
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:     "try_get_error",
 			Result: errorVar,
 			Arg1:   frameVar,
 		})
-		// Rethrow с сохранением позиции оригинала — упрощённо, с текущей позицией
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:     "throw",
 			Arg1:   errorVar,
@@ -346,24 +326,14 @@ func (p *Pipeline) processTry(try *front.TryStmt, irFn *IRFunction) {
 		})
 	}
 
-	// Если ни один catch не выполнялся (нет try_pop), убираем frame из активных
 	if !framePopped {
 		if len(p.TryFrames) > 0 && p.TryFrames[len(p.TryFrames)-1] == frameVar {
 			p.TryFrames = p.TryFrames[:len(p.TryFrames)-1]
 		}
-		// И генерируем try_pop, если уходим через endLabel без catch
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:   "try_pop",
 			Arg1: frameVar,
 		})
-	}
-
-	if try.Finally != nil {
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:     "label",
-			Result: finallyLabel,
-		})
-		p.processBlock(try.Finally, irFn)
 	}
 
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
@@ -891,7 +861,6 @@ func (p *Pipeline) processReturn(ret *front.ReturnStmt, irFn *IRFunction) {
 		exprResult = p.processExpression(ret.Expr, irFn)
 	}
 
-	// Закрываем все активные try-фреймы перед return
 	for i := len(p.TryFrames) - 1; i >= 0; i-- {
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:   "try_pop",

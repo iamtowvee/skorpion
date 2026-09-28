@@ -474,23 +474,6 @@ func (p *Parser) parseTry() Node {
 		catches = append(catches, clause)
 	}
 
-	// finally
-	var finally *Block
-	if p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "finally" {
-		p.advance()
-		if p.peek.Type != TOKEN_LBRACE {
-			p.hasErrors = true
-			errors.NewFatalError("0509",
-				fmt.Sprintf("Expected '{' after 'finally', got '%s'", p.peek.Literal),
-				p.peek.Line, p.peek.Column, p.FileName)
-			return nil
-		}
-		finally = p.parseBlock()
-		if finally == nil {
-			return nil
-		}
-	}
-
 	// Хотя бы один catch обязателен
 	if len(catches) == 0 {
 		p.hasErrors = true
@@ -504,7 +487,6 @@ func (p *Parser) parseTry() Node {
 		Position: pos,
 		Body:     body,
 		Catches:  catches,
-		Finally:  finally,
 	}
 }
 

@@ -742,9 +742,6 @@ func (o *Optimizer) collectUsedIdents(node front.Node, used map[string]bool) {
 				o.collectUsedIdents(clause.Body, used)
 			}
 		}
-		if n.Finally != nil {
-			o.collectUsedIdents(n.Finally, used)
-		}
 	case *front.FieldAccess:
 		used[n.Object] = true
 	}

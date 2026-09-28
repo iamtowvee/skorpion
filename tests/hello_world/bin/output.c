@@ -224,9 +224,6 @@ typedef struct SpecificError {
 typedef struct SkTryFrame {
     jmp_buf env;
     void* error;
-    const char* file;
-    int line;
-    int col;
     struct SkTryFrame* prev;
 } SkTryFrame;
 
@@ -239,9 +236,6 @@ void sk_throw(void* err, const char* file, int line, int col) {
         exit(1);
     }
     sk_try_stack->error = err;
-    sk_try_stack->file = file;
-    sk_try_stack->line = line;
-    sk_try_stack->col = col;
     longjmp(sk_try_stack->env, 1);
 }
 
@@ -265,44 +259,37 @@ int main(int argc, char** argv) {
     int t4;
     BaseError* e;
     sk_string t5;
-    SpecificError* t6;
 
 t1.prev = sk_try_stack;
     sk_try_stack = &t1;
     if (setjmp(t1.env) != 0) {
-        goto L3;
+        goto L2;
     }
 SpecificError t3_val;
 t3_val.__type = "Error.BaseError.SpecificError";
+t3_val.msg = "specific ф";
 t3_val.code = 502;
-t3_val.msg = "specific";
 t3 = &t3_val;
     sk_throw(t3, "main.sk", 8, 9);
     goto L1;
-L3:
+L2:
     sk_try_stack = t1.prev;
     t2 = t1.error;
     t4 = sk_error_type_match(((SkError*)t2)->__type, "Error.BaseError");
     if (t4 != 0) {
-        goto L3_body;
+        goto L2_body;
     } else {
-        goto L4;
+        goto L3;
     }
-L3_body:
+L2_body:
     e = (BaseError*)t2;
 t5 = e->msg;
     sendln(t5);
     goto L1;
-L4:
+L3:
     t2 = t1.error;
     sk_throw(t2, "main.sk", 7, 5);
 L1:
-SpecificError t6_val;
-t6_val.__type = "Error.BaseError.SpecificError";
-t6_val.msg = "specific";
-t6_val.code = 502;
-t6 = &t6_val;
-    sk_throw(t6, "main.sk", 12, 5);
     sendln("done");
     return 0;
 }

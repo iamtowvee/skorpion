@@ -485,7 +485,6 @@ type TryStmt struct {
 	Position
 	Body    *Block
 	Catches []*CatchClause
-	Finally *Block
 }
 
 func (t *TryStmt) GetType() NodeType { return NODE_TRY }

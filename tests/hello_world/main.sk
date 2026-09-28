@@ -5,10 +5,11 @@ const SpecificError{msg: string, code: int} = new BaseError
 
 void main(arr args) {
     try {
-        throw SpecificError{msg: "specific", code: 502}
+        throw SpecificError{msg: "specific ф", code: 502}
     } catch (BaseError as e) {
         sendln(e.msg)   // должно вывести "specific"
+    } finally {
+        sendln("done")
     }
-    throw SpecificError{msg: "specific", code: 502}
     sendln("done")
 }
