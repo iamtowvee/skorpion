@@ -583,74 +583,170 @@ func (o *Optimizer) collectUsedIdents(node front.Node, used map[string]bool) {
 	switch n := node.(type) {
 	case *front.Block:
 		for _, stmt := range n.Statements {
-			o.collectUsedIdents(stmt, used)
+			if stmt != nil {
+				o.collectUsedIdents(stmt, used)
+			}
 		}
 	case *front.VarDecl:
-		// Идентификатор в Expr — используется
 		if n.Expr != nil {
 			o.collectUsedIdents(n.Expr, used)
 		}
-	case *front.TernaryExpr:
-		o.collectUsedIdents(n.Condition, used)
-		o.collectUsedIdents(n.Then, used)
-		o.collectUsedIdents(n.Else, used)
 	case *front.Assign:
-		// Идентификатор в Expr — используется
+		used[n.Name] = true
 		if n.Expr != nil {
 			o.collectUsedIdents(n.Expr, used)
 		}
 	case *front.Ident:
 		used[n.Name] = true
 	case *front.BinaryExpr:
-		o.collectUsedIdents(n.Left, used)
-		o.collectUsedIdents(n.Right, used)
+		if n.Left != nil {
+			o.collectUsedIdents(n.Left, used)
+		}
+		if n.Right != nil {
+			o.collectUsedIdents(n.Right, used)
+		}
 	case *front.UnaryExpr:
-		o.collectUsedIdents(n.Expr, used)
+		if n.Expr != nil {
+			o.collectUsedIdents(n.Expr, used)
+		}
 	case *front.CallExpr:
 		for _, arg := range n.Args {
-			o.collectUsedIdents(arg, used)
+			if arg != nil {
+				o.collectUsedIdents(arg, used)
+			}
+		}
+	case *front.CallRangeExpr:
+		if n.Range != nil {
+			if n.Range.Start != nil {
+				o.collectUsedIdents(n.Range.Start, used)
+			}
+			if n.Range.End != nil {
+				o.collectUsedIdents(n.Range.End, used)
+			}
+		}
+		for _, arg := range n.Extra {
+			if arg != nil {
+				o.collectUsedIdents(arg, used)
+			}
 		}
 	case *front.ReturnStmt:
 		if n.Expr != nil {
 			o.collectUsedIdents(n.Expr, used)
 		}
 	case *front.IfStmt:
-		o.collectUsedIdents(n.Condition, used)
-		o.collectUsedIdents(n.Then, used)
+		if n.Condition != nil {
+			o.collectUsedIdents(n.Condition, used)
+		}
+		if n.Then != nil {
+			o.collectUsedIdents(n.Then, used)
+		}
 		for _, elsif := range n.Elsifs {
-			o.collectUsedIdents(elsif.Condition, used)
-			o.collectUsedIdents(elsif.Then, used)
+			if elsif.Condition != nil {
+				o.collectUsedIdents(elsif.Condition, used)
+			}
+			if elsif.Then != nil {
+				o.collectUsedIdents(elsif.Then, used)
+			}
 		}
-		o.collectUsedIdents(n.Else, used)
+		if n.Else != nil {
+			o.collectUsedIdents(n.Else, used)
+		}
 	case *front.WhileStmt:
-		o.collectUsedIdents(n.Condition, used)
-		o.collectUsedIdents(n.Body, used)
-	case *front.ForStmt:
-		o.collectUsedIdents(n.Init, used)
-		o.collectUsedIdents(n.Cond, used)
-		o.collectUsedIdents(n.Post, used)
-		o.collectUsedIdents(n.Body, used)
-	case *front.CaseStmt:
-		o.collectUsedIdents(n.Value, used)
-		for _, branch := range n.Branches {
-			o.collectUsedIdents(branch.Pattern, used)
-			o.collectUsedIdents(branch.Body, used)
+		if n.Condition != nil {
+			o.collectUsedIdents(n.Condition, used)
 		}
-		o.collectUsedIdents(n.Default, used)
+		if n.Body != nil {
+			o.collectUsedIdents(n.Body, used)
+		}
+	case *front.ForStmt:
+		if n.Init != nil {
+			o.collectUsedIdents(n.Init, used)
+		}
+		if n.Cond != nil {
+			o.collectUsedIdents(n.Cond, used)
+		}
+		if n.Post != nil {
+			o.collectUsedIdents(n.Post, used)
+		}
+		if n.Body != nil {
+			o.collectUsedIdents(n.Body, used)
+		}
+	case *front.CaseStmt:
+		if n.Value != nil {
+			o.collectUsedIdents(n.Value, used)
+		}
+		for _, branch := range n.Branches {
+			if branch.Pattern != nil {
+				o.collectUsedIdents(branch.Pattern, used)
+			}
+			if branch.Body != nil {
+				o.collectUsedIdents(branch.Body, used)
+			}
+		}
+		if n.Default != nil {
+			o.collectUsedIdents(n.Default, used)
+		}
 	case *front.TypeOf:
-		o.collectUsedIdents(n.Expr, used)
+		if n.Expr != nil {
+			o.collectUsedIdents(n.Expr, used)
+		}
 	case *front.ArrayLiteral:
 		for _, elem := range n.Elements {
-			o.collectUsedIdents(elem, used)
+			if elem != nil {
+				o.collectUsedIdents(elem, used)
+			}
 		}
 	case *front.ArrayIndex:
 		used[n.Name] = true
-		o.collectUsedIdents(n.Index, used)
+		if n.Index != nil {
+			o.collectUsedIdents(n.Index, used)
+		}
 	case *front.ArrayLength:
 		used[n.Name] = true
 	case *front.ArrayAdd:
 		used[n.Name] = true
-		o.collectUsedIdents(n.Elem, used)
+		if n.Elem != nil {
+			o.collectUsedIdents(n.Elem, used)
+		}
+	case *front.TernaryExpr:
+		if n.Condition != nil {
+			o.collectUsedIdents(n.Condition, used)
+		}
+		if n.Then != nil {
+			o.collectUsedIdents(n.Then, used)
+		}
+		if n.Else != nil {
+			o.collectUsedIdents(n.Else, used)
+		}
+	case *front.ThrowStmt:
+		if n.Expr != nil {
+			o.collectUsedIdents(n.Expr, used)
+		}
+	case *front.ErrorInstance:
+		if n.Fields != nil {
+			for _, value := range n.Fields {
+				if value != nil {
+					o.collectUsedIdents(value, used)
+				}
+			}
+		}
+	case *front.TryStmt:
+		if n.Body != nil {
+			o.collectUsedIdents(n.Body, used)
+		}
+		for _, clause := range n.Catches {
+			if clause.VarName != "" {
+				used[clause.VarName] = true
+			}
+			if clause.Body != nil {
+				o.collectUsedIdents(clause.Body, used)
+			}
+		}
+		if n.Finally != nil {
+			o.collectUsedIdents(n.Finally, used)
+		}
+	case *front.FieldAccess:
+		used[n.Object] = true
 	}
 }
 

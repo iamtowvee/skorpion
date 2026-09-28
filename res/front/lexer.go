@@ -23,6 +23,10 @@ const (
 	TOKEN_RBRACKET
 	TOKEN_SEMICOLON
 	TOKEN_COMMA
+	TOKEN_NEQ  // !=
+	TOKEN_EQEQ // ==
+	TOKEN_LTE  // <=
+	TOKEN_GTE  // >=
 	TOKEN_PLUS
 	TOKEN_MINUS
 	TOKEN_STAR
@@ -41,6 +45,7 @@ const (
 	TOKEN_QUESTION
 	TOKEN_COLON
 	TOKEN_INCLUDE_C
+	TOKEN_AT
 	TOKEN_PERCENT
 	TOKEN_BACKTICK
 )
@@ -129,17 +134,41 @@ func (l *Lexer) NextToken() Token {
 	case '/':
 		return l.makeToken(TOKEN_SLASH, "/")
 	case '=':
+		if l.peek() == '=' {
+			col := l.col
+			l.pos += 2
+			l.col += 2
+			return Token{Type: TOKEN_EQEQ, Literal: "==", Line: l.line, Column: col}
+		}
 		return l.makeToken(TOKEN_EQUALS, "=")
+	case '!':
+		if l.peek() == '=' {
+			col := l.col
+			l.pos += 2
+			l.col += 2
+			return Token{Type: TOKEN_NEQ, Literal: "!=", Line: l.line, Column: col}
+		}
+		return l.makeToken(TOKEN_NOT, "!")
 	case '<':
+		if l.peek() == '=' {
+			col := l.col
+			l.pos += 2
+			l.col += 2
+			return Token{Type: TOKEN_LTE, Literal: "<=", Line: l.line, Column: col}
+		}
 		return l.makeToken(TOKEN_LT, "<")
 	case '>':
+		if l.peek() == '=' {
+			col := l.col
+			l.pos += 2
+			l.col += 2
+			return Token{Type: TOKEN_GTE, Literal: ">=", Line: l.line, Column: col}
+		}
 		return l.makeToken(TOKEN_GT, ">")
 	case '?':
 		return l.makeToken(TOKEN_QUESTION, "?")
 	case ':':
 		return l.makeToken(TOKEN_COLON, ":")
-	case '!':
-		return l.makeToken(TOKEN_NOT, "!")
 	case '&':
 		if l.peek() == '&' {
 			col := l.col
@@ -222,6 +251,13 @@ func (l *Lexer) readIdent() Token {
 		"true":     TOKEN_KEYWORD,
 		"false":    TOKEN_KEYWORD,
 		"T":        TOKEN_KEYWORD,
+		"new":      TOKEN_KEYWORD,
+		"Error":    TOKEN_KEYWORD,
+		"throw":    TOKEN_KEYWORD,
+		"try":      TOKEN_KEYWORD,
+		"catch":    TOKEN_KEYWORD,
+		"finally":  TOKEN_KEYWORD,
+		"as":       TOKEN_KEYWORD,
 		"includeC": TOKEN_INCLUDE_C,
 	}
 	if kwType, ok := keywords[literal]; ok {
@@ -428,6 +464,14 @@ func (tt TokenType) String() string {
 		return "#"
 	case TOKEN_DOLLAR:
 		return "$"
+	case TOKEN_NEQ:
+		return "!="
+	case TOKEN_EQEQ:
+		return "=="
+	case TOKEN_LTE:
+		return "<="
+	case TOKEN_GTE:
+		return ">="
 	case TOKEN_DOT:
 		return "."
 	case TOKEN_DOTDOT:

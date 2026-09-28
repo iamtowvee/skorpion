@@ -105,6 +105,22 @@ func (p *Parser) Parse() *Program {
 		}
 	}
 
+	// Обработка const-объявлений ошибок (до функций)
+	for p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "const" {
+		if p.hasErrors || errors.HasFatal() {
+			break
+		}
+		errDecl := p.parseErrorDecl()
+		if errDecl != nil {
+			if ed, ok := errDecl.(*ErrorDecl); ok {
+				prog.ErrorDecls = append(prog.ErrorDecls, ed)
+			}
+		}
+		if errors.HasFatal() {
+			return prog
+		}
+	}
+
 	debug.Debug("After imports, current token: %s type: %s", p.peek.Literal, p.peek.Type.String())
 
 	funcCount := 0
@@ -349,6 +365,12 @@ func (p *Parser) parseStatement() Node {
 			return p.parseReturn()
 		case "case":
 			return p.parseCase()
+		case "try":
+			return p.parseTry()
+		case "const":
+			return p.parseErrorDecl()
+		case "throw":
+			return p.parseThrow()
 		case "int", "string", "float", "double", "bool", "char", "arr", "dict", "any":
 			return p.parseVarDecl()
 		}
@@ -362,6 +384,128 @@ func (p *Parser) parseStatement() Node {
 
 	p.advance()
 	return nil
+}
+
+func (p *Parser) parseTry() Node {
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	pos := p.pos()
+	p.advance() // try
+
+	// try-блок
+	if p.peek.Type != TOKEN_LBRACE {
+		p.hasErrors = true
+		errors.NewFatalError("0509",
+			fmt.Sprintf("Expected '{' after 'try', got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
+	}
+	body := p.parseBlock()
+	if body == nil {
+		return nil
+	}
+
+	// catch-блоки
+	catches := []*CatchClause{}
+
+	for p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "catch" {
+		catchPos := p.pos()
+		p.advance() // catch
+
+		clause := &CatchClause{
+			Position: catchPos,
+		}
+
+		// catch (Type as e) { }
+		if p.peek.Type == TOKEN_LPAREN {
+			p.advance()
+
+			// TypeName
+			if p.peek.Type != TOKEN_IDENT && !(p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "Error") {
+				p.hasErrors = true
+				errors.NewFatalError("0504",
+					fmt.Sprintf("Expected error type in catch, got '%s'", p.peek.Literal),
+					p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			clause.TypeName = p.peek.Literal
+			p.advance()
+
+			// as e
+			if p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "as" {
+				p.advance()
+
+				if p.peek.Type != TOKEN_IDENT {
+					p.hasErrors = true
+					errors.NewFatalError("0504",
+						fmt.Sprintf("Expected variable name after 'as', got '%s'", p.peek.Literal),
+						p.peek.Line, p.peek.Column, p.FileName)
+					return nil
+				}
+				clause.VarName = p.peek.Literal
+				p.advance()
+			}
+
+			if p.peek.Type != TOKEN_RPAREN {
+				p.hasErrors = true
+				errors.NewFatalError("0508",
+					fmt.Sprintf("Expected ')' after catch clause, got '%s'", p.peek.Literal),
+					p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			p.advance()
+		}
+
+		// Тело catch
+		if p.peek.Type != TOKEN_LBRACE {
+			p.hasErrors = true
+			errors.NewFatalError("0509",
+				fmt.Sprintf("Expected '{' after 'catch', got '%s'", p.peek.Literal),
+				p.peek.Line, p.peek.Column, p.FileName)
+			return nil
+		}
+		clause.Body = p.parseBlock()
+		if clause.Body == nil {
+			return nil
+		}
+
+		catches = append(catches, clause)
+	}
+
+	// finally
+	var finally *Block
+	if p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "finally" {
+		p.advance()
+		if p.peek.Type != TOKEN_LBRACE {
+			p.hasErrors = true
+			errors.NewFatalError("0509",
+				fmt.Sprintf("Expected '{' after 'finally', got '%s'", p.peek.Literal),
+				p.peek.Line, p.peek.Column, p.FileName)
+			return nil
+		}
+		finally = p.parseBlock()
+		if finally == nil {
+			return nil
+		}
+	}
+
+	// Хотя бы один catch обязателен
+	if len(catches) == 0 {
+		p.hasErrors = true
+		errors.NewFatalError("0500",
+			"try requires at least one catch clause",
+			pos.Line, pos.Column, p.FileName)
+		return nil
+	}
+
+	return &TryStmt{
+		Position: pos,
+		Body:     body,
+		Catches:  catches,
+		Finally:  finally,
+	}
 }
 
 func (p *Parser) parseIncludeC() *IncludeC {
@@ -977,7 +1121,8 @@ func (p *Parser) parseBinary(prec int) Node {
 			nextPrec = 4
 		case TOKEN_PLUS, TOKEN_MINUS:
 			nextPrec = 3
-		case TOKEN_LT, TOKEN_GT, TOKEN_EQUALS:
+		case TOKEN_LT, TOKEN_GT, TOKEN_EQUALS,
+			TOKEN_NEQ, TOKEN_EQEQ, TOKEN_LTE, TOKEN_GTE:
 			nextPrec = 2
 		case TOKEN_AND:
 			nextPrec = 1
@@ -1101,49 +1246,64 @@ func (p *Parser) parsePrimary() Node {
 			return &ArrayIndex{Position: pos, Name: name, Index: index}
 		}
 
+		// arr.length, x.func(), e.field
 		if p.peek.Type == TOKEN_DOT {
 			p.advance()
+
+			// length
 			if p.peek.Literal == "length" {
 				p.advance()
 				return &ArrayLength{Position: pos, Name: name}
 			}
+
+			// Поле или метод
 			if p.peek.Type == TOKEN_IDENT {
-				funcName := p.peek.Literal
+				fieldOrFunc := p.peek.Literal
 				p.advance()
 
-				if p.peek.Type != TOKEN_LPAREN {
-					p.hasErrors = true
-					errors.NewFatalError("0520",
-						fmt.Sprintf("Expected '(' after '%s'", funcName),
-						p.peek.Line, p.peek.Column, p.FileName)
-					return nil
-				}
-				p.advance()
+				// Метод: x.func(...)
+				if p.peek.Type == TOKEN_LPAREN {
+					p.advance()
 
-				var callArgs []Node
-				if p.peek.Type != TOKEN_RPAREN {
-					for {
-						arg := p.parseExpression()
-						if arg == nil {
-							return nil
+					var callArgs []Node
+					if p.peek.Type != TOKEN_RPAREN {
+						for {
+							arg := p.parseExpression()
+							if arg == nil {
+								return nil
+							}
+							callArgs = append(callArgs, arg)
+							if p.peek.Type == TOKEN_COMMA {
+								p.advance()
+								continue
+							}
+							break
 						}
-						callArgs = append(callArgs, arg)
-						if p.peek.Type == TOKEN_COMMA {
-							p.advance()
-							continue
-						}
-						break
+					}
+					p.expect(TOKEN_RPAREN)
+
+					return &CallExpr{
+						Position: pos,
+						Name:     name + "." + fieldOrFunc,
+						Args:     callArgs,
+						Receiver: name,
 					}
 				}
-				p.expect(TOKEN_RPAREN)
 
-				return &CallExpr{
+				// Поле: e.msg
+				return &FieldAccess{
 					Position: pos,
-					Name:     name + "." + funcName,
-					Args:     callArgs,
-					Receiver: name,
+					Object:   name,
+					Field:    fieldOrFunc,
 				}
 			}
+
+			// Если после точки не ident — ошибка
+			p.hasErrors = true
+			errors.NewFatalError("0520",
+				fmt.Sprintf("Expected field or method name after '.', got '%s'", p.peek.Literal),
+				p.peek.Line, p.peek.Column, p.FileName)
+			return nil
 		}
 
 		if p.peek.Type == TOKEN_PLUS {
@@ -1158,6 +1318,12 @@ func (p *Parser) parsePrimary() Node {
 		if p.peek.Type == TOKEN_LPAREN {
 			return p.parseCall(name, pos)
 		}
+
+		// ErrorInstance: Name{field: value, ...}
+		if p.peek.Type == TOKEN_LBRACE {
+			return p.parseErrorInstance(name, pos)
+		}
+
 		return &Ident{Position: pos, Name: name}
 
 	case TOKEN_KEYWORD:
@@ -1391,4 +1557,253 @@ func parseArrayElemTypeFromFullType(fullType string) string {
 		return fullType
 	}
 	return fullType[4 : len(fullType)-1]
+}
+
+func (p *Parser) parseErrorDecl() Node {
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	pos := p.pos()
+	p.advance() // const
+
+	// Имя типа — с заглавной буквы
+	if p.peek.Type != TOKEN_IDENT {
+		p.hasErrors = true
+		errors.NewFatalError("0504",
+			fmt.Sprintf("Expected error type name, got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
+	}
+	name := p.peek.Literal
+	namePos := p.pos()
+	p.advance()
+
+	if name[0] < 'A' || name[0] > 'Z' {
+		p.hasErrors = true
+		errors.NewFatalError("0504",
+			fmt.Sprintf("Error type name must start with uppercase letter, got '%s'", name),
+			namePos.Line, namePos.Column, p.FileName)
+		return nil
+	}
+
+	// Поля: {field: type[default], ...}
+	if p.peek.Type != TOKEN_LBRACE {
+		p.hasErrors = true
+		errors.NewFatalError("0509",
+			fmt.Sprintf("Expected '{' after error type name, got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
+	}
+	p.advance() // {
+
+	fields := []*ErrorField{}
+
+	if p.peek.Type != TOKEN_RBRACE {
+		for {
+			fieldPos := p.pos()
+
+			// Имя поля
+			if p.peek.Type != TOKEN_IDENT {
+				p.hasErrors = true
+				errors.NewFatalError("0504",
+					fmt.Sprintf("Expected field name, got '%s'", p.peek.Literal),
+					p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			fieldName := p.peek.Literal
+			p.advance()
+
+			// Двоеточие
+			if p.peek.Type != TOKEN_COLON {
+				p.hasErrors = true
+				errors.NewFatalError("0521",
+					fmt.Sprintf("Expected ':' after field name, got '%s'", p.peek.Literal),
+					p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			p.advance()
+
+			// Тип
+			if !p.isType(p.peek) {
+				p.hasErrors = true
+				errors.NewFatalError("0502",
+					fmt.Sprintf("Expected field type, got '%s'", p.peek.Literal),
+					p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			fieldType := p.peek.Literal
+			p.advance()
+
+			// Default: [expr]
+			var defaultValue Node
+			if p.peek.Type == TOKEN_LBRACKET {
+				p.advance()
+				defaultValue = p.parseExpression()
+				if defaultValue == nil {
+					return nil
+				}
+				if p.peek.Type != TOKEN_RBRACKET {
+					p.hasErrors = true
+					errors.NewFatalError("0515",
+						fmt.Sprintf("Expected ']' after default value, got '%s'", p.peek.Literal),
+						p.peek.Line, p.peek.Column, p.FileName)
+					return nil
+				}
+				p.advance()
+			}
+
+			fields = append(fields, &ErrorField{
+				Position:     fieldPos,
+				Name:         fieldName,
+				Type:         fieldType,
+				DefaultValue: defaultValue,
+			})
+
+			if p.peek.Type == TOKEN_COMMA {
+				p.advance()
+				continue
+			}
+			break
+		}
+	}
+
+	if p.peek.Type != TOKEN_RBRACE {
+		p.hasErrors = true
+		errors.NewFatalError("0515",
+			fmt.Sprintf("Expected '}' after error fields, got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
+	}
+	p.advance() // }
+
+	// = new Parent  или  = Parent
+	if p.peek.Type != TOKEN_EQUALS {
+		p.hasErrors = true
+		errors.NewFatalError("0500",
+			fmt.Sprintf("Expected '=' after error fields, got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
+	}
+	p.advance()
+
+	isNew := false
+	if p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "new" {
+		isNew = true
+		p.advance()
+	}
+
+	// Родитель
+	if p.peek.Type != TOKEN_IDENT && !(p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "Error") {
+		p.hasErrors = true
+		errors.NewFatalError("0500",
+			fmt.Sprintf("Expected parent error type, got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
+	}
+	parent := p.peek.Literal
+	p.advance()
+
+	return &ErrorDecl{
+		Position: pos,
+		Name:     name,
+		Fields:   fields,
+		Parent:   parent,
+		IsNew:    isNew,
+	}
+}
+
+func (p *Parser) parseErrorInstance(typeName string, pos Position) Node {
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	p.advance() // {
+
+	fields := make(map[string]Node)
+
+	if p.peek.Type != TOKEN_RBRACE {
+		for {
+			// Имя поля
+			if p.peek.Type != TOKEN_IDENT {
+				p.hasErrors = true
+				errors.NewFatalError("0504",
+					fmt.Sprintf("Expected field name, got '%s'", p.peek.Literal),
+					p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			fieldName := p.peek.Literal
+			p.advance()
+
+			// Двоеточие
+			if p.peek.Type != TOKEN_COLON {
+				p.hasErrors = true
+				errors.NewFatalError("0521",
+					fmt.Sprintf("Expected ':' after field name, got '%s'", p.peek.Literal),
+					p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			p.advance()
+
+			// Значение
+			value := p.parseExpression()
+			if value == nil {
+				return nil
+			}
+
+			if _, exists := fields[fieldName]; exists {
+				p.hasErrors = true
+				errors.NewFatalError("1536",
+					fmt.Sprintf("Duplicate field '%s' in error instance", fieldName),
+					p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			fields[fieldName] = value
+
+			if p.peek.Type == TOKEN_COMMA {
+				p.advance()
+				continue
+			}
+			break
+		}
+	}
+
+	if p.peek.Type != TOKEN_RBRACE {
+		p.hasErrors = true
+		errors.NewFatalError("0515",
+			fmt.Sprintf("Expected '}' after error fields, got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
+	}
+	p.advance() // }
+
+	return &ErrorInstance{
+		Position: pos,
+		TypeName: typeName,
+		Fields:   fields,
+	}
+}
+
+func (p *Parser) parseThrow() Node {
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	pos := p.pos()
+	p.advance() // throw
+
+	// Expression: IncorrectType{...} или переменная
+	expr := p.parseExpression()
+	if expr == nil {
+		return nil
+	}
+
+	if p.peek.Type == TOKEN_SEMICOLON {
+		p.advance()
+	}
+
+	return &ThrowStmt{
+		Position: pos,
+		Expr:     expr,
+	}
 }

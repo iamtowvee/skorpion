@@ -18,6 +18,7 @@ type SemanticAnalyzer struct {
 	Errors          []errors.SkorpionError
 	ImportedFuncs   map[string]*front.Function
 	ImportManager   *front.ImportManager
+	ErrorTypes      map[string]*front.ErrorDecl
 }
 
 func NewSemanticAnalyzer(prog *front.Program) *SemanticAnalyzer {
@@ -26,6 +27,7 @@ func NewSemanticAnalyzer(prog *front.Program) *SemanticAnalyzer {
 		GlobalScope:   NewScope(nil, true),
 		ImportedFuncs: make(map[string]*front.Function),
 		ImportManager: nil,
+		ErrorTypes:    make(map[string]*front.ErrorDecl),
 	}
 	return sa
 }
@@ -103,6 +105,23 @@ func (sa *SemanticAnalyzer) Analyze() bool {
 
 	sa.initBuiltinTypes()
 	debug.Debug("Built-in types initialized\n")
+
+	// Регистрируем встроенный Error
+	errorDecl := &front.ErrorDecl{
+		Name: "Error",
+		Fields: []*front.ErrorField{
+			{Name: "msg", Type: "string"},
+		},
+		Parent: "",
+		IsNew:  false,
+	}
+	sa.ErrorTypes["Error"] = errorDecl
+	sa.GlobalScope.Define("Error", SYM_CONST, "Error", true)
+
+	// Регистрируем пользовательские ошибки
+	for _, decl := range sa.Program.ErrorDecls {
+		sa.registerErrorDecl(decl)
+	}
 
 	debug.Debug("Registering %d functions from main\n", len(sa.Program.Functions))
 	for _, fn := range sa.Program.Functions {
@@ -185,6 +204,12 @@ func (sa *SemanticAnalyzer) initBuiltinTypes() {
 func (sa *SemanticAnalyzer) registerFunction(fn *front.Function) {
 	if existing := sa.GlobalScope.Resolve(fn.Name); existing != nil {
 		sa.addError("1500", fmt.Sprintf("Function '%s' already declared", fn.Name),
+			fn.GetLine(), fn.GetColumn(), fn.File)
+		return
+	}
+	if _, isError := sa.ErrorTypes[fn.Name]; isError {
+		sa.addError("1500",
+			fmt.Sprintf("Name '%s' already used as error type", fn.Name),
 			fn.GetLine(), fn.GetColumn(), fn.File)
 		return
 	}
@@ -321,6 +346,10 @@ func (sa *SemanticAnalyzer) analyzeNode(node front.Node) front.Node {
 			sa.analyzeNode(elem)
 		}
 		return n
+	case *front.ThrowStmt:
+		return sa.analyzeThrow(n)
+	case *front.TryStmt:
+		return sa.analyzeTry(n)
 	case *front.TernaryExpr:
 		return sa.analyzeTernary(n)
 	case *front.UnaryExpr:
@@ -350,6 +379,8 @@ func (sa *SemanticAnalyzer) analyzeNode(node front.Node) front.Node {
 		return sa.analyzeWhile(n)
 	case *front.ForStmt:
 		return sa.analyzeFor(n)
+	case *front.ErrorInstance:
+		return sa.analyzeErrorInstance(n)
 	case *front.RangeExpr:
 		sa.analyzeNode(n.Start)
 		sa.analyzeNode(n.End)
@@ -361,6 +392,43 @@ func (sa *SemanticAnalyzer) analyzeNode(node front.Node) front.Node {
 		debug.Debug("Unknown node type: %T\n", n)
 		return n
 	}
+}
+
+func (sa *SemanticAnalyzer) analyzeTry(try *front.TryStmt) front.Node {
+	// Тело try
+	sa.analyzeBlock(try.Body, false)
+
+	// Catch-блоки
+	for _, clause := range try.Catches {
+		// Проверка типа
+		if clause.TypeName != "" && clause.TypeName != "Error" {
+			if _, ok := sa.ErrorTypes[clause.TypeName]; !ok {
+				sa.addError("1518",
+					fmt.Sprintf("Unknown error type '%s' in catch", clause.TypeName),
+					clause.GetLine(), clause.GetColumn(), sa.CurrentFile)
+			}
+		}
+
+		// Если есть VarName — определяем переменную в scope catch
+		if clause.VarName != "" {
+			typeName := clause.TypeName
+			if typeName == "" {
+				typeName = "Error"
+			}
+			sa.CurrentScope.Define(clause.VarName, SYM_VARIABLE, typeName, false)
+		}
+
+		if clause.Body != nil {
+			sa.analyzeBlock(clause.Body, false)
+		}
+	}
+
+	// finally
+	if try.Finally != nil {
+		sa.analyzeBlock(try.Finally, false)
+	}
+
+	return try
 }
 
 func (sa *SemanticAnalyzer) analyzeUnary(unary *front.UnaryExpr) front.Node {
@@ -925,6 +993,8 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 		return "arr"
 	case *front.TypeOf:
 		return "string"
+	case *front.ErrorInstance:
+		return n.TypeName
 	case *front.Ident:
 		if n.Name == "true" || n.Name == "false" {
 			return "bool"
@@ -1137,6 +1207,22 @@ func (sa *SemanticAnalyzer) nodeHasReturn(node front.Node) bool {
 		return true
 	case *front.Block:
 		return sa.hasReturn(n)
+	case *front.TryStmt:
+		// try + все catch возвращают → true
+		if n.Body != nil && sa.hasReturn(n.Body) {
+			return true
+		}
+		allCatchesReturn := true
+		for _, clause := range n.Catches {
+			if clause.Body == nil || !sa.hasReturn(clause.Body) {
+				allCatchesReturn = false
+				break
+			}
+		}
+		if len(n.Catches) > 0 && allCatchesReturn {
+			return true
+		}
+		return false
 	case *front.IfStmt:
 		if sa.hasReturn(n.Then) {
 			return true
@@ -1174,10 +1260,13 @@ func (sa *SemanticAnalyzer) collectUsedIdents(node front.Node, used map[string]b
 	if node == nil {
 		return
 	}
+
 	switch n := node.(type) {
 	case *front.Block:
 		for _, stmt := range n.Statements {
-			sa.collectUsedIdents(stmt, used)
+			if stmt != nil {
+				sa.collectUsedIdents(stmt, used)
+			}
 		}
 	case *front.VarDecl:
 		if n.Expr != nil {
@@ -1191,65 +1280,154 @@ func (sa *SemanticAnalyzer) collectUsedIdents(node front.Node, used map[string]b
 	case *front.Ident:
 		used[n.Name] = true
 	case *front.BinaryExpr:
-		sa.collectUsedIdents(n.Left, used)
-		sa.collectUsedIdents(n.Right, used)
+		if n.Left != nil {
+			sa.collectUsedIdents(n.Left, used)
+		}
+		if n.Right != nil {
+			sa.collectUsedIdents(n.Right, used)
+		}
 	case *front.UnaryExpr:
-		sa.collectUsedIdents(n.Expr, used)
+		if n.Expr != nil {
+			sa.collectUsedIdents(n.Expr, used)
+		}
 	case *front.CallExpr:
 		for _, arg := range n.Args {
-			sa.collectUsedIdents(arg, used)
+			if arg != nil {
+				sa.collectUsedIdents(arg, used)
+			}
 		}
 	case *front.CallRangeExpr:
-		sa.collectUsedIdents(n.Range.Start, used)
-		sa.collectUsedIdents(n.Range.End, used)
+		if n.Range != nil {
+			if n.Range.Start != nil {
+				sa.collectUsedIdents(n.Range.Start, used)
+			}
+			if n.Range.End != nil {
+				sa.collectUsedIdents(n.Range.End, used)
+			}
+		}
 		for _, arg := range n.Extra {
-			sa.collectUsedIdents(arg, used)
+			if arg != nil {
+				sa.collectUsedIdents(arg, used)
+			}
 		}
 	case *front.ReturnStmt:
 		if n.Expr != nil {
 			sa.collectUsedIdents(n.Expr, used)
 		}
 	case *front.IfStmt:
-		sa.collectUsedIdents(n.Condition, used)
-		sa.collectUsedIdents(n.Then, used)
+		if n.Condition != nil {
+			sa.collectUsedIdents(n.Condition, used)
+		}
+		if n.Then != nil {
+			sa.collectUsedIdents(n.Then, used)
+		}
 		for _, elsif := range n.Elsifs {
-			sa.collectUsedIdents(elsif.Condition, used)
-			sa.collectUsedIdents(elsif.Then, used)
+			if elsif.Condition != nil {
+				sa.collectUsedIdents(elsif.Condition, used)
+			}
+			if elsif.Then != nil {
+				sa.collectUsedIdents(elsif.Then, used)
+			}
 		}
-		sa.collectUsedIdents(n.Else, used)
+		if n.Else != nil {
+			sa.collectUsedIdents(n.Else, used)
+		}
 	case *front.WhileStmt:
-		sa.collectUsedIdents(n.Condition, used)
-		sa.collectUsedIdents(n.Body, used)
-	case *front.ForStmt:
-		sa.collectUsedIdents(n.Init, used)
-		sa.collectUsedIdents(n.Cond, used)
-		sa.collectUsedIdents(n.Post, used)
-		sa.collectUsedIdents(n.Body, used)
-	case *front.CaseStmt:
-		sa.collectUsedIdents(n.Value, used)
-		for _, branch := range n.Branches {
-			sa.collectUsedIdents(branch.Pattern, used)
-			sa.collectUsedIdents(branch.Body, used)
+		if n.Condition != nil {
+			sa.collectUsedIdents(n.Condition, used)
 		}
-		sa.collectUsedIdents(n.Default, used)
+		if n.Body != nil {
+			sa.collectUsedIdents(n.Body, used)
+		}
+	case *front.ForStmt:
+		if n.Init != nil {
+			sa.collectUsedIdents(n.Init, used)
+		}
+		if n.Cond != nil {
+			sa.collectUsedIdents(n.Cond, used)
+		}
+		if n.Post != nil {
+			sa.collectUsedIdents(n.Post, used)
+		}
+		if n.Body != nil {
+			sa.collectUsedIdents(n.Body, used)
+		}
+	case *front.TryStmt:
+		if n.Body != nil {
+			sa.collectUsedIdents(n.Body, used)
+		}
+		for _, clause := range n.Catches {
+			if clause.VarName != "" {
+				used[clause.VarName] = true
+			}
+			if clause.Body != nil {
+				sa.collectUsedIdents(clause.Body, used)
+			}
+		}
+		if n.Finally != nil {
+			sa.collectUsedIdents(n.Finally, used)
+		}
+	case *front.CaseStmt:
+		if n.Value != nil {
+			sa.collectUsedIdents(n.Value, used)
+		}
+		for _, branch := range n.Branches {
+			if branch.Pattern != nil {
+				sa.collectUsedIdents(branch.Pattern, used)
+			}
+			if branch.Body != nil {
+				sa.collectUsedIdents(branch.Body, used)
+			}
+		}
+		if n.Default != nil {
+			sa.collectUsedIdents(n.Default, used)
+		}
 	case *front.TypeOf:
-		sa.collectUsedIdents(n.Expr, used)
+		if n.Expr != nil {
+			sa.collectUsedIdents(n.Expr, used)
+		}
 	case *front.ArrayLiteral:
 		for _, elem := range n.Elements {
-			sa.collectUsedIdents(elem, used)
+			if elem != nil {
+				sa.collectUsedIdents(elem, used)
+			}
 		}
 	case *front.ArrayIndex:
 		used[n.Name] = true
-		sa.collectUsedIdents(n.Index, used)
+		if n.Index != nil {
+			sa.collectUsedIdents(n.Index, used)
+		}
 	case *front.ArrayLength:
 		used[n.Name] = true
 	case *front.ArrayAdd:
 		used[n.Name] = true
-		sa.collectUsedIdents(n.Elem, used)
+		if n.Elem != nil {
+			sa.collectUsedIdents(n.Elem, used)
+		}
 	case *front.TernaryExpr:
-		sa.collectUsedIdents(n.Condition, used)
-		sa.collectUsedIdents(n.Then, used)
-		sa.collectUsedIdents(n.Else, used)
+		if n.Condition != nil {
+			sa.collectUsedIdents(n.Condition, used)
+		}
+		if n.Then != nil {
+			sa.collectUsedIdents(n.Then, used)
+		}
+		if n.Else != nil {
+			sa.collectUsedIdents(n.Else, used)
+		}
+	case *front.ThrowStmt:
+		if n.Expr != nil {
+			sa.collectUsedIdents(n.Expr, used)
+		}
+	case *front.ErrorInstance:
+		if n.Fields != nil {
+			for _, value := range n.Fields {
+				if value != nil {
+					sa.collectUsedIdents(value, used)
+				}
+			}
+		}
+	case *front.FieldAccess:
+		used[n.Object] = true
 	}
 }
 
@@ -1288,4 +1466,147 @@ func (sa *SemanticAnalyzer) checkUnusedVariables(block *front.Block, used map[st
 			}
 		}
 	}
+}
+
+func (sa *SemanticAnalyzer) registerErrorDecl(decl *front.ErrorDecl) {
+	// Проверка дублей
+	if _, exists := sa.ErrorTypes[decl.Name]; exists {
+		sa.addError("1500",
+			fmt.Sprintf("Error type '%s' already declared", decl.Name),
+			decl.GetLine(), decl.GetColumn(), sa.CurrentFile)
+		return
+	}
+
+	// Родитель должен существовать
+	parent, ok := sa.ErrorTypes[decl.Parent]
+	if !ok {
+		sa.addError("1518",
+			fmt.Sprintf("Unknown parent error type '%s'", decl.Parent),
+			decl.GetLine(), decl.GetColumn(), sa.CurrentFile)
+		return
+	}
+
+	// Проверка полей на конфликты с родителем
+	parentFields := make(map[string]*front.ErrorField)
+	for _, f := range parent.Fields {
+		parentFields[f.Name] = f
+	}
+
+	for _, field := range decl.Fields {
+		if parentField, ok := parentFields[field.Name]; ok {
+			if parentField.Type != field.Type {
+				sa.addError("1534",
+					fmt.Sprintf("Field '%s' type mismatch with parent '%s': expected '%s', got '%s'",
+						field.Name, decl.Parent, parentField.Type, field.Type),
+					field.GetLine(), field.GetColumn(), sa.CurrentFile)
+			}
+		}
+	}
+
+	// Проверка типов полей
+	for _, field := range decl.Fields {
+		if !sa.isValidType(field.Type) {
+			sa.addError("1506",
+				fmt.Sprintf("Unknown field type '%s'", field.Type),
+				field.GetLine(), field.GetColumn(), sa.CurrentFile)
+		}
+	}
+
+	// Регистрация
+	sa.ErrorTypes[decl.Name] = decl
+	sa.GlobalScope.Define(decl.Name, SYM_CONST, decl.Name, true)
+}
+
+func (sa *SemanticAnalyzer) analyzeErrorInstance(inst *front.ErrorInstance) front.Node {
+	// Тип должен существовать
+	decl, ok := sa.ErrorTypes[inst.TypeName]
+	if !ok {
+		sa.addError("1518",
+			fmt.Sprintf("Unknown error type '%s'", inst.TypeName),
+			inst.GetLine(), inst.GetColumn(), sa.CurrentFile)
+		return inst
+	}
+
+	// Собираем все поля из цепочки наследования
+	allFields := sa.collectErrorFields(decl)
+
+	// Проверяем, что все переданные поля существуют
+	for fieldName, value := range inst.Fields {
+		field, exists := allFields[fieldName]
+		if !exists {
+			sa.addError("1539",
+				fmt.Sprintf("Error type '%s' has no field '%s'", inst.TypeName, fieldName),
+				value.GetLine(), value.GetColumn(), sa.CurrentFile)
+			continue
+		}
+
+		// Проверяем тип значения
+		valueType := sa.getNodeType(value)
+		if valueType != field.Type && valueType != "" {
+			sa.addError("1520",
+				fmt.Sprintf("Field '%s' type mismatch: expected '%s', got '%s'",
+					fieldName, field.Type, valueType),
+				value.GetLine(), value.GetColumn(), sa.CurrentFile)
+		}
+
+		// Анализируем значение
+		sa.analyzeNode(value)
+	}
+
+	// Проверяем, что все поля без default переданы
+	for fieldName, field := range allFields {
+		if _, passed := inst.Fields[fieldName]; !passed {
+			if field.DefaultValue == nil {
+				sa.addError("1519",
+					fmt.Sprintf("Missing required field '%s' in error '%s'",
+						fieldName, inst.TypeName),
+					inst.GetLine(), inst.GetColumn(), sa.CurrentFile)
+			}
+		}
+	}
+
+	return inst
+}
+
+// collectErrorFields собирает все поля из цепочки наследования
+func (sa *SemanticAnalyzer) collectErrorFields(decl *front.ErrorDecl) map[string]*front.ErrorField {
+	fields := make(map[string]*front.ErrorField)
+
+	// Сначала родители (чтобы потомки могли переопределять)
+	if decl.Parent != "" {
+		if parent, ok := sa.ErrorTypes[decl.Parent]; ok {
+			parentFields := sa.collectErrorFields(parent)
+			for name, field := range parentFields {
+				fields[name] = field
+			}
+		}
+	}
+
+	// Потом свои
+	for _, field := range decl.Fields {
+		fields[field.Name] = field
+	}
+
+	return fields
+}
+
+func (sa *SemanticAnalyzer) analyzeThrow(throw *front.ThrowStmt) front.Node {
+	if throw.Expr == nil {
+		sa.addError("0000", "throw requires an expression",
+			throw.GetLine(), throw.GetColumn(), sa.CurrentFile)
+		return throw
+	}
+
+	exprType := sa.getNodeType(throw.Expr)
+
+	// Проверяем, что это Error-like тип
+	if _, ok := sa.ErrorTypes[exprType]; !ok {
+		sa.addError("1539",
+			fmt.Sprintf("Cannot throw non-error type '%s'", exprType),
+			throw.GetLine(), throw.GetColumn(), sa.CurrentFile)
+		return throw
+	}
+
+	sa.analyzeNode(throw.Expr)
+	return throw
 }

@@ -31,10 +31,23 @@ type IRParam struct {
 }
 
 type IRProgram struct {
-	Functions []IRFunction
-	Globals   []IRGlobal
-	Imports   []IRImport
-	InlineC   string // Сырой C код из includeC {}
+	Functions  []IRFunction
+	Globals    []IRGlobal
+	Imports    []IRImport
+	InlineC    string
+	ErrorDecls []IRErrorDecl
+}
+
+type IRErrorDecl struct {
+	Name   string
+	Parent string
+	Fields []IRErrorField
+}
+
+type IRErrorField struct {
+	Name         string
+	Type         string
+	DefaultValue string
 }
 
 type IRGlobal struct {

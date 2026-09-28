@@ -265,8 +265,9 @@ func buildProject() {
 	allFunctions = append(allFunctions, allImportedFunctions...)
 
 	mergedProg := &front.Program{
-		Imports:   mainProg.Imports,
-		Functions: allFunctions,
+		Imports:    mainProg.Imports,
+		Functions:  allFunctions,
+		ErrorDecls: mainProg.ErrorDecls,
 	}
 
 	// Оптимизация (можно отключить флагом --no-optimize)
@@ -372,9 +373,60 @@ func printAST(node front.Node, indent int) {
 		for _, imp := range n.Imports {
 			printAST(imp, indent+1)
 		}
+		for _, errDecl := range n.ErrorDecls {
+			printAST(errDecl, indent+1)
+		}
 		for _, fn := range n.Functions {
 			printAST(fn, indent+1)
 		}
+
+	case *front.ErrorDecl:
+		fmt.Printf("%s%s %s", prefix,
+			cli.Colors.Magenta("ErrorDecl"),
+			cli.Colors.Bold(n.Name))
+		if n.IsNew {
+			fmt.Printf(" = new %s", n.Parent)
+		} else {
+			fmt.Printf(" = %s", n.Parent)
+		}
+		fmt.Println()
+		for _, field := range n.Fields {
+			defStr := ""
+			if field.DefaultValue != nil {
+				if num, ok := field.DefaultValue.(*front.Number); ok {
+					defStr = "[" + num.Value + "]"
+				} else if str, ok := field.DefaultValue.(*front.String); ok {
+					defStr = `["` + str.Value + `"]`
+				} else {
+					defStr = "[...]"
+				}
+			}
+			fmt.Printf("%s  %s: %s%s\n", prefix,
+				cli.Colors.Cyan(field.Name),
+				field.Type,
+				defStr)
+		}
+
+	case *front.ThrowStmt:
+		fmt.Printf("%s%s\n", prefix, cli.Colors.Red("Throw"))
+		if n.Expr != nil {
+			printAST(n.Expr, indent+1)
+		}
+
+	case *front.ErrorInstance:
+		fmt.Printf("%s%s %s\n", prefix,
+			cli.Colors.Magenta("ErrorInstance"),
+			cli.Colors.Bold(n.TypeName))
+		for name, value := range n.Fields {
+			fmt.Printf("%s  %s:\n", prefix, cli.Colors.Cyan(name))
+			printAST(value, indent+2)
+		}
+
+	case *front.FieldAccess:
+		fmt.Printf("%s%s %s.%s\n", prefix,
+			cli.Colors.Cyan("FieldAccess"),
+			n.Object,
+			n.Name())
 
 	case *front.Import:
 		alias := n.Alias

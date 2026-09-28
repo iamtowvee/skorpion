@@ -1,6 +1,20 @@
 use #std/io
-use #std/ref
+
+const IncorrectType{msg: string, code: int} = new Error
+
+int some(any a, any b) {
+    if (type(a) != "int" || type(b) != "int") {
+        throw IncorrectType{msg: "Incorrect type", code: 502}
+    }
+    return to_int(a) + to_int(b)
+}
 
 void main(arr args) {
-    sendln(type("14".toInt()))
+    try {
+        int x = some(3, "a")
+        sendln($x)
+    } catch (IncorrectType as e) {
+        sendln(e.msg)
+    }
+    sendln("done")
 }

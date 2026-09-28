@@ -5,34 +5,41 @@ import "strings"
 type NodeType string
 
 const (
-	NODE_PROGRAM       NodeType = "Program"
-	NODE_FUNCTION      NodeType = "Function"
-	NODE_VAR_DECL      NodeType = "VarDecl"
-	NODE_ASSIGN        NodeType = "Assign"
-	NODE_BINARY        NodeType = "Binary"
-	NODE_UNARY         NodeType = "Unary"
-	NODE_CALL          NodeType = "Call"
-	NODE_RETURN        NodeType = "Return"
-	NODE_BLOCK         NodeType = "Block"
-	NODE_IDENT         NodeType = "Ident"
-	NODE_NUMBER        NodeType = "Number"
-	NODE_STRING        NodeType = "String"
-	NODE_IF            NodeType = "If"
-	NODE_ELSIF         NodeType = "Elsif"
-	NODE_CASE          NodeType = "Case"
-	NODE_CASE_BRANCH   NodeType = "CaseBranch"
-	NODE_WHILE         NodeType = "While"
-	NODE_FOR           NodeType = "For"
-	NODE_TYPEOF        NodeType = "TypeOf"
-	NODE_ARRAY_LITERAL NodeType = "ArrayLiteral"
-	NODE_ARRAY_INDEX   NodeType = "ArrayIndex"
-	NODE_ARRAY_LENGTH  NodeType = "ArrayLength"
-	NODE_ARRAY_ADD     NodeType = "ArrayAdd"
-	NODE_IMPORT        NodeType = "Import"
-	NODE_INCLUDE_C     NodeType = "IncludeC"
-	NODE_RANGE         NodeType = "Range"
-	NODE_CALL_RANGE    NodeType = "CallRange"
-	NODE_TERNARY       NodeType = "Ternary"
+	NODE_PROGRAM        NodeType = "Program"
+	NODE_FUNCTION       NodeType = "Function"
+	NODE_VAR_DECL       NodeType = "VarDecl"
+	NODE_ASSIGN         NodeType = "Assign"
+	NODE_BINARY         NodeType = "Binary"
+	NODE_UNARY          NodeType = "Unary"
+	NODE_CALL           NodeType = "Call"
+	NODE_RETURN         NodeType = "Return"
+	NODE_BLOCK          NodeType = "Block"
+	NODE_IDENT          NodeType = "Ident"
+	NODE_NUMBER         NodeType = "Number"
+	NODE_STRING         NodeType = "String"
+	NODE_IF             NodeType = "If"
+	NODE_ELSIF          NodeType = "Elsif"
+	NODE_CASE           NodeType = "Case"
+	NODE_CASE_BRANCH    NodeType = "CaseBranch"
+	NODE_WHILE          NodeType = "While"
+	NODE_FOR            NodeType = "For"
+	NODE_TYPEOF         NodeType = "TypeOf"
+	NODE_ARRAY_LITERAL  NodeType = "ArrayLiteral"
+	NODE_ARRAY_INDEX    NodeType = "ArrayIndex"
+	NODE_ARRAY_LENGTH   NodeType = "ArrayLength"
+	NODE_ARRAY_ADD      NodeType = "ArrayAdd"
+	NODE_IMPORT         NodeType = "Import"
+	NODE_INCLUDE_C      NodeType = "IncludeC"
+	NODE_RANGE          NodeType = "Range"
+	NODE_CALL_RANGE     NodeType = "CallRange"
+	NODE_TERNARY        NodeType = "Ternary"
+	NODE_ERROR_DECL     NodeType = "ErrorDecl"
+	NODE_ERROR_FIELD    NodeType = "ErrorField"
+	NODE_ERROR_INSTANCE NodeType = "ErrorInstance"
+	NODE_THROW          NodeType = "Throw"
+	NODE_FIELD_ACCESS   NodeType = "FieldAccess"
+	NODE_TRY            NodeType = "Try"
+	NODE_CATCH          NodeType = "Catch"
 )
 
 type Node interface {
@@ -66,6 +73,7 @@ type Program struct {
 	Position
 	Imports      []*Import
 	Functions    []*Function
+	ErrorDecls   []*ErrorDecl
 	AllFunctions []*Function
 }
 
@@ -419,3 +427,74 @@ type IncludeC struct {
 }
 
 func (i *IncludeC) GetType() NodeType { return NODE_INCLUDE_C }
+
+// ============================================================================
+// ErrorDecl — объявление типа ошибки
+// const Name{field: type[default], ...} = new Parent
+// ============================================================================
+
+type ErrorDecl struct {
+	Position
+	Name   string
+	Fields []*ErrorField
+	Parent string // "Error" или имя другого типа
+	IsNew  bool   // true = new Parent, false = Parent (мутация)
+}
+
+func (e *ErrorDecl) GetType() NodeType { return NODE_ERROR_DECL }
+
+type ErrorField struct {
+	Position
+	Name         string
+	Type         string
+	DefaultValue Node // может быть nil
+}
+
+func (e *ErrorField) GetType() NodeType { return NODE_ERROR_FIELD }
+
+// ============================================================================
+// ErrorInstance — создание экземпляра ошибки
+// Name{field: value, ...}
+// ============================================================================
+
+type ErrorInstance struct {
+	Position
+	TypeName string
+	Fields   map[string]Node
+}
+
+func (e *ErrorInstance) GetType() NodeType { return NODE_ERROR_INSTANCE }
+
+type ThrowStmt struct {
+	Position
+	Expr Node
+}
+
+func (t *ThrowStmt) GetType() NodeType { return NODE_THROW }
+
+type FieldAccess struct {
+	Position
+	Object string // имя переменной
+	Field  string // имя поля
+}
+
+func (f *FieldAccess) GetType() NodeType { return NODE_FIELD_ACCESS }
+func (f *FieldAccess) Name() string      { return f.Field }
+
+type TryStmt struct {
+	Position
+	Body    *Block
+	Catches []*CatchClause
+	Finally *Block
+}
+
+func (t *TryStmt) GetType() NodeType { return NODE_TRY }
+
+type CatchClause struct {
+	Position
+	TypeName string // имя типа ошибки; "" для catch {}
+	VarName  string // имя переменной; "" для catch без as
+	Body     *Block
+}
+
+func (c *CatchClause) GetType() NodeType { return NODE_CATCH }

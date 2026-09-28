@@ -27,14 +27,14 @@ func NewParserWithFile(input string, fileName string) *Parser {
 // Фасад для AST из одного файла
 func InitAST(input string) *Program {
 	if errors.HasFatal() {
-		return &Program{Imports: []*Import{}, Functions: []*Function{}}
+		return &Program{Imports: []*Import{}, Functions: []*Function{}, ErrorDecls: []*ErrorDecl{}}
 	}
 
 	parser := NewParser(input)
 	prog := parser.Parse()
 
 	if errors.HasFatal() {
-		return &Program{Imports: []*Import{}, Functions: []*Function{}}
+		return &Program{Imports: []*Import{}, Functions: []*Function{}, ErrorDecls: []*ErrorDecl{}}
 	}
 
 	return prog
@@ -62,7 +62,7 @@ func GetAllFunctions(prog *Program, im *ImportManager) []*Function {
 
 // Создание AST из нескольких файлов
 func BuildProgram(files map[string]string) *Program {
-	mainProg := &Program{Imports: []*Import{}, Functions: []*Function{}}
+	mainProg := &Program{Imports: []*Import{}, Functions: []*Function{}, ErrorDecls: []*ErrorDecl{}}
 
 	for path, content := range files {
 		path += ""

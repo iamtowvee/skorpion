@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <setjmp.h>
 
 // Skorpion type definitions
 typedef char* sk_string;
@@ -137,6 +138,20 @@ void sk_array_free(sk_array* a) {
     free(a);
 }
 
+sk_array* sk_range_new(int start, int end) {
+    sk_array* a = sk_array_new(sizeof(int), 0);
+    if (start <= end) {
+        for (int i = start; i <= end; i++) {
+            sk_array_push_int(a, i);
+        }
+    } else {
+        for (int i = start; i >= end; i--) {
+            sk_array_push_int(a, i);
+        }
+    }
+    return a;
+}
+
 // Forward declarations
 sk_string sk_array_to_string(sk_array* a);
 
@@ -158,6 +173,7 @@ sk_string any_to_string(sk_any a) {
 sk_string sk_array_to_string(sk_array* a) {
     char* buf = malloc(1024);
     strcpy(buf, "[");
+    char tmp[64];
     for (int i = 0; i < a->length; i++) {
         if (i > 0) strcat(buf, ", ");
         void* elem = sk_array_get(a, i);
@@ -165,78 +181,161 @@ sk_string sk_array_to_string(sk_array* a) {
             sk_any* any = (sk_any*)elem;
             char* s = any_to_string(*any);
             strcat(buf, s);
+            free(s);
         } else if (a->elem_type == 0) {
-            char tmp[32]; snprintf(tmp, 32, "%d", *(int*)elem); strcat(buf, tmp);
+            snprintf(tmp, 64, "%d", *(int*)elem); strcat(buf, tmp);
         } else if (a->elem_type == 1) {
             strcat(buf, *(sk_string*)elem);
         } else if (a->elem_type == 2) {
-            char tmp[32]; snprintf(tmp, 32, "%f", *(float*)elem); strcat(buf, tmp);
+            snprintf(tmp, 64, "%f", *(float*)elem); strcat(buf, tmp);
         } else if (a->elem_type == 3) {
-            char tmp[32]; snprintf(tmp, 32, "%f", *(double*)elem); strcat(buf, tmp);
+            snprintf(tmp, 64, "%f", *(double*)elem); strcat(buf, tmp);
         } else if (a->elem_type == 4) {
             strcat(buf, *(sk_bool*)elem ? "true" : "false");
         } else if (a->elem_type == 6) {
-			  sk_array* nested = *(sk_array**)elem;
-			  char* s = sk_array_to_string(nested);
-			  strcat(buf, s);
+            sk_array* nested = *(sk_array**)elem;
+            char* s = sk_array_to_string(nested);
+            strcat(buf, s);
+            free(s);
         }
     }
     strcat(buf, "]");
     return buf;
 }
 
+// Error types
+typedef struct SkError {
+    const char* __type;
+    sk_string msg;
+} SkError;
+
+typedef struct IncorrectType {
+    const char* __type;
+    sk_string msg;
+    int code;
+} IncorrectType;
+
+// Skorpion exception runtime
+typedef struct SkTryFrame {
+    jmp_buf env;
+    void* error;
+    struct SkTryFrame* prev;
+} SkTryFrame;
+
+SkTryFrame* sk_try_stack = NULL;
+
+void sk_throw(void* err) {
+    if (sk_try_stack == NULL) {
+        // Паника: печатаем и выходим
+        // err — указатель на структуру ошибки
+        // Первое поле — __type (const char*)
+        const char* __type = *(const char**)err;
+        fprintf(stderr, "Panicked with error (%s)\n", __type);
+        exit(1);
+    }
+    sk_try_stack->error = err;
+    longjmp(sk_try_stack->env, 1);
+}
+
 // Function prototypes
+int some(sk_any a, sk_any b);
 void sendln(sk_string msg);
 void sendf(sk_string msg);
 sk_string input(sk_string prompt);
 
-void main(void* args) {
-    sk_array* nums;
-    sk_array* experiement;
-    sk_array* mixed;
+int some(sk_any a, sk_any b) {
+    IncorrectType* t3;
 
-    nums = sk_array_new(sizeof(int), 0);
-    sk_array_push_int(nums, 1);
-    sk_array_push_int(nums, 2);
-    sk_array_push_int(nums, 3);
-    experiement = sk_array_new(sizeof(sk_array*), 6);
-    sk_array* t1 = sk_array_new(sizeof(int), 0);
-    sk_array_push_int(t1, 3);
-    sk_array_push_arr(experiement, t1);
-    sk_array* t2 = sk_array_new(sizeof(int), 0);
-    sk_array_push_int(t2, 3);
-    sk_array_push_int(t2, 1);
-    sk_array_push_int(t2, 4);
-    sk_array_push_arr(experiement, t2);
-    int t3 = sk_array_len(nums);
-    char t4[32];
-    snprintf(t4, 32, "%d", t3);
-    char t5[256];
-    strcpy(t5, "Length: ");
-    strcat(t5, t4);
-    sendln(t5);
-    int t6 = *(int*)sk_array_get(nums, 0);
-    char t7[32];
-    snprintf(t7, 32, "%d", t6);
-    char t8[256];
-    strcpy(t8, "First: ");
-    strcat(t8, t7);
-    sendln(t8);
-    mixed = sk_array_new(sizeof(sk_any), 5);
-    sk_any t9 = any_int(-2);
-    sk_array_push_any(mixed, t9);
-    sk_any t10 = any_string("hi");
-    sk_array_push_any(mixed, t10);
-    sk_any t11 = any_double(3.14);
-    sk_array_push_any(mixed, t11);
-    sk_any t12 = any_bool(true);
-    sk_array_push_any(mixed, t12);
-    sk_string t13 = sk_array_to_string(mixed);
-    char t14[256];
-    strcpy(t14, "Mixed: ");
-    strcat(t14, t13);
+    sk_string t1;
+    char buf_t1[32];
+    switch (a.type) {
+        case 0: strcpy(buf_t1, "int"); break;
+        case 1: strcpy(buf_t1, "string"); break;
+        case 2: strcpy(buf_t1, "float"); break;
+        case 3: strcpy(buf_t1, "double"); break;
+        case 4: strcpy(buf_t1, "bool"); break;
+        case 5: strcpy(buf_t1, "ptr"); break;
+        case 6: strcpy(buf_t1, "ptr"); break;
+        default: strcpy(buf_t1, "unknown"); break;
+    }
+    t1 = strdup(buf_t1);
+    sk_string t2;
+    char buf_t2[32];
+    switch (b.type) {
+        case 0: strcpy(buf_t2, "int"); break;
+        case 1: strcpy(buf_t2, "string"); break;
+        case 2: strcpy(buf_t2, "float"); break;
+        case 3: strcpy(buf_t2, "double"); break;
+        case 4: strcpy(buf_t2, "bool"); break;
+        case 5: strcpy(buf_t2, "ptr"); break;
+        case 6: strcpy(buf_t2, "ptr"); break;
+        default: strcpy(buf_t2, "unknown"); break;
+    }
+    t2 = strdup(buf_t2);
+    if ((t1 != "int") || (t2 != "int")) {
+        goto L1;
+    } else {
+        goto L2;
+    }
+L1:
+IncorrectType t3_val;
+t3_val.__type = "Error.IncorrectType";
+t3_val.msg = "Incorrect type";
+t3_val.code = 502;
+t3 = &t3_val;
+    sk_throw(t3);
+    goto L3;
+L2:
+L3:
+    int t4 = any_to_int(a);
+    int t5 = any_to_int(b);
+    int t6 = t4 + t5;
+    return t6;
+}
+
+int main(int argc, char** argv) {
+    (void)argc;
+    (void)argv;
+    SkTryFrame t7;
+    void* t8;
+    int x;
+    int t13;
+    IncorrectType* e;
+    sk_string t14;
+
+t7.prev = sk_try_stack;
+    sk_try_stack = &t7;
+    if (setjmp(t7.env) != 0) {
+        goto L6;
+    }
+    sk_any t9 = any_int(3);
+    sk_any t10 = any_string("a");
+    int t11 = some(t9, t10);
+    x = t11;
+    char t12[32];
+    snprintf(t12, 32, "%d", x);
+    sendln(t12);
+    goto L4;
+L6:
+    sk_try_stack = t7.prev;
+    t8 = t7.error;
+    t13 = (strcmp(((SkError*)t8)->__type, "Error.IncorrectType") == 0);
+    if (t13 != 0) {
+        goto L6_body;
+    } else {
+        goto L7;
+    }
+L6_body:
+    e = (IncorrectType*)t8;
+t14 = e->msg;
     sendln(t14);
-    return;
+    goto L4;
+L7:
+    t8 = t7.error;
+    sk_throw(t8);
+L4:
+    sendln("done");
+    return 0;
 }
 
 void sendln(sk_string msg) {

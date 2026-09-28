@@ -14,7 +14,7 @@ type CodeGenerator struct {
 func NewCodeGenerator(ir *IRProgram) *CodeGenerator {
 	cg := &CodeGenerator{
 		IR:       ir,
-		Includes: []string{"<stdio.h>", "<stdlib.h>", "<string.h>"},
+		Includes: []string{"<stdio.h>", "<stdlib.h>", "<string.h>", "<setjmp.h>"},
 	}
 	return cg
 }
@@ -211,6 +211,7 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("sk_string sk_array_to_string(sk_array* a) {")
 	cg.writeLine("    char* buf = malloc(1024);")
 	cg.writeLine("    strcpy(buf, \"[\");")
+	cg.writeLine("    char tmp[64];")
 	cg.writeLine("    for (int i = 0; i < a->length; i++) {")
 	cg.writeLine("        if (i > 0) strcat(buf, \", \");")
 	cg.writeLine("        void* elem = sk_array_get(a, i);")
@@ -218,24 +219,75 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("            sk_any* any = (sk_any*)elem;")
 	cg.writeLine("            char* s = any_to_string(*any);")
 	cg.writeLine("            strcat(buf, s);")
+	cg.writeLine("            free(s);")
 	cg.writeLine("        } else if (a->elem_type == 0) {")
-	cg.writeLine("            char tmp[32]; snprintf(tmp, 32, \"%d\", *(int*)elem); strcat(buf, tmp);")
+	cg.writeLine("            snprintf(tmp, 64, \"%d\", *(int*)elem); strcat(buf, tmp);")
 	cg.writeLine("        } else if (a->elem_type == 1) {")
 	cg.writeLine("            strcat(buf, *(sk_string*)elem);")
 	cg.writeLine("        } else if (a->elem_type == 2) {")
-	cg.writeLine("            char tmp[32]; snprintf(tmp, 32, \"%f\", *(float*)elem); strcat(buf, tmp);")
+	cg.writeLine("            snprintf(tmp, 64, \"%f\", *(float*)elem); strcat(buf, tmp);")
 	cg.writeLine("        } else if (a->elem_type == 3) {")
-	cg.writeLine("            char tmp[32]; snprintf(tmp, 32, \"%f\", *(double*)elem); strcat(buf, tmp);")
+	cg.writeLine("            snprintf(tmp, 64, \"%f\", *(double*)elem); strcat(buf, tmp);")
 	cg.writeLine("        } else if (a->elem_type == 4) {")
 	cg.writeLine("            strcat(buf, *(sk_bool*)elem ? \"true\" : \"false\");")
 	cg.writeLine("        } else if (a->elem_type == 6) {")
-	cg.writeLine("			  sk_array* nested = *(sk_array**)elem;")
-	cg.writeLine("			  char* s = sk_array_to_string(nested);")
-	cg.writeLine("			  strcat(buf, s);")
+	cg.writeLine("            sk_array* nested = *(sk_array**)elem;")
+	cg.writeLine("            char* s = sk_array_to_string(nested);")
+	cg.writeLine("            strcat(buf, s);")
+	cg.writeLine("            free(s);")
 	cg.writeLine("        }")
 	cg.writeLine("    }")
 	cg.writeLine("    strcat(buf, \"]\");")
 	cg.writeLine("    return buf;")
+	cg.writeLine("}")
+	cg.writeLine("")
+
+	// Error types
+	if len(cg.IR.ErrorDecls) > 0 {
+		cg.writeLine("// Error types")
+		cg.writeLine("typedef struct SkError {")
+		cg.writeLine("    const char* __type;")
+		cg.writeLine("    sk_string msg;")
+		cg.writeLine("} SkError;")
+		cg.writeLine("")
+
+		for _, decl := range cg.IR.ErrorDecls {
+			if decl.Name == "Error" {
+				continue
+			}
+			cg.writeLine(fmt.Sprintf("typedef struct %s {", decl.Name))
+			cg.writeLine("    const char* __type;")
+			// Все поля из цепочки наследования
+			fields := cg.collectErrorFields(decl)
+			for _, field := range fields {
+				cType := cg.typeToC(field.Type)
+				cg.writeLine(fmt.Sprintf("    %s %s;", cType, field.Name))
+			}
+			cg.writeLine(fmt.Sprintf("} %s;", decl.Name))
+			cg.writeLine("")
+		}
+	}
+
+	cg.writeLine("// Skorpion exception runtime")
+	cg.writeLine("typedef struct SkTryFrame {")
+	cg.writeLine("    jmp_buf env;")
+	cg.writeLine("    void* error;")
+	cg.writeLine("    struct SkTryFrame* prev;")
+	cg.writeLine("} SkTryFrame;")
+	cg.writeLine("")
+	cg.writeLine("SkTryFrame* sk_try_stack = NULL;")
+	cg.writeLine("")
+	cg.writeLine("void sk_throw(void* err) {")
+	cg.writeLine("    if (sk_try_stack == NULL) {")
+	cg.writeLine("        // Паника: печатаем и выходим")
+	cg.writeLine("        // err — указатель на структуру ошибки")
+	cg.writeLine("        // Первое поле — __type (const char*)")
+	cg.writeLine("        const char* __type = *(const char**)err;")
+	cg.writeLine("        fprintf(stderr, \"Panicked with error (%s)\\n\", __type);")
+	cg.writeLine("        exit(1);")
+	cg.writeLine("    }")
+	cg.writeLine("    sk_try_stack->error = err;")
+	cg.writeLine("    longjmp(sk_try_stack->env, 1);")
 	cg.writeLine("}")
 	cg.writeLine("")
 
@@ -365,20 +417,49 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 		cg.writeLine(fmt.Sprintf("%s%s %s = %s ? %s : %s;",
 			indent, ins.ReturnType, ins.Result, ins.Arg1, ins.Arg2, ins.Arg3))
 
-	case "typeof_any":
-		cg.writeLine(fmt.Sprintf("%ssk_string %s;", indent, ins.Result))
-		cg.writeLine(fmt.Sprintf("%schar buf[32];", indent))
-		cg.writeLine(fmt.Sprintf("%sswitch (%s.type) {", indent, ins.Arg1))
-		cg.writeLine(fmt.Sprintf("%s    case 0: strcpy(buf, \"int\"); break;", indent))
-		cg.writeLine(fmt.Sprintf("%s    case 1: strcpy(buf, \"string\"); break;", indent))
-		cg.writeLine(fmt.Sprintf("%s    case 2: strcpy(buf, \"float\"); break;", indent))
-		cg.writeLine(fmt.Sprintf("%s    case 3: strcpy(buf, \"double\"); break;", indent))
-		cg.writeLine(fmt.Sprintf("%s    case 4: strcpy(buf, \"bool\"); break;", indent))
-		cg.writeLine(fmt.Sprintf("%s    case 5: strcpy(buf, \"ptr\"); break;", indent))
-		cg.writeLine(fmt.Sprintf("%s    case 6: strcpy(buf, \"ptr\"); break;", indent))
-		cg.writeLine(fmt.Sprintf("%s    default: strcpy(buf, \"unknown\"); break;", indent))
+	case "throw":
+		cg.writeLine(fmt.Sprintf("%ssk_throw(%s);", indent, ins.Arg1))
+
+	case "try_push":
+		cg.writeLine(fmt.Sprintf("%s.prev = sk_try_stack;", ins.Result))
+		cg.writeLine(fmt.Sprintf("%ssk_try_stack = &%s;", indent, ins.Result))
+		cg.writeLine(fmt.Sprintf("%sif (setjmp(%s.env) != 0) {", indent, ins.Result))
+		cg.writeLine(fmt.Sprintf("%s    goto %s;", indent, ins.Arg1))
 		cg.writeLine(fmt.Sprintf("%s}", indent))
-		cg.writeLine(fmt.Sprintf("%s%s = strdup(buf);", indent, ins.Result))
+	case "try_pop":
+		cg.writeLine(fmt.Sprintf("%ssk_try_stack = %s.prev;", indent, ins.Arg1))
+	case "try_get_error":
+		cg.writeLine(fmt.Sprintf("%s%s = %s.error;", indent, ins.Result, ins.Arg1))
+	case "error_type_match":
+		cg.writeLine(fmt.Sprintf("%s%s = (strcmp(((SkError*)%s)->__type, %s) == 0);",
+			indent, ins.Result, ins.Arg1, ins.Arg2))
+	case "error_cast":
+		cg.writeLine(fmt.Sprintf("%s%s = (%s*)%s;", indent, ins.Result, ins.Arg2, ins.Arg1))
+	case "error_instance_create":
+		cg.writeLine(fmt.Sprintf("%s %s;", ins.Arg2, ins.Result))
+		cg.writeLine(fmt.Sprintf("%s.__type = %s;", ins.Result, ins.Arg1))
+	case "field_set":
+		cg.writeLine(fmt.Sprintf("%s.%s = %s;", ins.Result, ins.Arg1, ins.Arg2))
+	case "addr_of":
+		cg.writeLine(fmt.Sprintf("%s = &%s;", ins.Result, ins.Arg1))
+	case "field_access":
+		cg.writeLine(fmt.Sprintf("%s = %s->%s;", ins.Result, ins.Arg1, ins.Arg2))
+
+	case "typeof_any":
+		bufName := "buf_" + ins.Result
+		cg.writeLine(fmt.Sprintf("%ssk_string %s;", indent, ins.Result))
+		cg.writeLine(fmt.Sprintf("%schar %s[32];", indent, bufName))
+		cg.writeLine(fmt.Sprintf("%sswitch (%s.type) {", indent, ins.Arg1))
+		cg.writeLine(fmt.Sprintf("%s    case 0: strcpy(%s, \"int\"); break;", indent, bufName))
+		cg.writeLine(fmt.Sprintf("%s    case 1: strcpy(%s, \"string\"); break;", indent, bufName))
+		cg.writeLine(fmt.Sprintf("%s    case 2: strcpy(%s, \"float\"); break;", indent, bufName))
+		cg.writeLine(fmt.Sprintf("%s    case 3: strcpy(%s, \"double\"); break;", indent, bufName))
+		cg.writeLine(fmt.Sprintf("%s    case 4: strcpy(%s, \"bool\"); break;", indent, bufName))
+		cg.writeLine(fmt.Sprintf("%s    case 5: strcpy(%s, \"ptr\"); break;", indent, bufName))
+		cg.writeLine(fmt.Sprintf("%s    case 6: strcpy(%s, \"ptr\"); break;", indent, bufName))
+		cg.writeLine(fmt.Sprintf("%s    default: strcpy(%s, \"unknown\"); break;", indent, bufName))
+		cg.writeLine(fmt.Sprintf("%s}", indent))
+		cg.writeLine(fmt.Sprintf("%s%s = strdup(%s);", indent, ins.Result, bufName))
 
 	case "comment":
 		cg.writeLine(fmt.Sprintf("%s%s", indent, ins.Arg1))
@@ -508,7 +589,11 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 		}
 
 	case "if":
-		cg.writeLine(fmt.Sprintf("%sif %s {", indent, ins.Result))
+		cond := ins.Result
+		if !strings.HasPrefix(cond, "(") {
+			cond = "(" + cond + " != 0)"
+		}
+		cg.writeLine(fmt.Sprintf("%sif %s {", indent, cond))
 		cg.writeLine(fmt.Sprintf("%s    goto %s;", indent, ins.Arg1))
 		cg.writeLine(fmt.Sprintf("%s} else {", indent))
 		cg.writeLine(fmt.Sprintf("%s    goto %s;", indent, ins.Arg2))
@@ -596,4 +681,42 @@ func isTempVar(name string) bool {
 		}
 	}
 	return true
+}
+
+func (cg *CodeGenerator) collectErrorFields(decl IRErrorDecl) []IRErrorField {
+	fields := []IRErrorField{}
+	seen := make(map[string]bool)
+
+	// Идём по цепочке
+	current := decl
+	for {
+		for _, field := range current.Fields {
+			if !seen[field.Name] {
+				fields = append(fields, field)
+				seen[field.Name] = true
+			}
+		}
+		if current.Parent == "" || current.Parent == "Error" {
+			break
+		}
+		// Ищем родителя
+		found := false
+		for _, d := range cg.IR.ErrorDecls {
+			if d.Name == current.Parent {
+				current = d
+				found = true
+				break
+			}
+		}
+		if !found {
+			break
+		}
+	}
+
+	// msg всегда первым (из Error)
+	if !seen["msg"] {
+		fields = append([]IRErrorField{{Name: "msg", Type: "string"}}, fields...)
+	}
+
+	return fields
 }

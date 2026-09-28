@@ -32,6 +32,22 @@ func (p *Pipeline) Process() *IRProgram {
 		})
 	}
 
+	// Обрабатываем ErrorDecls
+	for _, decl := range p.Program.ErrorDecls {
+		irDecl := IRErrorDecl{
+			Name:   decl.Name,
+			Parent: decl.Parent,
+			Fields: []IRErrorField{},
+		}
+		for _, field := range decl.Fields {
+			irDecl.Fields = append(irDecl.Fields, IRErrorField{
+				Name: field.Name,
+				Type: field.Type,
+			})
+		}
+		p.IR.ErrorDecls = append(p.IR.ErrorDecls, irDecl)
+	}
+
 	processed := make(map[string]bool)
 	for _, fn := range p.Program.Functions {
 		if processed[fn.Name] {
@@ -99,6 +115,14 @@ func (p *Pipeline) processNode(node front.Node, irFn *IRFunction) {
 		p.processBinary(n, irFn)
 	case *front.UnaryExpr:
 		p.processUnary(n, irFn)
+	case *front.ThrowStmt:
+		p.processThrow(n, irFn)
+	case *front.TryStmt:
+		p.processTry(n, irFn)
+	case *front.FieldAccess:
+		p.processFieldAccess(n, irFn)
+	case *front.ErrorInstance:
+		p.processErrorInstance(n, irFn)
 	case *front.TernaryExpr:
 		p.processTernary(n, irFn)
 	case *front.ReturnStmt:
@@ -131,6 +155,185 @@ func (p *Pipeline) processNode(node front.Node, irFn *IRFunction) {
 	}
 }
 
+func (p *Pipeline) processFieldAccess(fa *front.FieldAccess, irFn *IRFunction) string {
+	fieldType := "int"
+
+	// Ищем тип поля в ErrorDecls
+	for _, decl := range p.Program.ErrorDecls {
+		if decl.Name == fa.Object {
+			for _, f := range decl.Fields {
+				if f.Name == fa.Field {
+					fieldType = f.Type
+					break
+				}
+			}
+		}
+	}
+
+	// Встроенный Error.msg
+	if fa.Field == "msg" {
+		fieldType = "string"
+	}
+
+	result := p.newTemp()
+	cType := p.typeToC(fieldType)
+	irFn.Locals = append(irFn.Locals, cType+" "+result)
+
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:         "field_access",
+		Result:     result,
+		Arg1:       fa.Object,
+		Arg2:       fa.Field,
+		ReturnType: cType,
+	})
+
+	return result
+}
+
+func (p *Pipeline) processTry(try *front.TryStmt, irFn *IRFunction) {
+	endLabel := p.newLabel()
+	finallyLabel := p.newLabel()
+
+	catchLabels := make([]string, len(try.Catches))
+	nextCatchLabels := make([]string, len(try.Catches))
+	for i := range try.Catches {
+		catchLabels[i] = p.newLabel()
+		nextCatchLabels[i] = p.newLabel()
+	}
+
+	frameVar := p.newTemp()
+	irFn.Locals = append(irFn.Locals, "SkTryFrame "+frameVar)
+	errorVar := p.newTemp()
+	irFn.Locals = append(irFn.Locals, "void* "+errorVar)
+
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:     "try_push",
+		Result: frameVar,
+		Arg1:   catchLabels[0],
+	})
+
+	p.processBlock(try.Body, irFn)
+
+	if try.Finally != nil {
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "goto",
+			Result: finallyLabel,
+		})
+	} else {
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "goto",
+			Result: endLabel,
+		})
+	}
+
+	for i, clause := range try.Catches {
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "label",
+			Result: catchLabels[i],
+		})
+
+		// POP — восстанавливаем стек до rethrow
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:   "try_pop",
+			Arg1: frameVar,
+		})
+
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "try_get_error",
+			Result: errorVar,
+			Arg1:   frameVar,
+		})
+
+		if clause.TypeName != "" && clause.TypeName != "Error" {
+			typeCheckVar := p.newTemp()
+			irFn.Locals = append(irFn.Locals, "int "+typeCheckVar)
+
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:         "error_type_match",
+				Result:     typeCheckVar,
+				Arg1:       errorVar,
+				Arg2:       fmt.Sprintf(`"Error.%s"`, clause.TypeName),
+				ReturnType: "int",
+			})
+
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:     "if",
+				Result: typeCheckVar,
+				Arg1:   catchLabels[i] + "_body",
+				Arg2:   nextCatchLabels[i],
+			})
+
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:     "label",
+				Result: catchLabels[i] + "_body",
+			})
+		}
+
+		if clause.VarName != "" {
+			typeName := clause.TypeName
+			if typeName == "" {
+				typeName = "Error"
+			}
+			irFn.Locals = append(irFn.Locals, typeName+"* "+clause.VarName)
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:     "error_cast",
+				Result: clause.VarName,
+				Arg1:   errorVar,
+				Arg2:   typeName,
+			})
+		}
+
+		p.processBlock(clause.Body, irFn)
+
+		if try.Finally != nil {
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:     "goto",
+				Result: finallyLabel,
+			})
+		} else {
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:     "goto",
+				Result: endLabel,
+			})
+		}
+
+		if clause.TypeName != "" && clause.TypeName != "Error" {
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:     "label",
+				Result: nextCatchLabels[i],
+			})
+		}
+	}
+
+	lastIsCatchAll := len(try.Catches) > 0 && (try.Catches[len(try.Catches)-1].TypeName == "" || try.Catches[len(try.Catches)-1].TypeName == "Error")
+	if !lastIsCatchAll {
+		// Ни один catch не сработал — rethrow
+		// try_pop уже сделан, стек чист
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "try_get_error",
+			Result: errorVar,
+			Arg1:   frameVar,
+		})
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:   "throw",
+			Arg1: errorVar,
+		})
+	}
+
+	if try.Finally != nil {
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "label",
+			Result: finallyLabel,
+		})
+		p.processBlock(try.Finally, irFn)
+	}
+
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:     "label",
+		Result: endLabel,
+	})
+}
+
 func (p *Pipeline) processTypeOf(typeOf *front.TypeOf, irFn *IRFunction) string {
 	exprType := p.getExprType(typeOf.Expr, irFn)
 	expr := p.processExpression(typeOf.Expr, irFn)
@@ -155,6 +358,44 @@ func (p *Pipeline) processTypeOf(typeOf *front.TypeOf, irFn *IRFunction) string 
 	}
 
 	return result
+}
+
+func (p *Pipeline) processErrorInstance(inst *front.ErrorInstance, irFn *IRFunction) string {
+	result := p.newTemp()
+	irFn.Locals = append(irFn.Locals, inst.TypeName+"* "+result)
+
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:     "error_instance_create",
+		Result: result + "_val",
+		Arg1:   fmt.Sprintf(`"Error.%s"`, inst.TypeName),
+		Arg2:   inst.TypeName,
+	})
+
+	for fieldName, value := range inst.Fields {
+		val := p.processExpression(value, irFn)
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "field_set",
+			Result: result + "_val",
+			Arg1:   fieldName,
+			Arg2:   val,
+		})
+	}
+
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:     "addr_of",
+		Result: result,
+		Arg1:   result + "_val",
+	})
+
+	return result
+}
+
+func (p *Pipeline) processThrow(throw *front.ThrowStmt, irFn *IRFunction) {
+	expr := p.processExpression(throw.Expr, irFn)
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:   "throw",
+		Arg1: expr,
+	})
 }
 
 func (p *Pipeline) processUnary(unary *front.UnaryExpr, irFn *IRFunction) string {
@@ -512,6 +753,10 @@ func (p *Pipeline) processExpression(expr front.Node, irFn *IRFunction) string {
 		return fmt.Sprintf(`"%s"`, n.Value)
 	case *front.Ident:
 		return n.Name
+	case *front.ErrorInstance:
+		return p.processErrorInstance(n, irFn)
+	case *front.FieldAccess:
+		return p.processFieldAccess(n, irFn)
 	case *front.BinaryExpr:
 		return p.processBinary(n, irFn)
 	case *front.TernaryExpr:
@@ -1460,6 +1705,15 @@ func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 		return "int"
 	case *front.String:
 		return "string"
+	case *front.ErrorInstance:
+		return n.TypeName
+	case *front.FieldAccess:
+		// Ищем тип поля в ErrorTypes
+		// Пока — просто возвращаем "string" для msg, "int" для остальных
+		if n.Field == "msg" {
+			return "string"
+		}
+		return "int"
 	case *front.Ident:
 		// true/false — bool
 		if n.Name == "true" || n.Name == "false" {
