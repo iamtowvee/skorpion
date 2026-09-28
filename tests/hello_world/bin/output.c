@@ -209,11 +209,16 @@ typedef struct SkError {
     sk_string msg;
 } SkError;
 
-typedef struct IncorrectType {
+typedef struct BaseError {
+    const char* __type;
+    sk_string msg;
+} BaseError;
+
+typedef struct SpecificError {
     const char* __type;
     sk_string msg;
     int code;
-} IncorrectType;
+} SpecificError;
 
 // Skorpion exception runtime
 typedef struct SkTryFrame {
@@ -237,103 +242,57 @@ void sk_throw(void* err) {
     longjmp(sk_try_stack->env, 1);
 }
 
+int sk_error_type_match(const char* actual, const char* expected) {
+    size_t len = strlen(expected);
+    if (strncmp(actual, expected, len) != 0) return 0;
+    return actual[len] == '\0' || actual[len] == '.';
+}
+
 // Function prototypes
-int some(sk_any a, sk_any b);
 void sendln(sk_string msg);
 void sendf(sk_string msg);
 sk_string input(sk_string prompt);
 
-int some(sk_any a, sk_any b) {
-    IncorrectType* t3;
-
-    sk_string t1;
-    char buf_t1[32];
-    switch (a.type) {
-        case 0: strcpy(buf_t1, "int"); break;
-        case 1: strcpy(buf_t1, "string"); break;
-        case 2: strcpy(buf_t1, "float"); break;
-        case 3: strcpy(buf_t1, "double"); break;
-        case 4: strcpy(buf_t1, "bool"); break;
-        case 5: strcpy(buf_t1, "ptr"); break;
-        case 6: strcpy(buf_t1, "ptr"); break;
-        default: strcpy(buf_t1, "unknown"); break;
-    }
-    t1 = strdup(buf_t1);
-    sk_string t2;
-    char buf_t2[32];
-    switch (b.type) {
-        case 0: strcpy(buf_t2, "int"); break;
-        case 1: strcpy(buf_t2, "string"); break;
-        case 2: strcpy(buf_t2, "float"); break;
-        case 3: strcpy(buf_t2, "double"); break;
-        case 4: strcpy(buf_t2, "bool"); break;
-        case 5: strcpy(buf_t2, "ptr"); break;
-        case 6: strcpy(buf_t2, "ptr"); break;
-        default: strcpy(buf_t2, "unknown"); break;
-    }
-    t2 = strdup(buf_t2);
-    if ((t1 != "int") || (t2 != "int")) {
-        goto L1;
-    } else {
-        goto L2;
-    }
-L1:
-IncorrectType t3_val;
-t3_val.__type = "Error.IncorrectType";
-t3_val.msg = "Incorrect type";
-t3_val.code = 502;
-t3 = &t3_val;
-    sk_throw(t3);
-    goto L3;
-L2:
-L3:
-    int t4 = any_to_int(a);
-    int t5 = any_to_int(b);
-    int t6 = t4 + t5;
-    return t6;
-}
-
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
-    SkTryFrame t7;
-    void* t8;
-    int x;
-    int t13;
-    IncorrectType* e;
-    sk_string t14;
+    SkTryFrame t1;
+    void* t2;
+    SpecificError* t3;
+    int t4;
+    BaseError* e;
+    sk_string t5;
 
-t7.prev = sk_try_stack;
-    sk_try_stack = &t7;
-    if (setjmp(t7.env) != 0) {
-        goto L6;
+t1.prev = sk_try_stack;
+    sk_try_stack = &t1;
+    if (setjmp(t1.env) != 0) {
+        goto L3;
     }
-    sk_any t9 = any_int(3);
-    sk_any t10 = any_string("a");
-    int t11 = some(t9, t10);
-    x = t11;
-    char t12[32];
-    snprintf(t12, 32, "%d", x);
-    sendln(t12);
-    goto L4;
-L6:
-    sk_try_stack = t7.prev;
-    t8 = t7.error;
-    t13 = (strcmp(((SkError*)t8)->__type, "Error.IncorrectType") == 0);
-    if (t13 != 0) {
-        goto L6_body;
+SpecificError t3_val;
+t3_val.__type = "Error.BaseError.SpecificError";
+t3_val.msg = "specific";
+t3_val.code = 502;
+t3 = &t3_val;
+    sk_throw(t3);
+    goto L1;
+L3:
+    sk_try_stack = t1.prev;
+    t2 = t1.error;
+    t4 = sk_error_type_match(((SkError*)t2)->__type, "Error.BaseError");
+    if (t4 != 0) {
+        goto L3_body;
     } else {
-        goto L7;
+        goto L4;
     }
-L6_body:
-    e = (IncorrectType*)t8;
-t14 = e->msg;
-    sendln(t14);
-    goto L4;
-L7:
-    t8 = t7.error;
-    sk_throw(t8);
+L3_body:
+    e = (BaseError*)t2;
+t5 = e->msg;
+    sendln(t5);
+    goto L1;
 L4:
+    t2 = t1.error;
+    sk_throw(t2);
+L1:
     sendln("done");
     return 0;
 }

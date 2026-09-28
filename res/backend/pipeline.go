@@ -12,6 +12,7 @@ type Pipeline struct {
 	IR           *IRProgram
 	TempCounter  int
 	LabelCounter int
+	TryFrames    []string
 }
 
 func NewPipeline(prog *front.Program) *Pipeline {
@@ -20,6 +21,7 @@ func NewPipeline(prog *front.Program) *Pipeline {
 		IR:           &IRProgram{Functions: []IRFunction{}, Globals: []IRGlobal{}, Imports: []IRImport{}},
 		TempCounter:  0,
 		LabelCounter: 0,
+		TryFrames:    []string{},
 	}
 }
 
@@ -81,6 +83,9 @@ func (p *Pipeline) processFunction(fn *front.Function) {
 		})
 	}
 
+	// Сброс состояния try для каждой функции
+	p.TryFrames = []string{}
+
 	if fn.Body != nil {
 		p.processBlock(fn.Body, &irFn)
 	}
@@ -88,6 +93,13 @@ func (p *Pipeline) processFunction(fn *front.Function) {
 	if fn.ReturnType == "void" && len(irFn.Instructions) > 0 {
 		lastIns := irFn.Instructions[len(irFn.Instructions)-1]
 		if lastIns.Op != "ret" {
+			// Закрываем все активные try-фреймы перед неявным return
+			for i := len(p.TryFrames) - 1; i >= 0; i-- {
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op:   "try_pop",
+					Arg1: p.TryFrames[i],
+				})
+			}
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op: "ret",
 			})
@@ -206,6 +218,9 @@ func (p *Pipeline) processTry(try *front.TryStmt, irFn *IRFunction) {
 	errorVar := p.newTemp()
 	irFn.Locals = append(irFn.Locals, "void* "+errorVar)
 
+	// Регистрируем frame как активный
+	p.TryFrames = append(p.TryFrames, frameVar)
+
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:     "try_push",
 		Result: frameVar,
@@ -226,6 +241,8 @@ func (p *Pipeline) processTry(try *front.TryStmt, irFn *IRFunction) {
 		})
 	}
 
+	framePopped := false
+
 	for i, clause := range try.Catches {
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:     "label",
@@ -237,6 +254,13 @@ func (p *Pipeline) processTry(try *front.TryStmt, irFn *IRFunction) {
 			Op:   "try_pop",
 			Arg1: frameVar,
 		})
+		// Убираем frame из активных (только один раз — при первом catch)
+		if !framePopped {
+			if len(p.TryFrames) > 0 && p.TryFrames[len(p.TryFrames)-1] == frameVar {
+				p.TryFrames = p.TryFrames[:len(p.TryFrames)-1]
+			}
+			framePopped = true
+		}
 
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:     "try_get_error",
@@ -252,7 +276,7 @@ func (p *Pipeline) processTry(try *front.TryStmt, irFn *IRFunction) {
 				Op:         "error_type_match",
 				Result:     typeCheckVar,
 				Arg1:       errorVar,
-				Arg2:       fmt.Sprintf(`"Error.%s"`, clause.TypeName),
+				Arg2:       fmt.Sprintf(`"%s"`, p.fullErrorTypePath(clause.TypeName)),
 				ReturnType: "int",
 			})
 
@@ -308,7 +332,7 @@ func (p *Pipeline) processTry(try *front.TryStmt, irFn *IRFunction) {
 	lastIsCatchAll := len(try.Catches) > 0 && (try.Catches[len(try.Catches)-1].TypeName == "" || try.Catches[len(try.Catches)-1].TypeName == "Error")
 	if !lastIsCatchAll {
 		// Ни один catch не сработал — rethrow
-		// try_pop уже сделан, стек чист
+		// try_pop уже сделан в первом catch
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:     "try_get_error",
 			Result: errorVar,
@@ -317,6 +341,18 @@ func (p *Pipeline) processTry(try *front.TryStmt, irFn *IRFunction) {
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:   "throw",
 			Arg1: errorVar,
+		})
+	}
+
+	// Если ни один catch не выполнялся (нет try_pop), убираем frame из активных
+	if !framePopped {
+		if len(p.TryFrames) > 0 && p.TryFrames[len(p.TryFrames)-1] == frameVar {
+			p.TryFrames = p.TryFrames[:len(p.TryFrames)-1]
+		}
+		// И генерируем try_pop, если уходим через endLabel без catch
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:   "try_pop",
+			Arg1: frameVar,
 		})
 	}
 
@@ -367,7 +403,7 @@ func (p *Pipeline) processErrorInstance(inst *front.ErrorInstance, irFn *IRFunct
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:     "error_instance_create",
 		Result: result + "_val",
-		Arg1:   fmt.Sprintf(`"Error.%s"`, inst.TypeName),
+		Arg1:   fmt.Sprintf(`"%s"`, p.fullErrorTypePath(inst.TypeName)),
 		Arg2:   inst.TypeName,
 	})
 
@@ -388,6 +424,45 @@ func (p *Pipeline) processErrorInstance(inst *front.ErrorInstance, irFn *IRFunct
 	})
 
 	return result
+}
+
+func (p *Pipeline) fullErrorTypePath(typeName string) string {
+	if typeName == "Error" {
+		return "Error"
+	}
+
+	// Строим путь от корня
+	var decl *front.ErrorDecl
+	for _, d := range p.Program.ErrorDecls {
+		if d.Name == typeName {
+			decl = d
+			break
+		}
+	}
+	if decl == nil {
+		return "Error." + typeName
+	}
+
+	// Собираем цепочку имён
+	path := []string{typeName}
+	parent := decl.Parent
+	for parent != "" && parent != "Error" {
+		path = append([]string{parent}, path...)
+
+		var parentDecl *front.ErrorDecl
+		for _, d := range p.Program.ErrorDecls {
+			if d.Name == parent {
+				parentDecl = d
+				break
+			}
+		}
+		if parentDecl == nil {
+			break
+		}
+		parent = parentDecl.Parent
+	}
+
+	return "Error." + strings.Join(path, ".")
 }
 
 func (p *Pipeline) processThrow(throw *front.ThrowStmt, irFn *IRFunction) {
@@ -800,8 +875,20 @@ func (p *Pipeline) processExpression(expr front.Node, irFn *IRFunction) string {
 }
 
 func (p *Pipeline) processReturn(ret *front.ReturnStmt, irFn *IRFunction) {
+	exprResult := ""
 	if ret.Expr != nil {
-		exprResult := p.processExpression(ret.Expr, irFn)
+		exprResult = p.processExpression(ret.Expr, irFn)
+	}
+
+	// Закрываем все активные try-фреймы перед return
+	for i := len(p.TryFrames) - 1; i >= 0; i-- {
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:   "try_pop",
+			Arg1: p.TryFrames[i],
+		})
+	}
+
+	if exprResult != "" {
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:   "ret",
 			Arg1: exprResult,

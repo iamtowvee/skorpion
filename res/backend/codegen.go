@@ -291,6 +291,13 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("}")
 	cg.writeLine("")
 
+	cg.writeLine("int sk_error_type_match(const char* actual, const char* expected) {")
+	cg.writeLine("    size_t len = strlen(expected);")
+	cg.writeLine("    if (strncmp(actual, expected, len) != 0) return 0;")
+	cg.writeLine("    return actual[len] == '\\0' || actual[len] == '.';")
+	cg.writeLine("}")
+	cg.writeLine("")
+
 	// ===== Function prototypes =====
 	cg.writeLine("// Function prototypes")
 	for _, fn := range cg.IR.Functions {
@@ -431,7 +438,7 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 	case "try_get_error":
 		cg.writeLine(fmt.Sprintf("%s%s = %s.error;", indent, ins.Result, ins.Arg1))
 	case "error_type_match":
-		cg.writeLine(fmt.Sprintf("%s%s = (strcmp(((SkError*)%s)->__type, %s) == 0);",
+		cg.writeLine(fmt.Sprintf("%s%s = sk_error_type_match(((SkError*)%s)->__type, %s);",
 			indent, ins.Result, ins.Arg1, ins.Arg2))
 	case "error_cast":
 		cg.writeLine(fmt.Sprintf("%s%s = (%s*)%s;", indent, ins.Result, ins.Arg2, ins.Arg1))
