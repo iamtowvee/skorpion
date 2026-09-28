@@ -1,16 +1,17 @@
-void sendln(string msg) {
+/* ------------------------------------
+                std/io
+    ---------------------------------
+      SPDX-License-Identifier: MIT
+      Copyrights (c) 2026 iamtowvee
+  ------------------------------------- */
+
+void *__sk__std_io_send(string line) {
     includeC ```
-        printf("%s\n", msg);
+        printf("%s", line);
     ```
 }
 
-void sendf(string msg) {
-    includeC ```
-        printf("%s", msg);
-    ```
-}
-
-string input(string prompt = "") {
+string *__sk__std_io_input(string prompt = "") {
     includeC ```
         printf("%s", prompt);
         char buffer[256];
@@ -21,4 +22,16 @@ string input(string prompt = "") {
         }
         return strdup(buffer);
     ```
+}
+
+void sendln(any msg) {
+    __sk__std_io_send($msg + "\n")
+}
+
+void sendf(any msg) {
+    __sk__std_io_send($msg)
+}
+
+void input(string prefix = "") {
+    __sk__std_io_input(prefix)
 }
