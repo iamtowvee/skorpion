@@ -9,5 +9,6 @@ void main(arr args) {
     } catch (BaseError as e) {
         sendln(e.msg)   // должно вывести "specific"
     }
+    throw SpecificError{msg: "specific", code: 502}
     sendln("done")
 }

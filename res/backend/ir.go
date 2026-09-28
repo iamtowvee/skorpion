@@ -12,6 +12,8 @@ type IRInstruction struct {
 	Arg2       string
 	Arg3       string
 	ReturnType string
+	Line       int
+	Column     int
 	Metadata   map[string]interface{}
 }
 
@@ -19,6 +21,7 @@ type IRFunction struct {
 	Name           string
 	ReturnType     string
 	IsExport       bool
+	File           string
 	Params         []IRParam
 	Locals         []string
 	ArrayElemTypes map[string]string

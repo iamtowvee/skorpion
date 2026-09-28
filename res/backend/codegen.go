@@ -272,21 +272,24 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("typedef struct SkTryFrame {")
 	cg.writeLine("    jmp_buf env;")
 	cg.writeLine("    void* error;")
+	cg.writeLine("    const char* file;")
+	cg.writeLine("    int line;")
+	cg.writeLine("    int col;")
 	cg.writeLine("    struct SkTryFrame* prev;")
 	cg.writeLine("} SkTryFrame;")
 	cg.writeLine("")
 	cg.writeLine("SkTryFrame* sk_try_stack = NULL;")
 	cg.writeLine("")
-	cg.writeLine("void sk_throw(void* err) {")
+	cg.writeLine("void sk_throw(void* err, const char* file, int line, int col) {")
 	cg.writeLine("    if (sk_try_stack == NULL) {")
-	cg.writeLine("        // Паника: печатаем и выходим")
-	cg.writeLine("        // err — указатель на структуру ошибки")
-	cg.writeLine("        // Первое поле — __type (const char*)")
 	cg.writeLine("        const char* __type = *(const char**)err;")
-	cg.writeLine("        fprintf(stderr, \"Panicked with error (%s)\\n\", __type);")
+	cg.writeLine("        fprintf(stderr, \"Panicked with error (%s) at %s:%d:%d\\n\", __type, file, line, col);")
 	cg.writeLine("        exit(1);")
 	cg.writeLine("    }")
 	cg.writeLine("    sk_try_stack->error = err;")
+	cg.writeLine("    sk_try_stack->file = file;")
+	cg.writeLine("    sk_try_stack->line = line;")
+	cg.writeLine("    sk_try_stack->col = col;")
 	cg.writeLine("    longjmp(sk_try_stack->env, 1);")
 	cg.writeLine("}")
 	cg.writeLine("")
@@ -425,7 +428,12 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 			indent, ins.ReturnType, ins.Result, ins.Arg1, ins.Arg2, ins.Arg3))
 
 	case "throw":
-		cg.writeLine(fmt.Sprintf("%ssk_throw(%s);", indent, ins.Arg1))
+		fileArg := ins.Arg2
+		if fileArg == "" {
+			fileArg = `"<unknown>"`
+		}
+		cg.writeLine(fmt.Sprintf("%ssk_throw(%s, %s, %d, %d);",
+			indent, ins.Arg1, fileArg, ins.Line, ins.Column))
 
 	case "try_push":
 		cg.writeLine(fmt.Sprintf("%s.prev = sk_try_stack;", ins.Result))

@@ -70,6 +70,7 @@ func (p *Pipeline) processFunction(fn *front.Function) {
 		Name:           fn.Name,
 		ReturnType:     fn.ReturnType,
 		IsExport:       fn.IsExport,
+		File:           fn.File,
 		Params:         []IRParam{},
 		Locals:         []string{},
 		Instructions:   []IRInstruction{},
@@ -83,7 +84,6 @@ func (p *Pipeline) processFunction(fn *front.Function) {
 		})
 	}
 
-	// Сброс состояния try для каждой функции
 	p.TryFrames = []string{}
 
 	if fn.Body != nil {
@@ -93,7 +93,6 @@ func (p *Pipeline) processFunction(fn *front.Function) {
 	if fn.ReturnType == "void" && len(irFn.Instructions) > 0 {
 		lastIns := irFn.Instructions[len(irFn.Instructions)-1]
 		if lastIns.Op != "ret" {
-			// Закрываем все активные try-фреймы перед неявным return
 			for i := len(p.TryFrames) - 1; i >= 0; i-- {
 				irFn.Instructions = append(irFn.Instructions, IRInstruction{
 					Op:   "try_pop",
@@ -332,15 +331,18 @@ func (p *Pipeline) processTry(try *front.TryStmt, irFn *IRFunction) {
 	lastIsCatchAll := len(try.Catches) > 0 && (try.Catches[len(try.Catches)-1].TypeName == "" || try.Catches[len(try.Catches)-1].TypeName == "Error")
 	if !lastIsCatchAll {
 		// Ни один catch не сработал — rethrow
-		// try_pop уже сделан в первом catch
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:     "try_get_error",
 			Result: errorVar,
 			Arg1:   frameVar,
 		})
+		// Rethrow с сохранением позиции оригинала — упрощённо, с текущей позицией
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:   "throw",
-			Arg1: errorVar,
+			Op:     "throw",
+			Arg1:   errorVar,
+			Arg2:   fmt.Sprintf(`"%s"`, irFn.File),
+			Line:   try.GetLine(),
+			Column: try.GetColumn(),
 		})
 	}
 
@@ -467,9 +469,18 @@ func (p *Pipeline) fullErrorTypePath(typeName string) string {
 
 func (p *Pipeline) processThrow(throw *front.ThrowStmt, irFn *IRFunction) {
 	expr := p.processExpression(throw.Expr, irFn)
+
+	fileName := irFn.File
+	if fileName == "" {
+		fileName = "<unknown>"
+	}
+
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
-		Op:   "throw",
-		Arg1: expr,
+		Op:     "throw",
+		Arg1:   expr,
+		Arg2:   fmt.Sprintf(`"%s"`, fileName),
+		Line:   throw.GetLine(),
+		Column: throw.GetColumn(),
 	})
 }
 
