@@ -4,3 +4,15 @@
       SPDX-License-Identifier: MIT
       Copyrights (c) 2026 iamtowvee
   ------------------------------------- */
+
+string getEnv(string env) {
+  includeC ```
+    return getenv(env);
+  ```
+}
+
+void setEnv(string env, string val) {
+  includeC ```
+    setenv(env, val);
+  ```
+}
