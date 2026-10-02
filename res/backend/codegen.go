@@ -638,7 +638,7 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 		cg.writeLine(fmt.Sprintf("%ssk_try_register((void**)&%s, %s);",
 			indent, ins.Result, ins.Arg1))
 	case "error_type_match":
-		cg.writeLine(fmt.Sprintf("%s%s = sk_error_type_match(((SkError*)%s)->__type, %s);",
+		cg.writeLine(fmt.Sprintf("%s%s = sk_bool_new(sk_error_type_match(((SkError*)%s)->__type, %s));",
 			indent, ins.Result, ins.Arg1, ins.Arg2))
 	case "error_cast":
 		cg.writeLine(fmt.Sprintf("%s%s = (%s*)%s;", indent, ins.Result, ins.Arg2, ins.Arg1))

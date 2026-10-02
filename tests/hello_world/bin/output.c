@@ -312,6 +312,16 @@ sk_string sk_array_to_string(sk_array* a) {
     return sk_string_new_take(buf);
 }
 
+typedef struct SkError {
+    const char* __type;
+    sk_string msg;
+} SkError;
+
+typedef struct MyError {
+    const char* __type;
+    sk_string msg;
+} MyError;
+
 typedef struct SkCleanup {
     void** ptr;
     int type;
@@ -404,79 +414,63 @@ int sk_error_type_match(const char* actual, const char* expected) {
 }
 
 // Function prototypes
-sk_string getEnv(sk_string env);
-void setEnv(sk_string env, sk_string val);
-void setClearEnv(sk_string env, sk_string val, sk_bool confirm);
+void f(void);
 void __sk__std_io_send(sk_string line);
 sk_string __sk__std_io_input(sk_string prompt);
 void sendln(sk_any msg);
 void sendf(sk_any msg);
 sk_string input(sk_string prefix);
 
+void f(void) {
+    MyError* t1;
+
+t1 = malloc(sizeof(MyError));
+t1->__type = "Error.MyError";
+t1->msg = sk_string_new("boom");
+    sk_throw(t1, "main.sk", 8, 5);
+    return;
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
-    sk_string t1;
-    sk_any t2;
-    sk_string t3;
-    sk_any t4;
+    SkTryFrame t2;
+    void* t3;
+    sk_bool t4;
+    MyError* e;
     sk_string t5;
     sk_any t6;
+    sk_any t7;
 
-    setEnv(sk_string_new("MY_VAR"), sk_string_new("first"));
-    t1 = getEnv(sk_string_new("MY_VAR"));
-    t2 = any_string(t1);
-    sendln(t2);
-    setClearEnv(sk_string_new("MY_VAR"), sk_string_new("second"), sk_bool_new(0));
-    t3 = getEnv(sk_string_new("MY_VAR"));
-    t4 = any_string(t3);
-    sendln(t4);
-    setClearEnv(sk_string_new("MY_VAR"), sk_string_new("third"), sk_bool_new(1));
-    t5 = getEnv(sk_string_new("MY_VAR"));
-    t6 = any_string(t5);
-    sendln(t6);
-    return 0;
-}
-
-sk_string getEnv(sk_string env) {
-    if (env.__is_null) return sk_string_new("");
-        char* val = getenv(env.value);
-        return sk_string_new(val ? val : "");
-}
-
-void setEnv(sk_string env, sk_string val) {
-    if (env.__is_null || val.__is_null) return;
-        #if defined(_WIN32)
-            if (getenv(env.value) == NULL) {
-                _putenv_s(env.value, val.value);
-            }
-        #elif defined(__linux__)
-            setenv(env.value, val.value, 0);
-        #endif
-    return;
-}
-
-void setClearEnv(sk_string env, sk_string val, sk_bool confirm) {
-    sk_bool t7;
-
-    t7 = sk_bool_not(confirm);
-    if (t7.value) {
-        goto L1;
-    } else {
+    sk_try_push(&t2);
+    if (setjmp(sk_try_stack->env) != 0) {
         goto L2;
     }
-L1:
-    return;
-    goto L3;
+    f();
+    goto L1;
 L2:
+    sk_try_pop(&t2);
+    t3 = t2.error;
+    t4 = sk_bool_new(sk_error_type_match(((SkError*)t3)->__type, "Error.MyError"));
+    if (t4.value) {
+        goto L2_body;
+    } else {
+        goto L3;
+    }
+L2_body:
+    e = (MyError*)t3;
+t5 = e->msg;
+    t6 = any_string(t5);
+    sendln(t6);
+    sk_error_free(t3);
+    goto L1;
 L3:
-    if (env.__is_null || val.__is_null) return;
-        #if defined(_WIN32)
-            _putenv_s(env.value, val.value);
-        #elif defined(__linux__)
-            setenv(env.value, val.value, 1);
-        #endif
-    return;
+    t3 = t2.error;
+    sk_throw(t3, "main.sk", 12, 5);
+L1:
+    t7 = any_string(sk_string_new("done"));
+    sendln(t7);
+    return 0;
 }
 
 void __sk__std_io_send(sk_string line) {

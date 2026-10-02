@@ -293,14 +293,14 @@ func (p *Pipeline) processTry(try *front.TryStmt, irFn *IRFunction) {
 
 		if clause.TypeName != "" && clause.TypeName != "Error" {
 			typeCheckVar := p.newTemp()
-			irFn.Locals = append(irFn.Locals, "int "+typeCheckVar)
+			irFn.Locals = append(irFn.Locals, "sk_bool "+typeCheckVar) // было "int"
 
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op:         "error_type_match",
 				Result:     typeCheckVar,
 				Arg1:       errorVar,
 				Arg2:       fmt.Sprintf(`"%s"`, p.fullErrorTypePath(clause.TypeName)),
-				ReturnType: "int",
+				ReturnType: "sk_bool", // было "int"
 			})
 
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
@@ -361,7 +361,7 @@ func (p *Pipeline) processTry(try *front.TryStmt, irFn *IRFunction) {
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:     "throw",
 			Arg1:   errorVar,
-			Arg2:   fmt.Sprintf(`"%s"`, irFn.File),
+			Arg2:   fmt.Sprintf("%q", irFn.File),
 			Line:   try.GetLine(),
 			Column: try.GetColumn(),
 		})
