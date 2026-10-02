@@ -498,10 +498,10 @@ func (p *Parser) parseIncludeC() *IncludeC {
 	pos := p.pos()
 	p.advance() // includeC
 
-	if p.peek.Type != TOKEN_BACKTICK {
+	if p.peek.Type != TOKEN_TILDE {
 		p.hasErrors = true
 		errors.NewFatalError("0510",
-			fmt.Sprintf("Expected ``` after includeC, got '%s'", p.peek.Literal),
+			fmt.Sprintf("Expected ~~~ after includeC, got '%s'", p.peek.Literal),
 			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
 	}

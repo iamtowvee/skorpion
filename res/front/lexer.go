@@ -48,6 +48,7 @@ const (
 	TOKEN_AT
 	TOKEN_PERCENT
 	TOKEN_BACKTICK
+	TOKEN_TILDE
 )
 
 type Token struct {
@@ -92,8 +93,8 @@ func (l *Lexer) NextToken() Token {
 		return l.NextToken()
 	}
 
-	if ch == '`' {
-		return l.readBackticks()
+	if ch == '~' {
+		return l.readTildes()
 	}
 
 	if unicode.IsDigit(rune(ch)) || (ch == '-' && l.pos+1 < len(l.input) && unicode.IsDigit(rune(l.input[l.pos+1]))) {
@@ -346,27 +347,27 @@ func (l *Lexer) readMultilineComment() Token {
 	return l.NextToken()
 }
 
-func (l *Lexer) readBackticks() Token {
+func (l *Lexer) readTildes() Token {
 	startCol := l.col
-	l.pos++ // первый `
+	l.pos++ // первая ~
 	l.col++
 
-	if l.pos < len(l.input) && l.input[l.pos] == '`' {
+	if l.pos < len(l.input) && l.input[l.pos] == '~' {
 		l.pos++
 		l.col++
 	}
-	if l.pos < len(l.input) && l.input[l.pos] == '`' {
+	if l.pos < len(l.input) && l.input[l.pos] == '~' {
 		l.pos++
 		l.col++
 	}
 
 	var code strings.Builder
 	for l.pos < len(l.input) {
-		if l.pos+2 < len(l.input) && l.input[l.pos] == '`' && l.input[l.pos+1] == '`' && l.input[l.pos+2] == '`' {
+		if l.pos+2 < len(l.input) && l.input[l.pos] == '~' && l.input[l.pos+1] == '~' && l.input[l.pos+2] == '~' {
 			l.pos += 3
 			l.col += 3
 			return Token{
-				Type:    TOKEN_BACKTICK,
+				Type:    TOKEN_TILDE,
 				Literal: strings.TrimSpace(code.String()),
 				Line:    l.line,
 				Column:  startCol,
@@ -382,8 +383,8 @@ func (l *Lexer) readBackticks() Token {
 		l.pos++
 	}
 
-	errors.NewError("0103", "Unterminated backticks (```)", l.line, l.col, "")
-	return Token{Type: TOKEN_BACKTICK, Literal: "", Line: l.line, Column: startCol}
+	errors.NewError("0103", "Unterminated tildes (~~~)", l.line, l.col, "")
+	return Token{Type: TOKEN_TILDE, Literal: "", Line: l.line, Column: startCol}
 }
 
 func (l *Lexer) skipWhitespace() {
@@ -461,6 +462,8 @@ func (tt TokenType) String() string {
 		return "&"
 	case TOKEN_HASH:
 		return "#"
+	case TOKEN_TILDE:
+		return "~~~"
 	case TOKEN_DOLLAR:
 		return "$"
 	case TOKEN_NEQ:

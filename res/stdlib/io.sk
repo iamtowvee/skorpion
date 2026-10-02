@@ -6,13 +6,13 @@
   ------------------------------------- */
 
 void *__sk__std_io_send(string line) {
-    includeC ```
+    includeC ~~~
         printf("%s", line);
-    ```
+    ~~~
 }
 
 string *__sk__std_io_input(string prompt = "") {
-    includeC ```
+    includeC ~~~
         printf("%s", prompt);
         char buffer[256];
         fgets(buffer, sizeof(buffer), stdin);
@@ -21,7 +21,7 @@ string *__sk__std_io_input(string prompt = "") {
             buffer[len-1] = '\0';
         }
         return strdup(buffer);
-    ```
+    ~~~
 }
 
 void sendln(any msg) {

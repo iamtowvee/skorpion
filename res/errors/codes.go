@@ -69,9 +69,9 @@ var ErrorCodes = map[string]ErrorCode{
 	},
 	"0103": {
 		Code:        "0103",
-		Message:     "Unterminated backticks",
-		Description: "A ``` block (includeC) was not closed.",
-		Tip:         "Add closing ``` after the C code.",
+		Message:     "Unterminated tildes",
+		Description: "A ~~~ block (includeC) was not closed.",
+		Tip:         "Add closing ~~~ after the C code.",
 	},
 	"0104": {
 		Code:        "0104",
@@ -143,9 +143,9 @@ var ErrorCodes = map[string]ErrorCode{
 	},
 	"0510": {
 		Code:        "0510",
-		Message:     "Expected ``` after includeC",
-		Description: "includeC must be followed by ``` with C code.",
-		Tip:         "Use: includeC ``` ... ```.",
+		Message:     "Expected ~~~ after includeC",
+		Description: "includeC must be followed by ~~~ with C code.",
+		Tip:         "Use: includeC ~~~ ... ~~~.",
 	},
 	"0511": {
 		Code:        "0511",

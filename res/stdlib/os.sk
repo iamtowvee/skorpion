@@ -6,13 +6,13 @@
   ------------------------------------- */
 
 string getEnv(string env) {
-  includeC ```
+  includeC ~~~
     return getenv(env);
-  ```
+  ~~~
 }
 
 void setEnv(string env, string val) {
-  includeC ```
+  includeC ~~~
     #if defined(_WIN32)
         SetEnvironmentVariable(env, val);
     #elif defined(__APPLE__) && defined(__MACH__)
@@ -22,14 +22,14 @@ void setEnv(string env, string val) {
     #else
         exit(1);
     #endif
-  ```
+  ~~~
 }
 
 void setClearEnv(string env, string val, bool confirm) {
   if (!bool) {
     return null
   }
-  includeC ```
+  includeC ~~~
     #if defined(_WIN32)
         SetEnvironmentVariable(env, val);
     #elif defined(__APPLE__) && defined(__MACH__)
@@ -39,5 +39,5 @@ void setClearEnv(string env, string val, bool confirm) {
     #else
         exit(1);
     #endif
-  ```
+  ~~~
 }
