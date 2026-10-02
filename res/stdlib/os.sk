@@ -13,6 +13,31 @@ string getEnv(string env) {
 
 void setEnv(string env, string val) {
   includeC ```
-    setenv(env, val);
+    #if defined(_WIN32)
+        SetEnvironmentVariable(env, val);
+    #elif defined(__APPLE__) && defined(__MACH__)
+        setenv(env, val, 0);
+    #elif defined(__linux__)
+        setenv(env, val, 0);
+    #else
+        exit(1);
+    #endif
+  ```
+}
+
+void setClearEnv(string env, string val, bool confirm) {
+  if (!bool) {
+    return null
+  }
+  includeC ```
+    #if defined(_WIN32)
+        SetEnvironmentVariable(env, val);
+    #elif defined(__APPLE__) && defined(__MACH__)
+        setenv(env, val, 1);
+    #elif defined(__linux__)
+        setenv(env, val, 1);
+    #else
+        exit(1);
+    #endif
   ```
 }
