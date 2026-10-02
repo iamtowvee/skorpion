@@ -32,98 +32,153 @@ func (cg *CodeGenerator) Generate() string {
 
 	cg.writeLine("")
 	cg.writeLine("// Skorpion type definitions")
-	cg.writeLine("typedef char* sk_string;")
-	cg.writeLine("typedef int sk_bool;")
-	cg.writeLine("#define true 1")
-	cg.writeLine("#define false 0")
+	cg.writeLine("")
+
+	// ===== structs =====
+	cg.writeLine("typedef struct { int value; int __is_null; } sk_int;")
+	cg.writeLine("typedef struct { float value; int __is_null; } sk_float;")
+	cg.writeLine("typedef struct { double value; int __is_null; } sk_double;")
+	cg.writeLine("typedef struct { int value; int __is_null; } sk_bool;")
+	cg.writeLine("typedef struct { char* value; int __is_null; } sk_string;")
+	cg.writeLine("typedef struct sk_array sk_array;")
+	cg.writeLine("typedef struct { sk_array* value; int __is_null; } sk_arr;")
+	cg.writeLine("")
+	cg.writeLine("#define SK_NULL_int    ((sk_int){0, 1})")
+	cg.writeLine("#define SK_NULL_float  ((sk_float){0, 1})")
+	cg.writeLine("#define SK_NULL_double ((sk_double){0, 1})")
+	cg.writeLine("#define SK_NULL_bool   ((sk_bool){0, 1})")
+	cg.writeLine("#define SK_NULL_string ((sk_string){NULL, 1})")
+	cg.writeLine("#define SK_NULL_arr    ((sk_arr){NULL, 1})")
 	cg.writeLine("")
 
 	// ===== sk_any =====
-	cg.writeLine("// Skorpion any type")
 	cg.writeLine("typedef struct {")
-	cg.writeLine("    int type;")
+	cg.writeLine("    int type; // 0=int, 1=string, 2=float, 3=double, 4=bool, 5=arr, 6=null")
 	cg.writeLine("    union {")
 	cg.writeLine("        int i;")
 	cg.writeLine("        float f;")
 	cg.writeLine("        double d;")
-	cg.writeLine("        sk_string s;")
-	cg.writeLine("        sk_bool b;")
+	cg.writeLine("        char* s;")
+	cg.writeLine("        int b;")
 	cg.writeLine("        void* p;")
 	cg.writeLine("    } data;")
 	cg.writeLine("} sk_any;")
 	cg.writeLine("")
 
-	cg.writeLine("// Any constructors")
-	cg.writeLine("sk_any any_int(int v) { sk_any a; a.type=0; a.data.i=v; return a; }")
-	cg.writeLine("sk_any any_string(sk_string v) { sk_any a; a.type=1; a.data.s=v; return a; }")
-	cg.writeLine("sk_any any_float(float v) { sk_any a; a.type=2; a.data.f=v; return a; }")
-	cg.writeLine("sk_any any_double(double v) { sk_any a; a.type=3; a.data.d=v; return a; }")
-	cg.writeLine("sk_any any_bool(sk_bool v) { sk_any a; a.type=4; a.data.b=v; return a; }")
-	cg.writeLine("sk_any any_ptr(void* v) { sk_any a; a.type=5; a.data.p=v; return a; }")
-	cg.writeLine("")
-
-	cg.writeLine("// Any getters")
-	cg.writeLine("int any_get_int(sk_any a) { return a.data.i; }")
-	cg.writeLine("sk_string any_get_string(sk_any a) { return a.data.s; }")
-	cg.writeLine("float any_get_float(sk_any a) { return a.data.f; }")
-	cg.writeLine("double any_get_double(sk_any a) { return a.data.d; }")
-	cg.writeLine("sk_bool any_get_bool(sk_any a) { return a.data.b; }")
-	cg.writeLine("void* any_get_ptr(sk_any a) { return a.data.p; }")
-	cg.writeLine("")
-
-	cg.writeLine("// Any converters")
-	cg.writeLine("int any_to_int(sk_any a) {")
-	cg.writeLine("    switch (a.type) {")
-	cg.writeLine("        case 0: return a.data.i;")
-	cg.writeLine("        case 2: return (int)a.data.f;")
-	cg.writeLine("        case 3: return (int)a.data.d;")
-	cg.writeLine("        case 4: return a.data.b ? 1 : 0;")
-	cg.writeLine("        case 1: return atoi(a.data.s);")
-	cg.writeLine("        default: return 0;")
-	cg.writeLine("    }")
-	cg.writeLine("}")
-	cg.writeLine("float any_to_float(sk_any a) {")
-	cg.writeLine("    switch (a.type) {")
-	cg.writeLine("        case 0: return (float)a.data.i;")
-	cg.writeLine("        case 2: return a.data.f;")
-	cg.writeLine("        case 3: return (float)a.data.d;")
-	cg.writeLine("        case 4: return a.data.b ? 1.0f : 0.0f;")
-	cg.writeLine("        case 1: return atof(a.data.s);")
-	cg.writeLine("        default: return 0.0f;")
-	cg.writeLine("    }")
-	cg.writeLine("}")
-	cg.writeLine("double any_to_double(sk_any a) {")
-	cg.writeLine("    switch (a.type) {")
-	cg.writeLine("        case 0: return (double)a.data.i;")
-	cg.writeLine("        case 2: return (double)a.data.f;")
-	cg.writeLine("        case 3: return a.data.d;")
-	cg.writeLine("        case 4: return a.data.b ? 1.0 : 0.0;")
-	cg.writeLine("        case 1: return atof(a.data.s);")
-	cg.writeLine("        default: return 0.0;")
-	cg.writeLine("    }")
-	cg.writeLine("}")
-	cg.writeLine("int any_to_bool(sk_any a) {")
-	cg.writeLine("    switch (a.type) {")
-	cg.writeLine("        case 0: return a.data.i != 0;")
-	cg.writeLine("        case 2: return a.data.f != 0.0f;")
-	cg.writeLine("        case 3: return a.data.d != 0.0;")
-	cg.writeLine("        case 4: return a.data.b;")
-	cg.writeLine("        case 1: return a.data.s[0] != '\\0';")
-	cg.writeLine("        default: return 0;")
-	cg.writeLine("    }")
-	cg.writeLine("}")
-	cg.writeLine("")
-
 	// ===== sk_array =====
-	cg.writeLine("// Skorpion array type")
-	cg.writeLine("typedef struct {")
+	cg.writeLine("struct sk_array {")
 	cg.writeLine("    void* data;")
 	cg.writeLine("    int length;")
 	cg.writeLine("    int capacity;")
 	cg.writeLine("    int elem_size;")
-	cg.writeLine("    int elem_type; // 0=int,1=string,2=float,3=double,4=bool,5=any")
-	cg.writeLine("} sk_array;")
+	cg.writeLine("    int elem_type;")
+	cg.writeLine("};")
 	cg.writeLine("")
+
+	// ===== Constructors =====
+	cg.writeLine("sk_int sk_int_new(int v) { sk_int r; r.value = v; r.__is_null = 0; return r; }")
+	cg.writeLine("sk_float sk_float_new(float v) { sk_float r; r.value = v; r.__is_null = 0; return r; }")
+	cg.writeLine("sk_double sk_double_new(double v) { sk_double r; r.value = v; r.__is_null = 0; return r; }")
+	cg.writeLine("sk_bool sk_bool_new(int v) { sk_bool r; r.value = v ? 1 : 0; r.__is_null = 0; return r; }")
+	cg.writeLine("sk_string sk_string_new(const char* v) { sk_string r; r.value = v ? strdup(v) : NULL; r.__is_null = v ? 0 : 1; return r; }")
+	cg.writeLine("sk_string sk_string_new_take(char* v) { sk_string r; r.value = v; r.__is_null = v ? 0 : 1; return r; }")
+	cg.writeLine("sk_arr sk_arr_new(sk_array* v) { sk_arr r; r.value = v; r.__is_null = v ? 0 : 1; return r; }")
+	cg.writeLine("")
+
+	// ===== Unwrap =====
+	cg.writeLine("int sk_int_unwrap(sk_int a) { return a.value; }")
+	cg.writeLine("float sk_float_unwrap(sk_float a) { return a.value; }")
+	cg.writeLine("double sk_double_unwrap(sk_double a) { return a.value; }")
+	cg.writeLine("int sk_bool_unwrap(sk_bool a) { return a.value; }")
+	cg.writeLine("char* sk_string_unwrap(sk_string a) { return a.value; }")
+	cg.writeLine("sk_array* sk_arr_unwrap(sk_arr a) { return a.value; }")
+	cg.writeLine("")
+
+	// ===== Arithmetic int =====
+	cg.writeLine("sk_int sk_int_add(sk_int a, sk_int b) { if (a.__is_null || b.__is_null) return SK_NULL_int; return sk_int_new(a.value + b.value); }")
+	cg.writeLine("sk_int sk_int_sub(sk_int a, sk_int b) { if (a.__is_null || b.__is_null) return SK_NULL_int; return sk_int_new(a.value - b.value); }")
+	cg.writeLine("sk_int sk_int_mul(sk_int a, sk_int b) { if (a.__is_null || b.__is_null) return SK_NULL_int; return sk_int_new(a.value * b.value); }")
+	cg.writeLine("sk_int sk_int_div(sk_int a, sk_int b) { if (a.__is_null || b.__is_null || b.value == 0) return SK_NULL_int; return sk_int_new(a.value / b.value); }")
+	cg.writeLine("sk_int sk_int_mod(sk_int a, sk_int b) { if (a.__is_null || b.__is_null || b.value == 0) return SK_NULL_int; return sk_int_new(a.value % b.value); }")
+	cg.writeLine("sk_int sk_int_neg(sk_int a) { if (a.__is_null) return SK_NULL_int; return sk_int_new(-a.value); }")
+	cg.writeLine("")
+	cg.writeLine("sk_bool sk_int_lt(sk_int a, sk_int b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value < b.value); }")
+	cg.writeLine("sk_bool sk_int_gt(sk_int a, sk_int b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value > b.value); }")
+	cg.writeLine("sk_bool sk_int_le(sk_int a, sk_int b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value <= b.value); }")
+	cg.writeLine("sk_bool sk_int_ge(sk_int a, sk_int b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value >= b.value); }")
+	cg.writeLine("sk_bool sk_int_eq(sk_int a, sk_int b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value == b.value); }")
+	cg.writeLine("sk_bool sk_int_ne(sk_int a, sk_int b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value != b.value); }")
+	cg.writeLine("")
+
+	// ===== Arithmetic float =====
+	cg.writeLine("sk_float sk_float_add(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_float; return sk_float_new(a.value + b.value); }")
+	cg.writeLine("sk_float sk_float_sub(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_float; return sk_float_new(a.value - b.value); }")
+	cg.writeLine("sk_float sk_float_mul(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_float; return sk_float_new(a.value * b.value); }")
+	cg.writeLine("sk_float sk_float_div(sk_float a, sk_float b) { if (a.__is_null || b.__is_null || b.value == 0.0f) return SK_NULL_float; return sk_float_new(a.value / b.value); }")
+	cg.writeLine("sk_float sk_float_neg(sk_float a) { if (a.__is_null) return SK_NULL_float; return sk_float_new(-a.value); }")
+	cg.writeLine("sk_bool sk_float_lt(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value < b.value); }")
+	cg.writeLine("sk_bool sk_float_gt(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value > b.value); }")
+	cg.writeLine("sk_bool sk_float_le(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value <= b.value); }")
+	cg.writeLine("sk_bool sk_float_ge(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value >= b.value); }")
+	cg.writeLine("sk_bool sk_float_eq(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value == b.value); }")
+	cg.writeLine("sk_bool sk_float_ne(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value != b.value); }")
+	cg.writeLine("")
+
+	// ===== Arithmetic double =====
+	cg.writeLine("sk_double sk_double_add(sk_double a, sk_double b) { if (a.__is_null || b.__is_null) return SK_NULL_double; return sk_double_new(a.value + b.value); }")
+	cg.writeLine("sk_double sk_double_sub(sk_double a, sk_double b) { if (a.__is_null || b.__is_null) return SK_NULL_double; return sk_double_new(a.value - b.value); }")
+	cg.writeLine("sk_double sk_double_mul(sk_double a, sk_double b) { if (a.__is_null || b.__is_null) return SK_NULL_double; return sk_double_new(a.value * b.value); }")
+	cg.writeLine("sk_double sk_double_div(sk_double a, sk_double b) { if (a.__is_null || b.__is_null || b.value == 0.0) return SK_NULL_double; return sk_double_new(a.value / b.value); }")
+	cg.writeLine("sk_double sk_double_neg(sk_double a) { if (a.__is_null) return SK_NULL_double; return sk_double_new(-a.value); }")
+	cg.writeLine("sk_bool sk_double_lt(sk_double a, sk_double b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value < b.value); }")
+	cg.writeLine("sk_bool sk_double_gt(sk_double a, sk_double b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value > b.value); }")
+	cg.writeLine("sk_bool sk_double_le(sk_double a, sk_double b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value <= b.value); }")
+	cg.writeLine("sk_bool sk_double_ge(sk_double a, sk_double b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value >= b.value); }")
+	cg.writeLine("sk_bool sk_double_eq(sk_double a, sk_double b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value == b.value); }")
+	cg.writeLine("sk_bool sk_double_ne(sk_double a, sk_double b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value != b.value); }")
+	cg.writeLine("")
+
+	// ===== Logical =====
+	cg.writeLine("sk_bool sk_bool_not(sk_bool a) { if (a.__is_null) return SK_NULL_bool; return sk_bool_new(!a.value); }")
+	cg.writeLine("sk_bool sk_bool_and(sk_bool a, sk_bool b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value && b.value); }")
+	cg.writeLine("sk_bool sk_bool_or(sk_bool a, sk_bool b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value || b.value); }")
+	cg.writeLine("")
+
+	// ===== Conversions =====
+	cg.writeLine("sk_string sk_int_to_string(sk_int a) { if (a.__is_null) return sk_string_new(\"null\"); char buf[32]; snprintf(buf, 32, \"%d\", a.value); return sk_string_new(buf); }")
+	cg.writeLine("sk_string sk_float_to_string(sk_float a) { if (a.__is_null) return sk_string_new(\"null\"); char buf[32]; snprintf(buf, 32, \"%f\", a.value); return sk_string_new(buf); }")
+	cg.writeLine("sk_string sk_double_to_string(sk_double a) { if (a.__is_null) return sk_string_new(\"null\"); char buf[32]; snprintf(buf, 32, \"%f\", a.value); return sk_string_new(buf); }")
+	cg.writeLine("sk_string sk_bool_to_string(sk_bool a) { if (a.__is_null) return sk_string_new(\"null\"); return sk_string_new(a.value ? \"true\" : \"false\"); }")
+	cg.writeLine("sk_string sk_string_to_string(sk_string a) { if (a.__is_null) return sk_string_new(\"null\"); return sk_string_new(a.value); }")
+	cg.writeLine("")
+	cg.writeLine("sk_int sk_string_to_int(sk_string a) { if (a.__is_null) return SK_NULL_int; return sk_int_new(atoi(a.value)); }")
+	cg.writeLine("sk_float sk_string_to_float(sk_string a) { if (a.__is_null) return SK_NULL_float; return sk_float_new((float)atof(a.value)); }")
+	cg.writeLine("sk_double sk_string_to_double(sk_string a) { if (a.__is_null) return SK_NULL_double; return sk_double_new(atof(a.value)); }")
+	cg.writeLine("sk_bool sk_string_to_bool(sk_string a) { if (a.__is_null) return SK_NULL_bool; return sk_bool_new(a.value[0] != '\\0'); }")
+	cg.writeLine("")
+	cg.writeLine("sk_int sk_bool_to_int(sk_bool a) { if (a.__is_null) return SK_NULL_int; return sk_int_new(a.value ? 1 : 0); }")
+	cg.writeLine("sk_int sk_float_to_int(sk_float a) { if (a.__is_null) return SK_NULL_int; return sk_int_new((int)a.value); }")
+	cg.writeLine("sk_int sk_double_to_int(sk_double a) { if (a.__is_null) return SK_NULL_int; return sk_int_new((int)a.value); }")
+	cg.writeLine("")
+	cg.writeLine("sk_bool sk_int_to_bool(sk_int a) { if (a.__is_null) return SK_NULL_bool; return sk_bool_new(a.value != 0); }")
+	cg.writeLine("sk_bool sk_float_to_bool(sk_float a) { if (a.__is_null) return SK_NULL_bool; return sk_bool_new(a.value != 0.0f); }")
+	cg.writeLine("sk_bool sk_double_to_bool(sk_double a) { if (a.__is_null) return SK_NULL_bool; return sk_bool_new(a.value != 0.0); }")
+	cg.writeLine("")
+
+	// ===== String concat =====
+	cg.writeLine("sk_string sk_string_concat(sk_string a, sk_string b) {")
+	cg.writeLine("    if (a.__is_null && b.__is_null) return SK_NULL_string;")
+	cg.writeLine("    const char* av = a.__is_null ? \"null\" : a.value;")
+	cg.writeLine("    const char* bv = b.__is_null ? \"null\" : b.value;")
+	cg.writeLine("    size_t len = strlen(av) + strlen(bv) + 1;")
+	cg.writeLine("    char* buf = malloc(len);")
+	cg.writeLine("    strcpy(buf, av);")
+	cg.writeLine("    strcat(buf, bv);")
+	cg.writeLine("    return sk_string_new_take(buf);")
+	cg.writeLine("}")
+	cg.writeLine("")
+
+	// ===== sk_array runtime =====
 	cg.writeLine("sk_array* sk_array_new(int elem_size, int elem_type) {")
 	cg.writeLine("    sk_array* a = malloc(sizeof(sk_array));")
 	cg.writeLine("    a->data = NULL;")
@@ -142,13 +197,13 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("    memcpy((char*)a->data + a->length * a->elem_size, elem, a->elem_size);")
 	cg.writeLine("    a->length++;")
 	cg.writeLine("}")
-	cg.writeLine("void sk_array_push_int(sk_array* a, int v) { sk_array_push(a, &v); }")
+	cg.writeLine("void sk_array_push_int(sk_array* a, sk_int v) { sk_array_push(a, &v); }")
 	cg.writeLine("void sk_array_push_string(sk_array* a, sk_string v) { sk_array_push(a, &v); }")
-	cg.writeLine("void sk_array_push_float(sk_array* a, float v) { sk_array_push(a, &v); }")
-	cg.writeLine("void sk_array_push_double(sk_array* a, double v) { sk_array_push(a, &v); }")
+	cg.writeLine("void sk_array_push_float(sk_array* a, sk_float v) { sk_array_push(a, &v); }")
+	cg.writeLine("void sk_array_push_double(sk_array* a, sk_double v) { sk_array_push(a, &v); }")
 	cg.writeLine("void sk_array_push_bool(sk_array* a, sk_bool v) { sk_array_push(a, &v); }")
 	cg.writeLine("void sk_array_push_any(sk_array* a, sk_any v) { sk_array_push(a, &v); }")
-	cg.writeLine("void sk_array_push_arr(sk_array* a, sk_array* v) { sk_array_push(a, &v); }")
+	cg.writeLine("void sk_array_push_arr(sk_array* a, sk_arr v) { sk_array_push(a, &v); }")
 	cg.writeLine("")
 	cg.writeLine("void* sk_array_get(sk_array* a, int index) {")
 	cg.writeLine("    if (index < 0 || index >= a->length) return NULL;")
@@ -170,81 +225,153 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("    free(a);")
 	cg.writeLine("}")
 	cg.writeLine("")
-
 	cg.writeLine("sk_array* sk_range_new(int start, int end) {")
-	cg.writeLine("    sk_array* a = sk_array_new(sizeof(int), 0);")
+	cg.writeLine("    sk_array* a = sk_array_new(sizeof(sk_int), 0);")
 	cg.writeLine("    if (start <= end) {")
 	cg.writeLine("        for (int i = start; i <= end; i++) {")
-	cg.writeLine("            sk_array_push_int(a, i);")
+	cg.writeLine("            sk_int v = sk_int_new(i);")
+	cg.writeLine("            sk_array_push_int(a, v);")
 	cg.writeLine("        }")
 	cg.writeLine("    } else {")
 	cg.writeLine("        for (int i = start; i >= end; i--) {")
-	cg.writeLine("            sk_array_push_int(a, i);")
+	cg.writeLine("            sk_int v = sk_int_new(i);")
+	cg.writeLine("            sk_array_push_int(a, v);")
 	cg.writeLine("        }")
 	cg.writeLine("    }")
 	cg.writeLine("    return a;")
 	cg.writeLine("}")
 	cg.writeLine("")
 
-	cg.writeLine("// Forward declarations")
-	cg.writeLine("sk_string sk_array_to_string(sk_array* a);")
+	// ===== any constructors =====
+	cg.writeLine("sk_any any_null(void) { sk_any a; a.type = 6; a.data.p = NULL; return a; }")
+	cg.writeLine("sk_any any_int(sk_int v) { sk_any a; a.type = 0; a.data.i = v.value; return a; }")
+	cg.writeLine("sk_any any_string(sk_string v) { sk_any a; a.type = 1; a.data.s = v.value; return a; }")
+	cg.writeLine("sk_any any_float(sk_float v) { sk_any a; a.type = 2; a.data.f = v.value; return a; }")
+	cg.writeLine("sk_any any_double(sk_double v) { sk_any a; a.type = 3; a.data.d = v.value; return a; }")
+	cg.writeLine("sk_any any_bool(sk_bool v) { sk_any a; a.type = 4; a.data.b = v.value; return a; }")
+	cg.writeLine("sk_any any_arr(sk_arr v) { sk_any a; a.type = 5; a.data.p = v.value; return a; }")
 	cg.writeLine("")
 
-	// ===== any_to_string =====
-	cg.writeLine("// Any to string")
+	// Forward declarations (нужны до определений, которые их используют)
+	cg.writeLine("sk_string sk_array_to_string(sk_array* a);")
+	cg.writeLine("void sk_any_free(sk_any* a);")
+	cg.writeLine("")
+
+	// ===== any -> typed =====
+	cg.writeLine("sk_int any_to_int(sk_any a) {")
+	cg.writeLine("    if (a.type == 6) return SK_NULL_int;")
+	cg.writeLine("    switch (a.type) {")
+	cg.writeLine("        case 0: return sk_int_new(a.data.i);")
+	cg.writeLine("        case 1: return sk_int_new(atoi(a.data.s));")
+	cg.writeLine("        case 2: return sk_int_new((int)a.data.f);")
+	cg.writeLine("        case 3: return sk_int_new((int)a.data.d);")
+	cg.writeLine("        case 4: return sk_int_new(a.data.b ? 1 : 0);")
+	cg.writeLine("        default: return SK_NULL_int;")
+	cg.writeLine("    }")
+	cg.writeLine("}")
+	cg.writeLine("sk_float any_to_float(sk_any a) {")
+	cg.writeLine("    if (a.type == 6) return SK_NULL_float;")
+	cg.writeLine("    switch (a.type) {")
+	cg.writeLine("        case 0: return sk_float_new((float)a.data.i);")
+	cg.writeLine("        case 1: return sk_float_new((float)atof(a.data.s));")
+	cg.writeLine("        case 2: return sk_float_new(a.data.f);")
+	cg.writeLine("        case 3: return sk_float_new((float)a.data.d);")
+	cg.writeLine("        case 4: return sk_float_new(a.data.b ? 1.0f : 0.0f);")
+	cg.writeLine("        default: return SK_NULL_float;")
+	cg.writeLine("    }")
+	cg.writeLine("}")
+	cg.writeLine("sk_double any_to_double(sk_any a) {")
+	cg.writeLine("    if (a.type == 6) return SK_NULL_double;")
+	cg.writeLine("    switch (a.type) {")
+	cg.writeLine("        case 0: return sk_double_new((double)a.data.i);")
+	cg.writeLine("        case 1: return sk_double_new(atof(a.data.s));")
+	cg.writeLine("        case 2: return sk_double_new((double)a.data.f);")
+	cg.writeLine("        case 3: return sk_double_new(a.data.d);")
+	cg.writeLine("        case 4: return sk_double_new(a.data.b ? 1.0 : 0.0);")
+	cg.writeLine("        default: return SK_NULL_double;")
+	cg.writeLine("    }")
+	cg.writeLine("}")
+	cg.writeLine("sk_bool any_to_bool(sk_any a) {")
+	cg.writeLine("    if (a.type == 6) return SK_NULL_bool;")
+	cg.writeLine("    switch (a.type) {")
+	cg.writeLine("        case 0: return sk_bool_new(a.data.i != 0);")
+	cg.writeLine("        case 1: return sk_bool_new(a.data.s[0] != '\\0');")
+	cg.writeLine("        case 2: return sk_bool_new(a.data.f != 0.0f);")
+	cg.writeLine("        case 3: return sk_bool_new(a.data.d != 0.0);")
+	cg.writeLine("        case 4: return sk_bool_new(a.data.b);")
+	cg.writeLine("        default: return SK_NULL_bool;")
+	cg.writeLine("    }")
+	cg.writeLine("}")
 	cg.writeLine("sk_string any_to_string(sk_any a) {")
+	cg.writeLine("    if (a.type == 6) return sk_string_new(\"null\");")
 	cg.writeLine("    char buf[64];")
 	cg.writeLine("    switch (a.type) {")
-	cg.writeLine("        case 0: snprintf(buf, 64, \"%d\", a.data.i); return strdup(buf);")
-	cg.writeLine("        case 1: return strdup(a.data.s);")
-	cg.writeLine("        case 2: snprintf(buf, 64, \"%f\", a.data.f); return strdup(buf);")
-	cg.writeLine("        case 3: snprintf(buf, 64, \"%f\", a.data.d); return strdup(buf);")
-	cg.writeLine("        case 4: return strdup(a.data.b ? \"true\" : \"false\");")
+	cg.writeLine("        case 0: snprintf(buf, 64, \"%d\", a.data.i); return sk_string_new(buf);")
+	cg.writeLine("        case 1: return sk_string_new(a.data.s);")
+	cg.writeLine("        case 2: snprintf(buf, 64, \"%f\", a.data.f); return sk_string_new(buf);")
+	cg.writeLine("        case 3: snprintf(buf, 64, \"%f\", a.data.d); return sk_string_new(buf);")
+	cg.writeLine("        case 4: return sk_string_new(a.data.b ? \"true\" : \"false\");")
 	cg.writeLine("        case 5: return sk_array_to_string((sk_array*)a.data.p);")
-	cg.writeLine("        default: return strdup(\"unknown\");")
+	cg.writeLine("        default: return sk_string_new(\"unknown\");")
 	cg.writeLine("    }")
+	cg.writeLine("}")
+	cg.writeLine("sk_arr any_to_arr(sk_any a) {")
+	cg.writeLine("    if (a.type == 6) return SK_NULL_arr;")
+	cg.writeLine("    if (a.type == 5) return sk_arr_new((sk_array*)a.data.p);")
+	cg.writeLine("    return SK_NULL_arr;")
 	cg.writeLine("}")
 	cg.writeLine("")
 
-	// ===== sk_array_to_string (ПОСЛЕ any_to_string!) =====
-	cg.writeLine("// Array to string")
+	cg.writeLine("sk_string sk_arr_to_string(sk_arr a) {")
+	cg.writeLine("    if (a.__is_null) return sk_string_new(\"null\");")
+	cg.writeLine("    return sk_array_to_string(a.value);")
+	cg.writeLine("}")
+	cg.writeLine("")
+
 	cg.writeLine("sk_string sk_array_to_string(sk_array* a) {")
 	cg.writeLine("    char* buf = malloc(1024);")
 	cg.writeLine("    strcpy(buf, \"[\");")
-	cg.writeLine("    char tmp[64];")
 	cg.writeLine("    for (int i = 0; i < a->length; i++) {")
 	cg.writeLine("        if (i > 0) strcat(buf, \", \");")
 	cg.writeLine("        void* elem = sk_array_get(a, i);")
 	cg.writeLine("        if (a->elem_type == 5) {")
 	cg.writeLine("            sk_any* any = (sk_any*)elem;")
-	cg.writeLine("            char* s = any_to_string(*any);")
-	cg.writeLine("            strcat(buf, s);")
-	cg.writeLine("            free(s);")
+	cg.writeLine("            sk_string s = any_to_string(*any);")
+	cg.writeLine("            strcat(buf, s.__is_null ? \"null\" : s.value);")
 	cg.writeLine("        } else if (a->elem_type == 0) {")
-	cg.writeLine("            snprintf(tmp, 64, \"%d\", *(int*)elem); strcat(buf, tmp);")
+	cg.writeLine("            sk_int* v = (sk_int*)elem;")
+	cg.writeLine("            char tmp[32];")
+	cg.writeLine("            if (v->__is_null) strcat(buf, \"null\");")
+	cg.writeLine("            else { snprintf(tmp, 32, \"%d\", v->value); strcat(buf, tmp); }")
 	cg.writeLine("        } else if (a->elem_type == 1) {")
-	cg.writeLine("            strcat(buf, *(sk_string*)elem);")
+	cg.writeLine("            sk_string* v = (sk_string*)elem;")
+	cg.writeLine("            strcat(buf, v->__is_null ? \"null\" : v->value);")
 	cg.writeLine("        } else if (a->elem_type == 2) {")
-	cg.writeLine("            snprintf(tmp, 64, \"%f\", *(float*)elem); strcat(buf, tmp);")
+	cg.writeLine("            sk_float* v = (sk_float*)elem;")
+	cg.writeLine("            char tmp[32];")
+	cg.writeLine("            if (v->__is_null) strcat(buf, \"null\");")
+	cg.writeLine("            else { snprintf(tmp, 32, \"%f\", v->value); strcat(buf, tmp); }")
 	cg.writeLine("        } else if (a->elem_type == 3) {")
-	cg.writeLine("            snprintf(tmp, 64, \"%f\", *(double*)elem); strcat(buf, tmp);")
+	cg.writeLine("            sk_double* v = (sk_double*)elem;")
+	cg.writeLine("            char tmp[32];")
+	cg.writeLine("            if (v->__is_null) strcat(buf, \"null\");")
+	cg.writeLine("            else { snprintf(tmp, 32, \"%f\", v->value); strcat(buf, tmp); }")
 	cg.writeLine("        } else if (a->elem_type == 4) {")
-	cg.writeLine("            strcat(buf, *(sk_bool*)elem ? \"true\" : \"false\");")
+	cg.writeLine("            sk_bool* v = (sk_bool*)elem;")
+	cg.writeLine("            strcat(buf, v->__is_null ? \"null\" : (v->value ? \"true\" : \"false\"));")
 	cg.writeLine("        } else if (a->elem_type == 6) {")
-	cg.writeLine("            sk_array* nested = *(sk_array**)elem;")
-	cg.writeLine("            char* s = sk_array_to_string(nested);")
-	cg.writeLine("            strcat(buf, s);")
-	cg.writeLine("            free(s);")
+	cg.writeLine("            sk_arr* v = (sk_arr*)elem;")
+	cg.writeLine("            if (v->__is_null) strcat(buf, \"null\");")
+	cg.writeLine("            else { sk_string s = sk_array_to_string(v->value); strcat(buf, s.value); free(s.value); }")
 	cg.writeLine("        }")
 	cg.writeLine("    }")
 	cg.writeLine("    strcat(buf, \"]\");")
-	cg.writeLine("    return buf;")
+	cg.writeLine("    return sk_string_new_take(buf);")
 	cg.writeLine("}")
 	cg.writeLine("")
 
-	// Error types
+	// ===== Error types =====
 	if len(cg.IR.ErrorDecls) > 0 {
-		cg.writeLine("// Error types")
 		cg.writeLine("typedef struct SkError {")
 		cg.writeLine("    const char* __type;")
 		cg.writeLine("    sk_string msg;")
@@ -257,7 +384,6 @@ func (cg *CodeGenerator) Generate() string {
 			}
 			cg.writeLine(fmt.Sprintf("typedef struct %s {", decl.Name))
 			cg.writeLine("    const char* __type;")
-			// Все поля из цепочки наследования
 			fields := cg.collectErrorFields(decl)
 			for _, field := range fields {
 				cType := cg.typeToC(field.Type)
@@ -268,7 +394,7 @@ func (cg *CodeGenerator) Generate() string {
 		}
 	}
 
-	cg.writeLine("// Skorpion exception runtime")
+	// ===== try / throw runtime =====
 	cg.writeLine("typedef struct SkCleanup {")
 	cg.writeLine("    void** ptr;")
 	cg.writeLine("    int type;")
@@ -345,7 +471,6 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("        fprintf(stderr, \"Panicked with error (%s) at %s:%d:%d\\n\", __type, file, line, col);")
 	cg.writeLine("        exit(1);")
 	cg.writeLine("    }")
-	cg.writeLine("    // Освобождаем все фреймы до целевого")
 	cg.writeLine("    SkTryFrame* frame = sk_try_stack;")
 	cg.writeLine("    while (frame != NULL) {")
 	cg.writeLine("        sk_try_cleanup(frame);")
@@ -355,7 +480,6 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("    longjmp(sk_try_stack->env, 1);")
 	cg.writeLine("}")
 	cg.writeLine("")
-
 	cg.writeLine("int sk_error_type_match(const char* actual, const char* expected) {")
 	cg.writeLine("    size_t len = strlen(expected);")
 	cg.writeLine("    if (strncmp(actual, expected, len) != 0) return 0;")
@@ -476,6 +600,10 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 
 	case "free":
 		cg.writeLine(fmt.Sprintf("%sfree(%s);", indent, ins.Arg1))
+	case "free_str":
+		cg.writeLine(fmt.Sprintf("%sfree(%s.value);", indent, ins.Arg1))
+	case "free_arr":
+		cg.writeLine(fmt.Sprintf("%ssk_array_free(%s);", indent, ins.Arg1))
 
 	case "inline_c":
 		lines := strings.Split(ins.Arg1, "\n")
@@ -503,7 +631,7 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 		cg.writeLine(fmt.Sprintf("%s    goto %s;", indent, ins.Arg1))
 		cg.writeLine(fmt.Sprintf("%s}", indent))
 	case "try_pop":
-		cg.writeLine(fmt.Sprintf("%ssk_try_pop((SkTryFrame*)&%s);", indent, ins.Arg1))
+		cg.writeLine(fmt.Sprintf("%ssk_try_pop(&%s);", indent, ins.Arg1))
 	case "try_get_error":
 		cg.writeLine(fmt.Sprintf("%s%s = %s.error;", indent, ins.Result, ins.Arg1))
 	case "try_register":
@@ -525,76 +653,21 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 		cg.writeLine(fmt.Sprintf("%s = %s->%s;", ins.Result, ins.Arg1, ins.Arg2))
 
 	case "typeof_any":
-		bufName := "buf_" + ins.Result
-		cg.writeLine(fmt.Sprintf("%ssk_string %s;", indent, ins.Result))
-		cg.writeLine(fmt.Sprintf("%schar %s[32];", indent, bufName))
+		cg.writeLine(fmt.Sprintf("%schar _buf_%s[32];", indent, ins.Result))
 		cg.writeLine(fmt.Sprintf("%sswitch (%s.type) {", indent, ins.Arg1))
-		cg.writeLine(fmt.Sprintf("%s    case 0: strcpy(%s, \"int\"); break;", indent, bufName))
-		cg.writeLine(fmt.Sprintf("%s    case 1: strcpy(%s, \"string\"); break;", indent, bufName))
-		cg.writeLine(fmt.Sprintf("%s    case 2: strcpy(%s, \"float\"); break;", indent, bufName))
-		cg.writeLine(fmt.Sprintf("%s    case 3: strcpy(%s, \"double\"); break;", indent, bufName))
-		cg.writeLine(fmt.Sprintf("%s    case 4: strcpy(%s, \"bool\"); break;", indent, bufName))
-		cg.writeLine(fmt.Sprintf("%s    case 5: strcpy(%s, \"ptr\"); break;", indent, bufName))
-		cg.writeLine(fmt.Sprintf("%s    case 6: strcpy(%s, \"ptr\"); break;", indent, bufName))
-		cg.writeLine(fmt.Sprintf("%s    default: strcpy(%s, \"unknown\"); break;", indent, bufName))
+		cg.writeLine(fmt.Sprintf("%s    case 0: strcpy(_buf_%s, \"int\"); break;", indent, ins.Result))
+		cg.writeLine(fmt.Sprintf("%s    case 1: strcpy(_buf_%s, \"string\"); break;", indent, ins.Result))
+		cg.writeLine(fmt.Sprintf("%s    case 2: strcpy(_buf_%s, \"float\"); break;", indent, ins.Result))
+		cg.writeLine(fmt.Sprintf("%s    case 3: strcpy(_buf_%s, \"double\"); break;", indent, ins.Result))
+		cg.writeLine(fmt.Sprintf("%s    case 4: strcpy(_buf_%s, \"bool\"); break;", indent, ins.Result))
+		cg.writeLine(fmt.Sprintf("%s    case 5: strcpy(_buf_%s, \"arr\"); break;", indent, ins.Result))
+		cg.writeLine(fmt.Sprintf("%s    case 6: strcpy(_buf_%s, \"void\"); break;", indent, ins.Result))
+		cg.writeLine(fmt.Sprintf("%s    default: strcpy(_buf_%s, \"unknown\"); break;", indent, ins.Result))
 		cg.writeLine(fmt.Sprintf("%s}", indent))
-		cg.writeLine(fmt.Sprintf("%s%s = strdup(%s);", indent, ins.Result, bufName))
+		cg.writeLine(fmt.Sprintf("%ssk_string %s = sk_string_new(_buf_%s);", indent, ins.Result, ins.Result))
 
 	case "comment":
 		cg.writeLine(fmt.Sprintf("%s%s", indent, ins.Arg1))
-
-	case "strcat":
-		cg.writeLine(fmt.Sprintf("%schar %s[256];", indent, ins.Result))
-		cg.writeLine(fmt.Sprintf("%sstrcpy(%s, %s);", indent, ins.Result, ins.Arg1))
-		cg.writeLine(fmt.Sprintf("%sstrcat(%s, %s);", indent, ins.Result, ins.Arg2))
-
-	case "to_string":
-		// Проверяем, является ли аргумент any
-		isAny := false
-		for _, local := range fn.Locals {
-			if strings.Contains(local, ins.Arg1) && strings.Contains(local, "sk_any") {
-				isAny = true
-				break
-			}
-		}
-		if !isAny {
-			for _, param := range fn.Params {
-				if param.Name == ins.Arg1 && param.Type == "any" {
-					isAny = true
-					break
-				}
-			}
-		}
-		if isAny {
-			cg.writeLine(fmt.Sprintf("%ssk_string %s = any_to_string(%s);", indent, ins.Result, ins.Arg1))
-		} else {
-			cg.writeLine(fmt.Sprintf("%schar %s[32];", indent, ins.Result))
-			cg.writeLine(fmt.Sprintf("%ssnprintf(%s, 32, \"%%d\", %s);", indent, ins.Result, ins.Arg1))
-		}
-
-	case "$":
-		// Проверяем, является ли аргумент any
-		isAny := false
-		for _, local := range fn.Locals {
-			if strings.Contains(local, ins.Arg1) && strings.Contains(local, "sk_any") {
-				isAny = true
-				break
-			}
-		}
-		if !isAny {
-			for _, param := range fn.Params {
-				if param.Name == ins.Arg1 && param.Type == "any" {
-					isAny = true
-					break
-				}
-			}
-		}
-		if isAny {
-			cg.writeLine(fmt.Sprintf("%ssk_string %s = any_to_string(%s);", indent, ins.Result, ins.Arg1))
-		} else {
-			cg.writeLine(fmt.Sprintf("%schar %s[32];", indent, ins.Result))
-			cg.writeLine(fmt.Sprintf("%ssnprintf(%s, 32, \"%%d\", %s);", indent, ins.Result, ins.Arg1))
-		}
 
 	case "ret":
 		if ins.Arg1 != "" {
@@ -606,43 +679,43 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 		}
 
 	case "cast_bool_to_int":
-		cg.writeLine(fmt.Sprintf("%sint %s = %s ? 1 : 0;", indent, ins.Result, ins.Arg1))
+		cg.writeLine(fmt.Sprintf("%ssk_int %s = sk_bool_to_int(%s);", indent, ins.Result, ins.Arg1))
 	case "cast_num_to_int":
-		cg.writeLine(fmt.Sprintf("%sint %s = (int)%s;", indent, ins.Result, ins.Arg1))
+		cg.writeLine(fmt.Sprintf("%ssk_int %s = sk_double_to_int(sk_double_new((double)%s.value));", indent, ins.Result, ins.Arg1))
 	case "cast_str_to_int":
-		cg.writeLine(fmt.Sprintf("%sint %s = atoi(%s);", indent, ins.Result, ins.Arg1))
+		cg.writeLine(fmt.Sprintf("%ssk_int %s = sk_string_to_int(%s);", indent, ins.Result, ins.Arg1))
 	case "cast_bool_to_float":
-		cg.writeLine(fmt.Sprintf("%sfloat %s = %s ? 1.0f : 0.0f;", indent, ins.Result, ins.Arg1))
+		cg.writeLine(fmt.Sprintf("%ssk_float %s = sk_float_new(%s.value ? 1.0f : 0.0f);", indent, ins.Result, ins.Arg1))
 	case "cast_num_to_float":
-		cg.writeLine(fmt.Sprintf("%sfloat %s = (float)%s;", indent, ins.Result, ins.Arg1))
+		cg.writeLine(fmt.Sprintf("%ssk_float %s = sk_float_new((float)%s.value);", indent, ins.Result, ins.Arg1))
 	case "cast_str_to_float":
-		cg.writeLine(fmt.Sprintf("%sfloat %s = (float)atof(%s);", indent, ins.Result, ins.Arg1))
+		cg.writeLine(fmt.Sprintf("%ssk_float %s = sk_string_to_float(%s);", indent, ins.Result, ins.Arg1))
 	case "cast_bool_to_double":
-		cg.writeLine(fmt.Sprintf("%sdouble %s = %s ? 1.0 : 0.0;", indent, ins.Result, ins.Arg1))
+		cg.writeLine(fmt.Sprintf("%ssk_double %s = sk_double_new(%s.value ? 1.0 : 0.0);", indent, ins.Result, ins.Arg1))
 	case "cast_num_to_double":
-		cg.writeLine(fmt.Sprintf("%sdouble %s = (double)%s;", indent, ins.Result, ins.Arg1))
+		cg.writeLine(fmt.Sprintf("%ssk_double %s = sk_double_new((double)%s.value);", indent, ins.Result, ins.Arg1))
 	case "cast_str_to_double":
-		cg.writeLine(fmt.Sprintf("%sdouble %s = atof(%s);", indent, ins.Result, ins.Arg1))
+		cg.writeLine(fmt.Sprintf("%ssk_double %s = sk_string_to_double(%s);", indent, ins.Result, ins.Arg1))
 	case "cast_bool_to_str":
-		cg.writeLine(fmt.Sprintf("%ssk_string %s = strdup(%s ? \"true\" : \"false\");", indent, ins.Result, ins.Arg1))
+		cg.writeLine(fmt.Sprintf("%ssk_string %s = sk_bool_to_string(%s);", indent, ins.Result, ins.Arg1))
 	case "cast_num_to_str":
-		cg.writeLine(fmt.Sprintf("%schar _buf_%s[64]; snprintf(_buf_%s, 64, \"%%g\", (double)%s); sk_string %s = strdup(_buf_%s);", indent, ins.Result, ins.Result, ins.Arg1, ins.Result, ins.Result))
+		cg.writeLine(fmt.Sprintf("%ssk_string %s = sk_double_to_string(sk_double_new((double)%s.value));", indent, ins.Result, ins.Arg1))
 	case "cast_num_to_bool":
-		cg.writeLine(fmt.Sprintf("%sint %s = %s > 0;", indent, ins.Result, ins.Arg1))
+		cg.writeLine(fmt.Sprintf("%ssk_bool %s = sk_double_to_bool(sk_double_new((double)%s.value));", indent, ins.Result, ins.Arg1))
 	case "cast_str_to_bool":
-		cg.writeLine(fmt.Sprintf("%sint %s = (%s[0] != '\\0');", indent, ins.Result, ins.Arg1))
+		cg.writeLine(fmt.Sprintf("%ssk_bool %s = sk_string_to_bool(%s);", indent, ins.Result, ins.Arg1))
 
 	case "array_get":
-		cg.writeLine(fmt.Sprintf("%svoid* %s = sk_array_get(%s, %s);", indent, ins.Result, ins.Arg1, ins.Arg2))
+		cg.writeLine(fmt.Sprintf("%svoid* %s = sk_array_get(%s.value, %s.value);", indent, ins.Result, ins.Arg1, ins.Arg2))
 	case "array_len":
-		cg.writeLine(fmt.Sprintf("%sint %s = sk_array_len(%s);", indent, ins.Result, ins.Arg1))
+		cg.writeLine(fmt.Sprintf("%ssk_int %s = sk_int_new(sk_array_len(%s.value));", indent, ins.Result, ins.Arg1))
 	case "array_get_any":
-		cg.writeLine(fmt.Sprintf("%ssk_any %s = *(sk_any*)sk_array_get(%s, %s);", indent, ins.Result, ins.Arg1, ins.Arg2))
+		cg.writeLine(fmt.Sprintf("%ssk_any %s = *(sk_any*)sk_array_get(%s.value, %s.value);", indent, ins.Result, ins.Arg1, ins.Arg2))
 	case "array_get_typed":
-		cg.writeLine(fmt.Sprintf("%s%s %s = *(%s*)sk_array_get(%s, %s);", indent, ins.ReturnType, ins.Result, ins.ReturnType, ins.Arg1, ins.Arg2))
+		cg.writeLine(fmt.Sprintf("%s%s %s = *(%s*)sk_array_get(%s.value, %s.value);", indent, ins.ReturnType, ins.Result, ins.ReturnType, ins.Arg1, ins.Arg2))
 	case "array_add":
-		cg.writeLine(fmt.Sprintf("%ssk_array* %s = sk_array_copy(%s);", indent, ins.Result, ins.Arg1))
-		cg.writeLine(fmt.Sprintf("%ssk_array_push(%s, &%s);", indent, ins.Result, ins.Arg2))
+		cg.writeLine(fmt.Sprintf("%ssk_arr %s = sk_arr_new(sk_array_copy(%s.value));", indent, ins.Result, ins.Arg1))
+		cg.writeLine(fmt.Sprintf("%ssk_array_push(%s.value, &%s);", indent, ins.Result, ins.Arg2))
 
 	case "call":
 		if ins.Result != "" {
@@ -653,15 +726,8 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 
 			if returnType == "void" {
 				cg.writeLine(fmt.Sprintf("%s%s(%s);", indent, ins.Arg1, ins.Arg2))
-				if strings.HasPrefix(ins.Result, "t") {
-					cg.writeLine(fmt.Sprintf("%sint %s = 0;", indent, ins.Result))
-				}
 			} else {
-				if strings.HasPrefix(ins.Result, "t") {
-					cg.writeLine(fmt.Sprintf("%s%s %s = %s(%s);", indent, returnType, ins.Result, ins.Arg1, ins.Arg2))
-				} else {
-					cg.writeLine(fmt.Sprintf("%s%s = %s(%s);", indent, ins.Result, ins.Arg1, ins.Arg2))
-				}
+				cg.writeLine(fmt.Sprintf("%s%s = %s(%s);", indent, ins.Result, ins.Arg1, ins.Arg2))
 			}
 		} else {
 			cg.writeLine(fmt.Sprintf("%s%s(%s);", indent, ins.Arg1, ins.Arg2))
@@ -669,10 +735,7 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 
 	case "if":
 		cond := ins.Result
-		if !strings.HasPrefix(cond, "(") {
-			cond = "(" + cond + " != 0)"
-		}
-		cg.writeLine(fmt.Sprintf("%sif %s {", indent, cond))
+		cg.writeLine(fmt.Sprintf("%sif (%s.value) {", indent, cond))
 		cg.writeLine(fmt.Sprintf("%s    goto %s;", indent, ins.Arg1))
 		cg.writeLine(fmt.Sprintf("%s} else {", indent))
 		cg.writeLine(fmt.Sprintf("%s    goto %s;", indent, ins.Arg2))
@@ -685,27 +748,102 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 		if ins.Arg1 == "NULL" {
 			cg.writeLine(fmt.Sprintf("%s%s = NULL;", indent, ins.Result))
 		} else {
-			if isTempVar(ins.Result) {
-				argType := "int"
-				if strings.HasPrefix(ins.Arg1, "\"") && strings.HasSuffix(ins.Arg1, "\"") {
-					argType = "sk_string"
-				} else if strings.Contains(ins.Arg1, ".") {
-					argType = "double"
-				} else if ins.Arg1 == "true" || ins.Arg1 == "false" {
-					argType = "sk_bool"
-				}
-				cg.writeLine(fmt.Sprintf("%s%s %s = %s;", indent, argType, ins.Result, ins.Arg1))
-			} else {
-				cg.writeLine(fmt.Sprintf("%s%s = %s;", indent, ins.Result, ins.Arg1))
-			}
+			cg.writeLine(fmt.Sprintf("%s%s = %s;", indent, ins.Result, ins.Arg1))
 		}
 
-	case "+", "-", "*", "/":
-		if isTempVar(ins.Result) {
-			cg.writeLine(fmt.Sprintf("%sint %s = %s %s %s;", indent, ins.Result, ins.Arg1, ins.Op, ins.Arg2))
-		} else {
-			cg.writeLine(fmt.Sprintf("%s%s = %s %s %s;", indent, ins.Result, ins.Arg1, ins.Op, ins.Arg2))
+	case "+", "-", "*", "/", "%":
+		retType := ins.ReturnType
+		if retType == "" {
+			retType = "sk_int"
 		}
+		var fnName string
+		if retType == "sk_int" {
+			switch ins.Op {
+			case "+":
+				fnName = "sk_int_add"
+			case "-":
+				fnName = "sk_int_sub"
+			case "*":
+				fnName = "sk_int_mul"
+			case "/":
+				fnName = "sk_int_div"
+			case "%":
+				fnName = "sk_int_mod"
+			}
+		} else if retType == "sk_float" {
+			switch ins.Op {
+			case "+":
+				fnName = "sk_float_add"
+			case "-":
+				fnName = "sk_float_sub"
+			case "*":
+				fnName = "sk_float_mul"
+			case "/":
+				fnName = "sk_float_div"
+			}
+		} else if retType == "sk_double" {
+			switch ins.Op {
+			case "+":
+				fnName = "sk_double_add"
+			case "-":
+				fnName = "sk_double_sub"
+			case "*":
+				fnName = "sk_double_mul"
+			case "/":
+				fnName = "sk_double_div"
+			}
+		}
+		cg.writeLine(fmt.Sprintf("%s%s %s = %s(%s, %s);", indent, retType, ins.Result, fnName, ins.Arg1, ins.Arg2))
+
+	case "<", ">", "<=", ">=", "==", "!=":
+		var fnName string
+		if strings.HasPrefix(ins.Arg1, "sk_float") || strings.Contains(ins.Arg1, "sk_float") {
+			switch ins.Op {
+			case "<":
+				fnName = "sk_float_lt"
+			case ">":
+				fnName = "sk_float_gt"
+			case "<=":
+				fnName = "sk_float_le"
+			case ">=":
+				fnName = "sk_float_ge"
+			case "==":
+				fnName = "sk_float_eq"
+			case "!=":
+				fnName = "sk_float_ne"
+			}
+		} else if strings.HasPrefix(ins.Arg1, "sk_double") || strings.Contains(ins.Arg1, "sk_double") {
+			switch ins.Op {
+			case "<":
+				fnName = "sk_double_lt"
+			case ">":
+				fnName = "sk_double_gt"
+			case "<=":
+				fnName = "sk_double_le"
+			case ">=":
+				fnName = "sk_double_ge"
+			case "==":
+				fnName = "sk_double_eq"
+			case "!=":
+				fnName = "sk_double_ne"
+			}
+		} else {
+			switch ins.Op {
+			case "<":
+				fnName = "sk_int_lt"
+			case ">":
+				fnName = "sk_int_gt"
+			case "<=":
+				fnName = "sk_int_le"
+			case ">=":
+				fnName = "sk_int_ge"
+			case "==":
+				fnName = "sk_int_eq"
+			case "!=":
+				fnName = "sk_int_ne"
+			}
+		}
+		cg.writeLine(fmt.Sprintf("%ssk_bool %s = %s(%s, %s);", indent, ins.Result, fnName, ins.Arg1, ins.Arg2))
 
 	default:
 		if ins.Result != "" && ins.Arg1 != "" && ins.Arg2 != "" {
@@ -721,13 +859,13 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 func (cg *CodeGenerator) typeToC(typ string) string {
 	switch typ {
 	case "int":
-		return "int"
+		return "sk_int"
 	case "string":
 		return "sk_string"
 	case "float":
-		return "float"
+		return "sk_float"
 	case "double":
-		return "double"
+		return "sk_double"
 	case "bool":
 		return "sk_bool"
 	case "char":
@@ -735,13 +873,15 @@ func (cg *CodeGenerator) typeToC(typ string) string {
 	case "void":
 		return "void"
 	case "arr":
-		return "void*"
+		return "sk_arr"
 	case "dict":
 		return "void*"
 	case "any":
 		return "sk_any"
+	case "null":
+		return "void*"
 	default:
-		return "int"
+		return "sk_int"
 	}
 }
 

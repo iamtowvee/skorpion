@@ -668,8 +668,18 @@ func (gc *GCAnalyzer) applyInsertions(fn *IRFunction, insertions []gcInsertion, 
 					continue
 				}
 
+				cType := gc.findVarCType(fn, v)
+				var op string
+				switch cType {
+				case "sk_string":
+					op = "free_str"
+				case "sk_array*":
+					op = "free_arr"
+				default:
+					op = "free"
+				}
 				newInstructions = append(newInstructions, IRInstruction{
-					Op:   "free",
+					Op:   op,
 					Arg1: v,
 				})
 
@@ -685,6 +695,16 @@ func (gc *GCAnalyzer) applyInsertions(fn *IRFunction, insertions []gcInsertion, 
 	}
 
 	fn.Instructions = newInstructions
+}
+
+func (gc *GCAnalyzer) findVarCType(fn *IRFunction, name string) string {
+	for _, local := range fn.Locals {
+		parts := strings.Fields(local)
+		if len(parts) >= 2 && parts[len(parts)-1] == name {
+			return parts[0]
+		}
+	}
+	return ""
 }
 
 func (gc *GCAnalyzer) hasFreeAfter(fn *IRFunction, idx int, varName string) bool {

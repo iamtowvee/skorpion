@@ -351,6 +351,17 @@ func (s *String) GetType() NodeType     { return NODE_STRING }
 func (s *String) GetTypeString() string { return "string" }
 
 // ============================================================================
+// Null
+// ============================================================================
+
+type NullLiteral struct {
+	Position
+}
+
+func (n *NullLiteral) GetType() NodeType     { return "Null" }
+func (n *NullLiteral) GetTypeString() string { return "void" }
+
+// ============================================================================
 // IfStmt
 // ============================================================================
 

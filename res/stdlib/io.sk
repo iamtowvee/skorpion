@@ -7,20 +7,26 @@
 
 void *__sk__std_io_send(string line) {
     includeC ~~~
-        printf("%s", line);
+        if (line.__is_null) {
+            printf("null");
+        } else {
+            printf("%s", line.value);
+        }
     ~~~
 }
 
 string *__sk__std_io_input(string prompt = "") {
     includeC ~~~
-        printf("%s", prompt);
+        if (!prompt.__is_null) {
+            printf("%s", prompt.value);
+        }
         char buffer[256];
         fgets(buffer, sizeof(buffer), stdin);
         size_t len = strlen(buffer);
         if (len > 0 && buffer[len-1] == '\n') {
             buffer[len-1] = '\0';
         }
-        return strdup(buffer);
+        return sk_string_new(buffer);
     ~~~
 }
 

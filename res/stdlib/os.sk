@@ -7,19 +7,21 @@
 
 string getEnv(string env) {
   includeC ~~~
-    char* val = getenv(env);
-    return val ? strdup(val) : strdup("");
+    if (env.__is_null) return sk_string_new("");
+    char* val = getenv(env.value);
+    return sk_string_new(val ? val : "");
   ~~~
 }
 
 void setEnv(string env, string val) {
   includeC ~~~
+    if (env.__is_null || val.__is_null) return;
     #if defined(_WIN32)
-        if (getenv(env) == NULL) {
-            _putenv_s(env, val);
+        if (getenv(env.value) == NULL) {
+            _putenv_s(env.value, val.value);
         }
     #elif defined(__linux__)
-        setenv(env, val, 0);
+        setenv(env.value, val.value, 0);
     #endif
   ~~~
 }
@@ -29,10 +31,11 @@ void setClearEnv(string env, string val, bool confirm) {
     return
   }
   includeC ~~~
+    if (env.__is_null || val.__is_null) return;
     #if defined(_WIN32)
-        _putenv_s(env, val);
+        _putenv_s(env.value, val.value);
     #elif defined(__linux__)
-        setenv(env, val, 1);
+        setenv(env.value, val.value, 1);
     #endif
   ~~~
 }

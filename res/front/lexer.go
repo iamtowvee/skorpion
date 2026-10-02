@@ -239,6 +239,7 @@ func (l *Lexer) readIdent() Token {
 		"while":    TOKEN_KEYWORD,
 		"type":     TOKEN_KEYWORD,
 		"return":   TOKEN_KEYWORD,
+		"null":     TOKEN_KEYWORD,
 		"void":     TOKEN_KEYWORD,
 		"int":      TOKEN_KEYWORD,
 		"char":     TOKEN_KEYWORD,
@@ -297,10 +298,37 @@ func (l *Lexer) readString() Token {
 
 	for l.pos < len(l.input) && l.input[l.pos] != '"' {
 		if l.input[l.pos] == '\\' && l.pos+1 < len(l.input) {
-			result.WriteByte('\\')
-			l.pos++
+			l.pos++ // пропустить '\'
 			l.col++
-			result.WriteByte(l.input[l.pos])
+			esc := l.input[l.pos]
+			switch esc {
+			case 'n':
+				result.WriteByte('\n')
+			case 't':
+				result.WriteByte('\t')
+			case 'r':
+				result.WriteByte('\r')
+			case '0':
+				result.WriteByte(0)
+			case '\\':
+				result.WriteByte('\\')
+			case '"':
+				result.WriteByte('"')
+			case '\'':
+				result.WriteByte('\'')
+			case 'a':
+				result.WriteByte(0x07) // bell
+			case 'b':
+				result.WriteByte(0x08) // backspace
+			case 'f':
+				result.WriteByte(0x0C) // form feed
+			case 'v':
+				result.WriteByte(0x0B) // vertical tab
+			default:
+				// Неизвестный escape — сохраняем как есть (backslash + символ)
+				result.WriteByte('\\')
+				result.WriteByte(esc)
+			}
 			l.pos++
 			l.col++
 		} else {

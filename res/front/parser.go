@@ -1301,6 +1301,12 @@ func (p *Parser) parsePrimary() Node {
 
 	case TOKEN_KEYWORD:
 		pos := p.pos()
+
+		if p.peek.Literal == "null" {
+			p.advance()
+			return &NullLiteral{Position: pos}
+		}
+
 		if p.peek.Literal == "true" || p.peek.Literal == "false" {
 			val := p.peek.Literal
 			p.advance()

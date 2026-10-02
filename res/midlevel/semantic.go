@@ -337,6 +337,8 @@ func (sa *SemanticAnalyzer) analyzeNode(node front.Node) front.Node {
 	switch n := node.(type) {
 	case *front.VarDecl:
 		return sa.analyzeVarDecl(n)
+	case *front.NullLiteral:
+		return n
 	case *front.Assign:
 		return sa.analyzeAssign(n)
 	case *front.BinaryExpr:
@@ -433,7 +435,12 @@ func (sa *SemanticAnalyzer) analyzeUnary(unary *front.UnaryExpr) front.Node {
 	}
 	if unary.Op == "!" {
 		operandType := sa.getNodeType(unary.Expr)
-		if operandType != "bool" && operandType != "" {
+		if operandType == "void" {
+			// !null — это ошибка (null не bool)
+			sa.addError("1526",
+				"Operator '!' cannot be applied to null",
+				unary.GetLine(), unary.GetColumn(), sa.CurrentFile)
+		} else if operandType != "bool" && operandType != "" {
 			sa.addError("1526",
 				fmt.Sprintf("Operator '!' requires bool, got '%s'", operandType),
 				unary.GetLine(), unary.GetColumn(), sa.CurrentFile)
@@ -506,8 +513,28 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 	if decl.Expr != nil {
 		exprType = sa.getNodeType(decl.Expr)
 
+		// null имеет тип void
+		if exprType == "void" {
+			// Запрещаем void x = null и any x = null
+			if decl.Type == "void" {
+				sa.addError("1521",
+					"Cannot declare variable of type 'void'",
+					decl.GetLine(), decl.GetColumn(), sa.CurrentFile)
+				return decl
+			}
+			if decl.Type == "any" {
+				sa.addError("1521",
+					"Cannot assign null to 'any' — cannot predict future value type",
+					decl.GetLine(), decl.GetColumn(), sa.CurrentFile)
+				return decl
+			}
+			// Для всех остальных типов (int, string, float, double, bool, arr, dict) — ок
+			sa.CurrentScope.Define(decl.Name, SYM_VARIABLE, decl.Type, false)
+			return decl
+		}
+
 		if decl.Type == "any" {
-			// any принимает любой тип
+			// any принимает любой не-void тип
 		} else if decl.Type != exprType && exprType != "" {
 			sa.addError("1507", fmt.Sprintf("Type mismatch: cannot assign '%s' to '%s'", exprType, decl.Type),
 				decl.GetLine(), decl.GetColumn(), sa.CurrentFile)
@@ -540,18 +567,32 @@ func (sa *SemanticAnalyzer) analyzeAssign(assign *front.Assign) front.Node {
 
 	if assign.Expr != nil {
 		exprType := sa.getNodeType(assign.Expr)
-		debug.Debug("Expression type: %s\n", exprType)
+
+		if exprType == "void" {
+			// null можно присвоить любому типу кроме any и void
+			if sym.Type == "void" {
+				sa.addError("1521",
+					"Cannot assign null to 'void'",
+					assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
+				return assign
+			}
+			if sym.Type == "any" {
+				sa.addError("1521",
+					"Cannot assign null to 'any' — cannot predict future value type",
+					assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
+				return assign
+			}
+			// ок — переменная сохраняет свой тип, но становится null
+			return assign
+		}
 
 		if sym.Type == "any" {
-			debug.Debug("any type, accepting any value\n")
+			// any принимает любой не-void тип
 		} else if sym.Type != exprType && exprType != "" {
-			debug.Debug("Type mismatch: %s vs %s\n", exprType, sym.Type)
 			sa.addError("1510", fmt.Sprintf("Type mismatch: cannot assign '%s' to '%s' (variable '%s')",
 				exprType, sym.Type, assign.Name),
 				assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
 			return assign
-		} else {
-			debug.Debug("Types match: %s == %s\n", exprType, sym.Type)
 		}
 	} else {
 		debug.Debug("No expression to analyze\n")
@@ -585,6 +626,12 @@ func (sa *SemanticAnalyzer) analyzeBinary(bin *front.BinaryExpr) front.Node {
 
 	switch bin.Op {
 	case "+", "-", "*", "/":
+		if leftType == "void" || rightType == "void" {
+			sa.addError("1511",
+				"Cannot use null in arithmetic operation",
+				bin.GetLine(), bin.GetColumn(), sa.CurrentFile)
+			return bin
+		}
 		if !sa.isNumericType(leftType) || !sa.isNumericType(rightType) {
 			sa.addError("1511", fmt.Sprintf("Arithmetic operation '%s' requires numeric types (got %s and %s)",
 				bin.Op, leftType, rightType),
@@ -646,6 +693,11 @@ func (sa *SemanticAnalyzer) analyzeReturn(ret *front.ReturnStmt) front.Node {
 		if sa.CurrentFunction.ReturnType == "void" {
 			sa.addError("1515", "Cannot return value from void function",
 				ret.GetLine(), ret.GetColumn(), sa.CurrentFile)
+			return ret
+		}
+
+		// null (void) можно вернуть из любой non-void функции
+		if exprType == "void" {
 			return ret
 		}
 
@@ -735,6 +787,13 @@ func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
 		paramType := targetFunc.Params[i].Type
 
 		debug.Debug("Arg %d: type=%s, expected=%s\n", i, argType, paramType)
+
+		if argType == "void" && paramType == "any" {
+			sa.addError("1520",
+				fmt.Sprintf("Cannot pass null to 'any' parameter %d — cannot predict future value type", i+1),
+				arg.GetLine(), arg.GetColumn(), sa.CurrentFile)
+			return call
+		}
 
 		if argType != paramType && argType != "" && paramType != "any" {
 			debug.Debug("Type mismatch in argument %d\n", i)
@@ -984,6 +1043,8 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 		return "int"
 	case *front.String:
 		return "string"
+	case *front.NullLiteral:
+		return "void"
 	case *front.ArrayLiteral:
 		return "arr"
 	case *front.TypeOf:
