@@ -11,8 +11,12 @@ var REF_SK string
 //go:embed cfg.sk
 var CFG_SK string
 
+//go:embed os.sk
+var OS_SK string
+
 var StdLib = map[string]string{
 	"std/io":  IO_SK,
+	"std/os":  OS_SK,
 	"std/ref": REF_SK,
  "std/cfg": CFG_SK,
 }
