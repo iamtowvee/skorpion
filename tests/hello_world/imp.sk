@@ -1,7 +1,13 @@
-use std/io
-
-void some() { io.sendln("Hi"); }
+use #std/os
+use #std/io
 
 void main(arr args) {
-    any x = some()
+    setEnv("MY_VAR", "first")
+    sendln(getEnv("MY_VAR"))    // first
+
+    setClearEnv("MY_VAR", "second", false)
+    sendln(getEnv("MY_VAR"))    // first (не перезаписано)
+
+    setClearEnv("MY_VAR", "third", true)
+    sendln(getEnv("MY_VAR"))    // third (перезаписано)
 }

@@ -203,17 +203,6 @@ sk_string sk_array_to_string(sk_array* a) {
     return buf;
 }
 
-// Error types
-typedef struct SkError {
-    const char* __type;
-    sk_string msg;
-} SkError;
-
-typedef struct MyError {
-    const char* __type;
-    sk_string msg;
-} MyError;
-
 // Skorpion exception runtime
 typedef struct SkCleanup {
     void** ptr;
@@ -308,61 +297,66 @@ int sk_error_type_match(const char* actual, const char* expected) {
 }
 
 // Function prototypes
-void f(void);
+sk_string getEnv(sk_string env);
+void setEnv(sk_string env, sk_string val);
+void setClearEnv(sk_string env, sk_string val, sk_bool confirm);
 void __sk__std_io_send(sk_string line);
 sk_string __sk__std_io_input(sk_string prompt);
 void sendln(sk_any msg);
 void sendf(sk_any msg);
 sk_string input(sk_string prefix);
 
-void f(void) {
-    MyError* t1;
-
-t1 = malloc(sizeof(MyError));
-t1->__type = "Error.MyError";
-t1->msg = "boom";
-    sk_throw(t1, "main.sk", 8, 5);
-    return;
-}
-
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
-    SkTryFrame t2;
-    void* t3;
-    int t4;
-    MyError* e;
-    sk_string t5;
-
-    sk_try_push(&t2);
-    if (setjmp(sk_try_stack->env) != 0) {
-        goto L2;
-    }
-    f();
-    goto L1;
-L2:
-    sk_try_pop((SkTryFrame*)&t2);
-    t3 = t2.error;
-    t4 = sk_error_type_match(((SkError*)t3)->__type, "Error.MyError");
-    if (t4 != 0) {
-        goto L2_body;
-    } else {
-        goto L3;
-    }
-L2_body:
-    e = (MyError*)t3;
-t5 = e->msg;
+    setEnv("MY_VAR", "first");
+    sk_string t1 = getEnv("MY_VAR");
+    sk_any t2 = any_string(t1);
+    sendln(t2);
+    setClearEnv("MY_VAR", "second", false);
+    sk_string t3 = getEnv("MY_VAR");
+    sk_any t4 = any_string(t3);
+    sendln(t4);
+    setClearEnv("MY_VAR", "third", true);
+    sk_string t5 = getEnv("MY_VAR");
     sk_any t6 = any_string(t5);
     sendln(t6);
-    sk_error_free(t3);
-    goto L1;
-L3:
-    t3 = t2.error;
-    sk_throw(t3, "main.sk", 12, 5);
-L1:
-    sk_any t7 = any_string("done");
-    sendln(t7);
     return 0;
+}
+
+sk_string getEnv(sk_string env) {
+    char* val = getenv(env);
+        return val ? strdup(val) : strdup("");
+}
+
+void setEnv(sk_string env, sk_string val) {
+    #if defined(_WIN32)
+            if (getenv(env) == NULL) {
+                _putenv_s(env, val);
+            }
+        #elif defined(__linux__)
+            setenv(env, val, 0);
+        #endif
+    return;
+}
+
+void setClearEnv(sk_string env, sk_string val, sk_bool confirm) {
+    if (!confirm) {
+        goto L1;
+    } else {
+        goto L2;
+    }
+L1:
+    return;
+    goto L3;
+L2:
+L3:
+    #if defined(_WIN32)
+            _putenv_s(env, val);
+        #elif defined(__linux__)
+            setenv(env, val, 1);
+        #endif
+    return;
 }
 
 void __sk__std_io_send(sk_string line) {
@@ -382,22 +376,22 @@ sk_string __sk__std_io_input(sk_string prompt) {
 }
 
 void sendln(sk_any msg) {
-    sk_string t8 = any_to_string(msg);
-    char t9[256];
-    strcpy(t9, t8);
-    strcat(t9, "\n");
-    __sk__std_io_send(t9);
+    sk_string t7 = any_to_string(msg);
+    char t8[256];
+    strcpy(t8, t7);
+    strcat(t8, "\n");
+    __sk__std_io_send(t8);
     return;
 }
 
 void sendf(sk_any msg) {
-    sk_string t10 = any_to_string(msg);
-    __sk__std_io_send(t10);
+    sk_string t9 = any_to_string(msg);
+    __sk__std_io_send(t9);
     return;
 }
 
 sk_string input(sk_string prefix) {
-    sk_string t11 = __sk__std_io_input(prefix);
-    return t11;
+    sk_string t10 = __sk__std_io_input(prefix);
+    return t10;
 }
 
