@@ -309,9 +309,11 @@ int sk_error_type_match(const char* actual, const char* expected) {
 
 // Function prototypes
 void f(void);
-void sendln(sk_string msg);
-void sendf(sk_string msg);
-sk_string input(sk_string prompt);
+void __sk__std_io_send(sk_string line);
+sk_string __sk__std_io_input(sk_string prompt);
+void sendln(sk_any msg);
+void sendf(sk_any msg);
+sk_string input(sk_string prefix);
 
 void f(void) {
     MyError* t1;
@@ -350,28 +352,25 @@ L2:
 L2_body:
     e = (MyError*)t3;
 t5 = e->msg;
-    sendln(t5);
+    sk_any t6 = any_string(t5);
+    sendln(t6);
     sk_error_free(t3);
     goto L1;
 L3:
     t3 = t2.error;
     sk_throw(t3, "main.sk", 12, 5);
 L1:
-    sendln("done");
+    sk_any t7 = any_string("done");
+    sendln(t7);
     return 0;
 }
 
-void sendln(sk_string msg) {
-    printf("%s\n", msg);
+void __sk__std_io_send(sk_string line) {
+    printf("%s", line);
     return;
 }
 
-void sendf(sk_string msg) {
-    printf("%s", msg);
-    return;
-}
-
-sk_string input(sk_string prompt) {
+sk_string __sk__std_io_input(sk_string prompt) {
     printf("%s", prompt);
             char buffer[256];
             fgets(buffer, sizeof(buffer), stdin);
@@ -380,5 +379,25 @@ sk_string input(sk_string prompt) {
                 buffer[len-1] = '\0';
             }
             return strdup(buffer);
+}
+
+void sendln(sk_any msg) {
+    sk_string t8 = any_to_string(msg);
+    char t9[256];
+    strcpy(t9, t8);
+    strcat(t9, "\n");
+    __sk__std_io_send(t9);
+    return;
+}
+
+void sendf(sk_any msg) {
+    sk_string t10 = any_to_string(msg);
+    __sk__std_io_send(t10);
+    return;
+}
+
+sk_string input(sk_string prefix) {
+    sk_string t11 = __sk__std_io_input(prefix);
+    return t11;
 }
 

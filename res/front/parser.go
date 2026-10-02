@@ -1288,15 +1288,6 @@ func (p *Parser) parsePrimary() Node {
 			return nil
 		}
 
-		if p.peek.Type == TOKEN_PLUS {
-			p.advance()
-			elem := p.parseExpression()
-			if elem == nil {
-				return nil
-			}
-			return &ArrayAdd{Position: pos, Name: name, Elem: elem}
-		}
-
 		if p.peek.Type == TOKEN_LPAREN {
 			return p.parseCall(name, pos)
 		}

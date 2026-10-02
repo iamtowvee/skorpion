@@ -32,6 +32,6 @@ void sendf(any msg) {
     __sk__std_io_send($msg)
 }
 
-void input(string prefix = "") {
-    __sk__std_io_input(prefix)
+string input(string prefix = "") {
+    return __sk__std_io_input(prefix)
 }

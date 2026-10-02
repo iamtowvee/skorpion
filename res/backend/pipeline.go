@@ -2,6 +2,7 @@ package backend
 
 import (
 	"fmt"
+	"skrp/res/debug"
 	"skrp/res/front"
 	"strconv"
 	"strings"
@@ -1817,13 +1818,12 @@ func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 		}
 		return "int"
 	case *front.Ident:
-		// true/false — bool
 		if n.Name == "true" || n.Name == "false" {
 			return "bool"
 		}
-		// Параметры
 		for _, param := range irFn.Params {
 			if param.Name == n.Name {
+				debug.Debug("getExprType: %s -> %s (param in %s)\n", n.Name, param.Type, irFn.Name)
 				return param.Type
 			}
 		}
@@ -1852,6 +1852,7 @@ func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 				}
 			}
 		}
+		debug.Debug("getExprType: %s -> NOT FOUND in %s (params: %v)\n", n.Name, irFn.Name, irFn.Params)
 		return ""
 	case *front.BinaryExpr:
 		leftType := p.getExprType(n.Left, irFn)
