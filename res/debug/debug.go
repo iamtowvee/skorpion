@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"skrp/res/cli"
+	"strings"
 )
 
 // Единственный флаг дебага
@@ -28,7 +29,13 @@ func Debug(format string, args ...interface{}) {
 	if !IsDevMode {
 		return
 	}
-	fmt.Printf(cli.Colors.Colorize(cli.BRIGHT_BLACK, "[DEBUG] "+format), args...)
+	msg := fmt.Sprintf(format, args...)
+	colorized := cli.Colors.Colorize(cli.BRIGHT_BLACK, "[DEBUG] "+msg)
+
+	if !strings.HasSuffix(msg, "\n") {
+		colorized += "\n"
+	}
+	fmt.Print(colorized)
 }
 
 // Или просто проверка
