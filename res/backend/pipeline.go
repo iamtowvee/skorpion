@@ -2610,11 +2610,29 @@ func (p *Pipeline) processArrayLiteralTyped(lit *front.ArrayLiteral, expectedEle
 				})
 			}
 		} else {
-			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:   "call",
-				Arg1: "sk_array_push",
-				Arg2: result + ".value, &" + val,
-			})
+			// Явный скалярный тип — null превращаем в SK_NULL_<тип>
+			if p.getExprType(elem, irFn) == "void" {
+				cType := p.typeToC(expectedElemType)
+				nullMacro := "SK_NULL_" + strings.TrimPrefix(cType, "sk_")
+				nullVar := p.newTemp()
+				irFn.Locals = append(irFn.Locals, cType+" "+nullVar)
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op:     "=",
+					Result: nullVar,
+					Arg1:   nullMacro,
+				})
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op:   "call",
+					Arg1: "sk_array_push",
+					Arg2: result + ".value, &" + nullVar,
+				})
+			} else {
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op:   "call",
+					Arg1: "sk_array_push",
+					Arg2: result + ".value, &" + val,
+				})
+			}
 		}
 	}
 

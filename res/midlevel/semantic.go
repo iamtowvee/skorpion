@@ -381,6 +381,8 @@ func (sa *SemanticAnalyzer) analyzeNode(node front.Node) front.Node {
 		return sa.analyzeWhile(n)
 	case *front.ForStmt:
 		return sa.analyzeFor(n)
+	case *front.FieldAccess:
+		return sa.analyzeFieldAccess(n)
 	case *front.ErrorInstance:
 		return sa.analyzeErrorInstance(n)
 	case *front.RangeExpr:
@@ -394,6 +396,37 @@ func (sa *SemanticAnalyzer) analyzeNode(node front.Node) front.Node {
 		debug.Debug("Unknown node type: %T\n", n)
 		return n
 	}
+}
+
+func (sa *SemanticAnalyzer) analyzeFieldAccess(fa *front.FieldAccess) front.Node {
+	// 1. Объект должен существовать
+	sym := sa.CurrentScope.Resolve(fa.Object)
+	if sym == nil {
+		sa.addError("1514",
+			fmt.Sprintf("Undefined identifier '%s'", fa.Object),
+			fa.GetLine(), fa.GetColumn(), sa.CurrentFile)
+		return fa
+	}
+
+	// 2. Объект должен быть error-типом
+	decl, ok := sa.ErrorTypes[sym.Type]
+	if !ok {
+		sa.addError("1539",
+			fmt.Sprintf("'%s' is not an error type (got '%s')", fa.Object, sym.Type),
+			fa.GetLine(), fa.GetColumn(), sa.CurrentFile)
+		return fa
+	}
+
+	// 3. Поле должно существовать (с учётом наследования)
+	allFields := sa.collectErrorFields(decl)
+	if _, exists := allFields[fa.Field]; !exists {
+		sa.addError("1539",
+			fmt.Sprintf("Error type '%s' has no field '%s'", sym.Type, fa.Field),
+			fa.GetLine(), fa.GetColumn(), sa.CurrentFile)
+		return fa
+	}
+
+	return fa
 }
 
 func (sa *SemanticAnalyzer) analyzeTry(try *front.TryStmt) front.Node {
@@ -463,14 +496,39 @@ func (sa *SemanticAnalyzer) analyzeUnary(unary *front.UnaryExpr) front.Node {
 
 func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 	if decl.IsArray {
+		// Запрет arr[void]
+		if decl.ElemType == "void" {
+			sa.addError("1534",
+				"Cannot declare array of type 'void' — all elements would be null",
+				decl.GetLine(), decl.GetColumn(), sa.CurrentFile)
+			return decl
+		}
+
 		if decl.Expr != nil {
 			if arrLit, ok := decl.Expr.(*front.ArrayLiteral); ok {
 				expectedElemType := decl.ElemType
 
-				if expectedElemType != "" && expectedElemType != "any" {
+				// Гетерогенный массив (arr или arr[any]) — null запрещён
+				if expectedElemType == "" || expectedElemType == "any" {
+					for _, elem := range arrLit.Elements {
+						if _, isNull := elem.(*front.NullLiteral); isNull {
+							sa.addError("1534",
+								"Cannot use null in heterogeneous array — cannot infer its type",
+								elem.GetLine(), elem.GetColumn(), sa.CurrentFile)
+						}
+					}
+				} else {
+					// Явный тип — проверяем элементы
 					for _, elem := range arrLit.Elements {
 						if isArrayTypeSemantic(expectedElemType) {
 							if _, ok := elem.(*front.ArrayLiteral); !ok {
+								if _, isNull := elem.(*front.NullLiteral); isNull {
+									// null для arr[arr[...]] — тоже ошибка
+									sa.addError("1534",
+										fmt.Sprintf("Cannot use null in array of type '%s'", expectedElemType),
+										elem.GetLine(), elem.GetColumn(), sa.CurrentFile)
+									continue
+								}
 								sa.addError("1534",
 									fmt.Sprintf("Array element type mismatch: expected '%s', got '%s'",
 										expectedElemType, sa.getNodeType(elem)),
@@ -478,6 +536,10 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 							}
 						} else {
 							elemType := sa.getNodeType(elem)
+							// null (void) совместим с любым скалярным типом
+							if elemType == "void" {
+								continue
+							}
 							if elemType != expectedElemType && elemType != "" {
 								sa.addError("1534",
 									fmt.Sprintf("Array element type mismatch: expected '%s', got '%s'",
@@ -1059,6 +1121,26 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 		if sym != nil {
 			return sym.Type
 		}
+		return ""
+	case *front.FieldAccess:
+		// Ищем объект в scope
+		sym := sa.CurrentScope.Resolve(n.Object)
+		if sym == nil {
+			return ""
+		}
+
+		// Ищем тип объекта среди error-типов
+		decl, ok := sa.ErrorTypes[sym.Type]
+		if !ok {
+			return ""
+		}
+
+		// Ищем поле (с учётом наследования)
+		allFields := sa.collectErrorFields(decl)
+		if field, exists := allFields[n.Field]; exists {
+			return field.Type
+		}
+
 		return ""
 	case *front.BinaryExpr:
 		debug.Debug("getNodeType BinaryExpr: op=%s\n", n.Op)

@@ -461,6 +461,18 @@ var ErrorCodes = map[string]ErrorCode{
 		Description: "A literal zero was used as the divisor.",
 		Tip:         "Check the divisor.",
 	},
+	"1542": {
+		Code:        "1542",
+		Message:     "Null in heterogeneous array",
+		Description: "Cannot use null in a heterogeneous array (arr or arr[any]) — cannot infer its concrete type.",
+		Tip:         "Use a typed array like 'arr[int]' or replace null with a typed value.",
+	},
+	"1543": {
+		Code:        "1543",
+		Message:     "Array of void",
+		Description: "Cannot declare an array with element type 'void' — all elements would be null.",
+		Tip:         "Use a concrete element type: arr[int], arr[string], etc.",
+	},
 
 	// ============ 2000-2499: Semantic Warnings ============
 	"2000": {

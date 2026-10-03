@@ -1498,6 +1498,12 @@ func (p *Parser) parseArrayType() string {
 		case "int", "string", "float", "double", "bool", "char", "any":
 			innerType = p.peek.Literal
 			p.advance()
+		case "void":
+			p.hasErrors = true
+			errors.NewFatalError("0513",
+				"Array element type cannot be 'void'",
+				p.peek.Line, p.peek.Column, p.FileName)
+			return ""
 		case "arr":
 			p.advance()
 			innerType = p.parseArrayType()
