@@ -1,6 +1,7 @@
 package front
 
 import (
+	"fmt"
 	"skrp/res/errors"
 	"strings"
 	"unicode"
@@ -325,7 +326,10 @@ func (l *Lexer) readString() Token {
 			case 'v':
 				result.WriteByte(0x0B) // vertical tab
 			default:
-				// Неизвестный escape — сохраняем как есть (backslash + символ)
+				// Неизвестный escape — сохраняем как есть, но предупреждаем
+				errors.NewWarning("0105",
+					fmt.Sprintf("Unknown escape sequence '\\%c'", esc),
+					l.line, l.col, "")
 				result.WriteByte('\\')
 				result.WriteByte(esc)
 			}

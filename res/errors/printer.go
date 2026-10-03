@@ -10,7 +10,6 @@ import (
 func PrintError(err SkorpionError, sourceLines []string) {
 	codeInfo := err.GetCodeInfo()
 
-	// [2026-09-05T15:21:43 > Err+0004]: Expected '}', got ',' (at 11:10)
 	timestamp := time.Now().Format("2006-01-02T15:04:05")
 	fmt.Printf("%s %s%s%s %s\n",
 		cli.Colors.Dim("["+timestamp+" >"),
@@ -19,7 +18,6 @@ func PrintError(err SkorpionError, sourceLines []string) {
 		cli.Colors.Red(":"),
 		cli.Colors.Bold(err.Message))
 
-	//    >>> F:\path\to\project\dir | L: 33, C: 15
 	filePath := err.File
 	if filePath == "" {
 		filePath = "<unknown>"
@@ -33,11 +31,9 @@ func PrintError(err SkorpionError, sourceLines []string) {
 		cli.Colors.Dim("C:"),
 		err.Column)
 
-	// Контекст: 2 строки до и 2 строки после
 	if len(sourceLines) > 0 && err.Line > 0 && err.Line <= len(sourceLines) {
 		fmt.Printf("    |\n")
 
-		// Показываем 2 строки до
 		start := err.Line - 3
 		if start < 0 {
 			start = 0
@@ -51,17 +47,13 @@ func PrintError(err SkorpionError, sourceLines []string) {
 			lineNum := i + 1
 			line := sourceLines[i]
 
-			// Номер строки
 			lineNumStr := fmt.Sprintf("%2d", lineNum)
 			if lineNum == err.Line {
-				// Текущая строка — жирным и с указателем
 				fmt.Printf(" %s | %s\n",
 					cli.Colors.Bold(lineNumStr),
 					line)
 
-				// Указатель на позицию ошибки
 				if err.Column > 0 && err.Column <= len(line) {
-					// Находим конец токена
 					endCol := err.Column
 					for endCol < len(line) && line[endCol] != ' ' && line[endCol] != ',' && line[endCol] != ';' && line[endCol] != ')' && line[endCol] != '(' {
 						endCol++
@@ -73,7 +65,6 @@ func PrintError(err SkorpionError, sourceLines []string) {
 					fmt.Printf("    | %s\n", cli.Colors.Red(pointer))
 				}
 			} else {
-				// Обычные строки
 				fmt.Printf(" %s | %s\n",
 					cli.Colors.Dim(lineNumStr),
 					line)
@@ -82,7 +73,75 @@ func PrintError(err SkorpionError, sourceLines []string) {
 		fmt.Printf("    |\n")
 	}
 
-	// TIP
+	if codeInfo.Tip != "" {
+		fmt.Printf("   %s\n", cli.Colors.Yellow(">>> TIP"))
+		fmt.Printf("    | %s\n", codeInfo.Tip)
+		fmt.Printf("    |\n")
+	}
+}
+
+func PrintWarning(warn SkorpionError, sourceLines []string) {
+	codeInfo := warn.GetCodeInfo()
+
+	timestamp := time.Now().Format("2006-01-02T15:04:05")
+	fmt.Printf("%s %s%s%s %s\n",
+		cli.Colors.Dim("["+timestamp+" >"),
+		cli.Colors.Yellow("Warn+"+warn.Code),
+		cli.Colors.Dim("]"),
+		cli.Colors.Yellow(":"),
+		cli.Colors.Bold(warn.Message))
+
+	filePath := warn.File
+	if filePath == "" {
+		filePath = "<unknown>"
+	}
+	fmt.Printf("   %s %s %s %s %d, %s %d\n",
+		cli.Colors.Dim(">>>"),
+		cli.Colors.Cyan(filePath),
+		cli.Colors.Dim("|"),
+		cli.Colors.Dim("L:"),
+		warn.Line,
+		cli.Colors.Dim("C:"),
+		warn.Column)
+
+	if len(sourceLines) > 0 && warn.Line > 0 && warn.Line <= len(sourceLines) {
+		fmt.Printf("    |\n")
+		start := warn.Line - 3
+		if start < 0 {
+			start = 0
+		}
+		end := warn.Line + 2
+		if end > len(sourceLines) {
+			end = len(sourceLines)
+		}
+		for i := start; i < end; i++ {
+			lineNum := i + 1
+			line := sourceLines[i]
+			lineNumStr := fmt.Sprintf("%2d", lineNum)
+			if lineNum == warn.Line {
+				fmt.Printf(" %s | %s\n",
+					cli.Colors.Bold(lineNumStr),
+					line)
+				if warn.Column > 0 && warn.Column <= len(line) {
+					endCol := warn.Column
+					for endCol < len(line) && line[endCol] != ' ' && line[endCol] != '"' {
+						endCol++
+					}
+					if endCol == warn.Column {
+						endCol = warn.Column + 1
+					}
+					pointer := strings.Repeat(" ", warn.Column-1) + strings.Repeat("~", endCol-warn.Column+1)
+					fmt.Printf("    | %s\n", cli.Colors.Yellow(pointer))
+				}
+			} else {
+				fmt.Printf(" %s | %s\n",
+					cli.Colors.Dim(lineNumStr),
+					line)
+			}
+		}
+		fmt.Printf("    |\n")
+	}
+
 	if codeInfo.Tip != "" {
 		fmt.Printf("   %s\n", cli.Colors.Yellow(">>> TIP"))
 		fmt.Printf("    | %s\n", codeInfo.Tip)
@@ -91,7 +150,33 @@ func PrintError(err SkorpionError, sourceLines []string) {
 }
 
 func PrintErrorReport(report ErrorReport) {
+	// Сначала warnings
+	if len(report.Warnings) > 0 {
+		uniqueWarnings := []SkorpionError{}
+		seen := make(map[string]bool)
+		for _, w := range report.Warnings {
+			key := fmt.Sprintf("%s:%d:%d", w.Code, w.Line, w.Column)
+			if !seen[key] {
+				seen[key] = true
+				uniqueWarnings = append(uniqueWarnings, w)
+			}
+		}
+		for _, w := range uniqueWarnings {
+			PrintWarning(w, report.SourceCode)
+			fmt.Println()
+		}
+	}
+
+	// Если ошибок нет — только warnings
 	if len(report.Errors) == 0 {
+		if len(report.Warnings) > 0 {
+			fmt.Printf("%s in %s (%dms) with %s (count %d).\n",
+				cli.Colors.Yellow("Succeeded"),
+				report.FilePath,
+				report.TotalTime.Milliseconds(),
+				cli.Colors.Yellow("warnings"),
+				len(report.Warnings))
+		}
 		return
 	}
 
@@ -111,26 +196,18 @@ func PrintErrorReport(report ErrorReport) {
 		fmt.Println()
 	}
 
-	// Итог
-	if len(uniqueErrors) == 1 {
-		fmt.Printf("%s in %s (%dms) with %s (count %d).\n",
-			cli.Colors.Red("Failed"),
-			report.FilePath,
-			report.TotalTime.Milliseconds(),
-			cli.Colors.Red("errors"),
-			len(uniqueErrors))
-	} else {
-		fmt.Printf("%s in %s (%dms) with %s (count %d).\n",
-			cli.Colors.Red("Failed"),
-			report.FilePath,
-			report.TotalTime.Milliseconds(),
-			cli.Colors.Red("errors"),
-			len(uniqueErrors))
-	}
+	fmt.Printf("%s in %s (%dms) with %s (count %d).\n",
+		cli.Colors.Red("Failed"),
+		report.FilePath,
+		report.TotalTime.Milliseconds(),
+		cli.Colors.Red("errors"),
+		len(uniqueErrors))
 }
 
 func ExplainError(code string) {
-	if len(code) > 4 && code[:4] == "Err+" {
+	if len(code) > 5 && code[:5] == "Warn+" {
+		code = code[5:]
+	} else if len(code) > 4 && code[:4] == "Err+" {
 		code = code[4:]
 	}
 
@@ -142,8 +219,8 @@ func ExplainError(code string) {
 	}
 
 	fmt.Printf("%s %s%s\n",
-		cli.Colors.Bold("Error:"),
-		cli.Colors.Red("Err+"+info.Code),
+		cli.Colors.Bold("Code:"),
+		cli.Colors.Red(info.Code),
 		cli.Colors.Dim(" — "+info.Message))
 	fmt.Println()
 
@@ -153,7 +230,15 @@ func ExplainError(code string) {
 
 	fmt.Printf("%s\n", cli.Colors.Bold("Tip:"))
 	fmt.Printf("  %s\n", info.Tip)
-	fmt.Println()
 
+	if info.Example != "" {
+		fmt.Println()
+		fmt.Printf("%s\n", cli.Colors.Bold("Example:"))
+		for _, line := range strings.Split(info.Example, "\n") {
+			fmt.Printf("  %s\n", line)
+		}
+	}
+
+	fmt.Println()
 	fmt.Printf("%s\n", cli.Colors.Dim("Run 'skorpion build' to see the error in context."))
 }

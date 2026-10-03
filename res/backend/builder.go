@@ -82,7 +82,9 @@ func (b *Builder) buildForTarget(targetOS string, cFile string) bool {
 	}
 
 	if compilerPath == "" {
-		fmt.Printf("Warning: no compiler found for target '%s', skipping\n", targetOS)
+		errors.NewError("3001",
+			fmt.Sprintf("Compiler not found for target '%s'", targetOS),
+			0, 0, "")
 		return false
 	}
 

@@ -755,6 +755,10 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 
 		// null (void) → SK_NULL_<decl.Type>
 		if exprType == "void" {
+			if decl.Type == "void" || decl.Type == "any" {
+				// Это должно быть отловлено семантикой
+				return
+			}
 			nullMacro := "SK_NULL_" + strings.TrimPrefix(cType, "sk_")
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op:     "=",
@@ -1390,6 +1394,14 @@ func (p *Pipeline) prepareArg(argExpr front.Node, paramType string, irFn *IRFunc
 	argType := p.getExprType(argExpr, irFn)
 	argValue := p.processExpression(argExpr, irFn)
 
+	if argType == "void" {
+		if paramType == "any" {
+			return "any_null()"
+		}
+		cType := p.typeToC(paramType)
+		return "SK_NULL_" + strings.TrimPrefix(cType, "sk_")
+	}
+
 	if argType == "void" && paramType == "any" {
 		// Это должно отлавливаться семантикой, но на всякий случай
 		return "any_null()"
@@ -1928,6 +1940,12 @@ func (p *Pipeline) processToInt(call *front.CallExpr, irFn *IRFunction) string {
 			Arg2:       arg,
 			ReturnType: "sk_int",
 		})
+	case "void":
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "=",
+			Result: result,
+			Arg1:   "SK_NULL_" + strings.TrimPrefix(p.typeToC("int"), "sk_"),
+		})
 	default:
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:     "=",
@@ -1991,6 +2009,12 @@ func (p *Pipeline) processToFloat(call *front.CallExpr, irFn *IRFunction) string
 			Arg2:       arg,
 			ReturnType: "sk_float",
 		})
+	case "void":
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "=",
+			Result: result,
+			Arg1:   "SK_NULL_" + strings.TrimPrefix(p.typeToC("float"), "sk_"),
+		})
 	default:
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:     "=",
@@ -2053,6 +2077,12 @@ func (p *Pipeline) processToDouble(call *front.CallExpr, irFn *IRFunction) strin
 			Arg1:       "any_to_double",
 			Arg2:       arg,
 			ReturnType: "sk_double",
+		})
+	case "void":
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "=",
+			Result: result,
+			Arg1:   "SK_NULL_" + strings.TrimPrefix(p.typeToC("double"), "sk_"),
 		})
 	default:
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
@@ -2137,6 +2167,12 @@ func (p *Pipeline) processToString(call *front.CallExpr, irFn *IRFunction) strin
 			Result: result,
 			Arg1:   arg,
 		})
+	case "void":
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "=",
+			Result: result,
+			Arg1:   "SK_NULL_" + strings.TrimPrefix(p.typeToC("string"), "sk_"),
+		})
 	default:
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:         "call",
@@ -2207,6 +2243,12 @@ func (p *Pipeline) processToBool(call *front.CallExpr, irFn *IRFunction) string 
 			Arg1:       "any_to_bool",
 			Arg2:       arg,
 			ReturnType: "sk_bool",
+		})
+	case "void":
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "=",
+			Result: result,
+			Arg1:   "SK_NULL_" + strings.TrimPrefix(p.typeToC("bool"), "sk_"),
 		})
 	default:
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{

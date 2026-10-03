@@ -417,7 +417,7 @@ func (sa *SemanticAnalyzer) analyzeFieldAccess(fa *front.FieldAccess) front.Node
 		return fa
 	}
 
-	// 3. Поле должно существовать (с учётом наследования)
+	// 3. Поле должно существовать
 	allFields := sa.collectErrorFields(decl)
 	if _, exists := allFields[fa.Field]; !exists {
 		sa.addError("1539",
@@ -438,7 +438,7 @@ func (sa *SemanticAnalyzer) analyzeTry(try *front.TryStmt) front.Node {
 		// Проверка типа
 		if clause.TypeName != "" && clause.TypeName != "Error" {
 			if _, ok := sa.ErrorTypes[clause.TypeName]; !ok {
-				sa.addError("1518",
+				sa.addError("1560",
 					fmt.Sprintf("Unknown error type '%s' in catch", clause.TypeName),
 					clause.GetLine(), clause.GetColumn(), sa.CurrentFile)
 			}
@@ -470,7 +470,7 @@ func (sa *SemanticAnalyzer) analyzeUnary(unary *front.UnaryExpr) front.Node {
 		operandType := sa.getNodeType(unary.Expr)
 		if operandType == "void" {
 			// !null — это ошибка (null не bool)
-			sa.addError("1526",
+			sa.addError("1555",
 				"Operator '!' cannot be applied to null",
 				unary.GetLine(), unary.GetColumn(), sa.CurrentFile)
 		} else if operandType != "bool" && operandType != "" {
@@ -498,7 +498,7 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 	if decl.IsArray {
 		// Запрет arr[void]
 		if decl.ElemType == "void" {
-			sa.addError("1534",
+			sa.addError("1543",
 				"Cannot declare array of type 'void' — all elements would be null",
 				decl.GetLine(), decl.GetColumn(), sa.CurrentFile)
 			return decl
@@ -512,7 +512,7 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 				if expectedElemType == "" || expectedElemType == "any" {
 					for _, elem := range arrLit.Elements {
 						if _, isNull := elem.(*front.NullLiteral); isNull {
-							sa.addError("1534",
+							sa.addError("1542",
 								"Cannot use null in heterogeneous array — cannot infer its type",
 								elem.GetLine(), elem.GetColumn(), sa.CurrentFile)
 						}
@@ -524,7 +524,7 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 							if _, ok := elem.(*front.ArrayLiteral); !ok {
 								if _, isNull := elem.(*front.NullLiteral); isNull {
 									// null для arr[arr[...]] — тоже ошибка
-									sa.addError("1534",
+									sa.addError("1542",
 										fmt.Sprintf("Cannot use null in array of type '%s'", expectedElemType),
 										elem.GetLine(), elem.GetColumn(), sa.CurrentFile)
 									continue
@@ -579,13 +579,13 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 		if exprType == "void" {
 			// Запрещаем void x = null и any x = null
 			if decl.Type == "void" {
-				sa.addError("1521",
+				sa.addError("1558",
 					"Cannot declare variable of type 'void'",
 					decl.GetLine(), decl.GetColumn(), sa.CurrentFile)
 				return decl
 			}
 			if decl.Type == "any" {
-				sa.addError("1521",
+				sa.addError("1557",
 					"Cannot assign null to 'any' — cannot predict future value type",
 					decl.GetLine(), decl.GetColumn(), sa.CurrentFile)
 				return decl
@@ -633,13 +633,13 @@ func (sa *SemanticAnalyzer) analyzeAssign(assign *front.Assign) front.Node {
 		if exprType == "void" {
 			// null можно присвоить любому типу кроме any и void
 			if sym.Type == "void" {
-				sa.addError("1521",
+				sa.addError("1559",
 					"Cannot assign null to 'void'",
 					assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
 				return assign
 			}
 			if sym.Type == "any" {
-				sa.addError("1521",
+				sa.addError("1557",
 					"Cannot assign null to 'any' — cannot predict future value type",
 					assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
 				return assign
@@ -689,7 +689,7 @@ func (sa *SemanticAnalyzer) analyzeBinary(bin *front.BinaryExpr) front.Node {
 	switch bin.Op {
 	case "+", "-", "*", "/":
 		if leftType == "void" || rightType == "void" {
-			sa.addError("1511",
+			sa.addError("1553",
 				"Cannot use null in arithmetic operation",
 				bin.GetLine(), bin.GetColumn(), sa.CurrentFile)
 			return bin
@@ -851,7 +851,7 @@ func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
 		debug.Debug("Arg %d: type=%s, expected=%s\n", i, argType, paramType)
 
 		if argType == "void" && paramType == "any" {
-			sa.addError("1520",
+			sa.addError("1552",
 				fmt.Sprintf("Cannot pass null to 'any' parameter %d — cannot predict future value type", i+1),
 				arg.GetLine(), arg.GetColumn(), sa.CurrentFile)
 			return call
@@ -1615,7 +1615,7 @@ func (sa *SemanticAnalyzer) registerErrorDecl(decl *front.ErrorDecl) {
 	// Родитель должен существовать
 	parent, ok := sa.ErrorTypes[decl.Parent]
 	if !ok {
-		sa.addError("1518",
+		sa.addError("1549",
 			fmt.Sprintf("Unknown parent error type '%s'", decl.Parent),
 			decl.GetLine(), decl.GetColumn(), sa.CurrentFile)
 		return
@@ -1630,7 +1630,7 @@ func (sa *SemanticAnalyzer) registerErrorDecl(decl *front.ErrorDecl) {
 	for _, field := range decl.Fields {
 		if parentField, ok := parentFields[field.Name]; ok {
 			if parentField.Type != field.Type {
-				sa.addError("1534",
+				sa.addError("1550",
 					fmt.Sprintf("Field '%s' type mismatch with parent '%s': expected '%s', got '%s'",
 						field.Name, decl.Parent, parentField.Type, field.Type),
 					field.GetLine(), field.GetColumn(), sa.CurrentFile)
@@ -1656,7 +1656,7 @@ func (sa *SemanticAnalyzer) analyzeErrorInstance(inst *front.ErrorInstance) fron
 	// Тип должен существовать
 	decl, ok := sa.ErrorTypes[inst.TypeName]
 	if !ok {
-		sa.addError("1518",
+		sa.addError("1560",
 			fmt.Sprintf("Unknown error type '%s'", inst.TypeName),
 			inst.GetLine(), inst.GetColumn(), sa.CurrentFile)
 		return inst
@@ -1669,7 +1669,7 @@ func (sa *SemanticAnalyzer) analyzeErrorInstance(inst *front.ErrorInstance) fron
 	for fieldName, value := range inst.Fields {
 		field, exists := allFields[fieldName]
 		if !exists {
-			sa.addError("1539",
+			sa.addError("1547",
 				fmt.Sprintf("Error type '%s' has no field '%s'", inst.TypeName, fieldName),
 				value.GetLine(), value.GetColumn(), sa.CurrentFile)
 			continue
@@ -1678,7 +1678,7 @@ func (sa *SemanticAnalyzer) analyzeErrorInstance(inst *front.ErrorInstance) fron
 		// Проверяем тип значения
 		valueType := sa.getNodeType(value)
 		if valueType != field.Type && valueType != "" {
-			sa.addError("1520",
+			sa.addError("1532",
 				fmt.Sprintf("Field '%s' type mismatch: expected '%s', got '%s'",
 					fieldName, field.Type, valueType),
 				value.GetLine(), value.GetColumn(), sa.CurrentFile)
@@ -1692,7 +1692,7 @@ func (sa *SemanticAnalyzer) analyzeErrorInstance(inst *front.ErrorInstance) fron
 	for fieldName, field := range allFields {
 		if _, passed := inst.Fields[fieldName]; !passed {
 			if field.DefaultValue == nil {
-				sa.addError("1519",
+				sa.addError("1551",
 					fmt.Sprintf("Missing required field '%s' in error '%s'",
 						fieldName, inst.TypeName),
 					inst.GetLine(), inst.GetColumn(), sa.CurrentFile)
@@ -1736,7 +1736,7 @@ func (sa *SemanticAnalyzer) analyzeThrow(throw *front.ThrowStmt) front.Node {
 
 	// Проверяем, что это Error-like тип
 	if _, ok := sa.ErrorTypes[exprType]; !ok {
-		sa.addError("1539",
+		sa.addError("1548",
 			fmt.Sprintf("Cannot throw non-error type '%s'", exprType),
 			throw.GetLine(), throw.GetColumn(), sa.CurrentFile)
 		return throw

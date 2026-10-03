@@ -468,7 +468,7 @@ L3:
     t3 = t2.error;
     sk_throw(t3, "main.sk", 12, 5);
 L1:
-    t7 = any_string(sk_string_new("done"));
+    t7 = any_string(sk_string_new("done\\q"));
     sendln(t7);
     return 0;
 }

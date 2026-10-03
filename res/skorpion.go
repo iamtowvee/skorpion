@@ -175,7 +175,7 @@ func buildProject() {
 	configPath := filepath.Join(projectPath, "manifest.spc")
 	cfg := front.ParseConfig(configPath)
 	if cfg == nil {
-		errors.NewError("0010", "Cannot read manifest.spc", 0, 0, "manifest.spc")
+		errors.NewFatalError("0010", "Cannot read manifest.spc", 0, 0, "manifest.spc")
 		printErrorReport(startTime, "manifest.spc", nil)
 		return
 	}
@@ -190,7 +190,7 @@ func buildProject() {
 	// Читаем исходник для вывода ошибок
 	content, err := os.ReadFile(mainFile)
 	if err != nil {
-		errors.NewError("0011", fmt.Sprintf("Cannot read %s", mainFile), 0, 0, mainFile)
+		errors.NewFatalError("0011", fmt.Sprintf("Cannot read %s", mainFile), 0, 0, mainFile)
 		printErrorReport(startTime, mainFile, nil)
 		return
 	}
@@ -335,6 +335,11 @@ func buildProject() {
 		return
 	}
 
+	// Печатаем warnings, если есть (но не падаем)
+	if errors.HasWarnings() {
+		printErrorReport(startTime, mainFile, sourceLines)
+	}
+
 	fmt.Println(cli.Colors.Success("Build successful!"))
 }
 
@@ -344,13 +349,6 @@ func testProject() {
 }
 
 func printErrorReport(startTime time.Time, filePath string, sourceLines []string) {
-	// Fallback: если ошибок нет, но мы здесь — это баг компилятора
-	if !errors.HasErrors() {
-		errors.NewError("0000",
-			"Build failed with no error information — this is a compiler bug",
-			0, 0, filePath)
-	}
-
 	report := errors.ErrorReport{
 		Errors:     errors.TakeErrorsList(),
 		Warnings:   errors.TakeWarningsList(),
