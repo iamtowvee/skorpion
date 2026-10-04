@@ -5,17 +5,29 @@
       Copyrights (c) 2026 iamtowvee
   ------------------------------------- */
 
+use #std/strings
+
+const VoidRefactorError{msg: string} = new Error
+
 int toInt(any value) {
   int result = 0
   case (type(value)) {
     "int" {
       result = value
     },
-    "int" {
-      result = value
+    "float","double" {
+      result = value.to_int()
     },
-    "int" {
-      result = value
+    "bool" {
+      if (value) {
+        result = 1
+      } else {
+        result = 0
+      }
+    },
+    "string" {
+      // TO-DO
+      result = value.to_int()
     },
     _ {
       result = 0
@@ -25,5 +37,33 @@ int toInt(any value) {
 }
 
 int toBool(any value) {
-  return value.to_int()
+  case (type(value)) {
+    "int","float","double" {
+      if (value > 0) {
+        return true
+      } else {
+        return false
+      }
+    },
+    "bool" {
+      return value
+    },
+    "void" {
+      throw VoidRefactorError{msg: "Cannot convert 'null' to bool."}
+    },
+    "string" {
+      if (value.length > 0) {
+        if (value == "true") {
+          return true
+        } else {
+          return false
+        }
+      } else {
+        return false
+      }
+    },
+    _ {
+      return false
+    },
+  }
 }
