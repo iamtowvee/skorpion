@@ -9,10 +9,16 @@ use #std/strings
 
 /* === Errors === */
 
-const VoidRefactorError{msg: string} = new Error
+const RefactorError{} = new Error
 
-const VoidToIntRefactorError{msg: string} = new VoidRefactorError
-const VoidToBoolRefactorError{msg: string} = new VoidRefactorError
+const VoidRefactorError{} = new RefactorError
+const CustomRefactorError{} = new const
+
+const VoidToIntRefactorError{} = new VoidRefactorError
+const VoidToBoolRefactorError{} = new VoidRefactorError
+
+const CustomToIntRefactorError{} = new CustomRefactorError
+const CustomToBoolRefactorError{} = new CustomRefactorError
 
 /* === Basic === */
 
@@ -117,7 +123,8 @@ int toIntStrict(any value) {
       result = value.to_int()
     },
     _ {
-      result = 0
+      string line = "Cannot convert type '" + type(value) + "' to bool."
+      throw CustomToBoolRefactorError{msg: line}
     },
   }
   return result
@@ -157,7 +164,8 @@ bool toBoolStrict(any value) {
       }
     },
     _ {
-      return false
+      string line = "Cannot convert type '" + type(value) + "' to bool."
+      throw CustomToBoolRefactorError{msg: line}
     },
   }
 }
