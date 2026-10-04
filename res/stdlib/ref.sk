@@ -36,7 +36,7 @@ int toInt(any value) {
   return result
 }
 
-int toBool(any value) {
+bool toBool(any value) {
   case (type(value)) {
     "int","float","double" {
       if (value > 0) {
