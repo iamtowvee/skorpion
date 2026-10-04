@@ -7,7 +7,14 @@
 
 use #std/strings
 
+/* === Errors === */
+
 const VoidRefactorError{msg: string} = new Error
+
+const VoidToIntRefactorError{msg: string} = new VoidRefactorError
+const VoidToBoolRefactorError{msg: string} = new VoidRefactorError
+
+/* === Basic === */
 
 int toInt(any value) {
   int result = 0
@@ -24,6 +31,12 @@ int toInt(any value) {
       } else {
         result = 0
       }
+    },
+    "void" {
+      result = 0
+    },
+    "arr" {
+      result = value.length
     },
     "string" {
       // TO-DO
@@ -49,7 +62,88 @@ bool toBool(any value) {
       return value
     },
     "void" {
-      throw VoidRefactorError{msg: "Cannot convert 'null' to bool."}
+      return false
+    },
+    "arr" {
+      if (value.length > 0) {
+        return true
+      } else {
+        return false
+      }
+    },
+    "string" {
+      if (value.length > 0) {
+        if (value == "true") {
+          return true
+        } else {
+          return false
+        }
+      } else {
+        return false
+      }
+    },
+    _ {
+      return false
+    },
+  }
+}
+
+/* === Strict === */
+
+int toIntStrict(any value) {
+  int result = 0
+  case (type(value)) {
+    "int" {
+      result = value
+    },
+    "float","double" {
+      result = value.to_int()
+    },
+    "bool" {
+      if (value) {
+        result = 1
+      } else {
+        result = 0
+      }
+    },
+    "void" {
+      throw VoidToIntRefactorError{msg: "Cannot convert 'null' to int."}
+    },
+    "arr" {
+      result = value.length
+    },
+    "string" {
+      // TO-DO
+      result = value.to_int()
+    },
+    _ {
+      result = 0
+    },
+  }
+  return result
+}
+
+bool toBoolStrict(any value) {
+  case (type(value)) {
+    "int","float","double" {
+      if (value > 0) {
+        return true
+      } else {
+        return false
+      }
+    },
+    "bool" {
+      return value
+    },
+    "void" {
+      throw VoidToBoolRefactorError{msg: "Cannot convert 'null' to bool."}
+    },
+    "arr" {
+      if (value.length > 0) {
+        return true
+      } else {
+        return false
+      }
     },
     "string" {
       if (value.length > 0) {
