@@ -7,8 +7,37 @@ import (
 	"time"
 )
 
+// printTip выводит блок TIP: >>> TIP (салатовый), | текст, | (пустая)
+func printTip(codeInfo ErrorCode, width int) {
+	if codeInfo.Tip == "" {
+		return
+	}
+	tipArrowPrefix := strings.Repeat(" ", width+1) + ">>> TIP"
+	fmt.Printf("%s\n", cli.Colors.Colorize(cli.BRIGHT_YELLOW, tipArrowPrefix))
+
+	pipePrefix := strings.Repeat(" ", width+2) + "|"
+	fmt.Printf("%s %s\n", cli.Colors.Dim(pipePrefix), codeInfo.Tip)
+	fmt.Printf("%s\n", cli.Colors.Dim(pipePrefix))
+}
+
 func PrintError(err SkorpionError, sourceLines []string) {
 	codeInfo := err.GetCodeInfo()
+
+	// Всегда считаем width — если нет контекста, width = 1
+	width := 1
+	hasContext := len(sourceLines) > 0 && err.Line > 0 && err.Line <= len(sourceLines)
+	var ctxStart, ctxEnd int
+	if hasContext {
+		ctxStart = err.Line - 3
+		if ctxStart < 0 {
+			ctxStart = 0
+		}
+		ctxEnd = err.Line + 2
+		if ctxEnd > len(sourceLines) {
+			ctxEnd = len(sourceLines)
+		}
+		width = len(fmt.Sprintf("%d", ctxEnd))
+	}
 
 	timestamp := time.Now().Format("2006-01-02T15:04:05")
 	fmt.Printf("%s %s%s%s %s\n",
@@ -22,8 +51,11 @@ func PrintError(err SkorpionError, sourceLines []string) {
 	if filePath == "" {
 		filePath = "<unknown>"
 	}
-	fmt.Printf("   %s %s %s %s %d, %s %d\n",
-		cli.Colors.Dim(">>>"),
+
+	// Шапка: >>> выровнен с | контекста
+	arrowPrefix := strings.Repeat(" ", width+1) + ">>>"
+	fmt.Printf("%s %s %s %s %d, %s %d\n",
+		cli.Colors.Dim(arrowPrefix),
 		cli.Colors.Cyan(filePath),
 		cli.Colors.Dim("|"),
 		cli.Colors.Dim("L:"),
@@ -31,57 +63,65 @@ func PrintError(err SkorpionError, sourceLines []string) {
 		cli.Colors.Dim("C:"),
 		err.Column)
 
-	if len(sourceLines) > 0 && err.Line > 0 && err.Line <= len(sourceLines) {
-		fmt.Printf("    |\n")
+	// Пустой префикс для | (на 1 больше, чем для >>>)
+	pipePrefix := strings.Repeat(" ", width+2) + "|"
 
-		start := err.Line - 3
-		if start < 0 {
-			start = 0
-		}
-		end := err.Line + 2
-		if end > len(sourceLines) {
-			end = len(sourceLines)
-		}
+	if hasContext {
+		fmt.Printf("%s\n", cli.Colors.Dim(pipePrefix))
 
-		for i := start; i < end; i++ {
+		for i := ctxStart; i < ctxEnd; i++ {
 			lineNum := i + 1
 			line := sourceLines[i]
+			lineNumStr := fmt.Sprintf("%*d", width, lineNum)
 
-			lineNumStr := fmt.Sprintf("%2d", lineNum)
 			if lineNum == err.Line {
-				fmt.Printf(" %s | %s\n",
+				fmt.Printf(" %s %s %s\n",
 					cli.Colors.Bold(lineNumStr),
+					cli.Colors.Dim("|"),
 					line)
 
-				if err.Column > 0 && err.Column <= len(line) {
-					endCol := err.Column
-					for endCol < len(line) && line[endCol] != ' ' && line[endCol] != ',' && line[endCol] != ';' && line[endCol] != ')' && line[endCol] != '(' {
-						endCol++
+				if err.Column > 0 {
+					startCol := err.Column
+					endCol := err.EndColumn
+					if endCol <= startCol {
+						endCol = startCol + 1 // 1 символ по умолчанию
 					}
-					if endCol == err.Column {
-						endCol = err.Column + 1
-					}
-					pointer := strings.Repeat(" ", err.Column-1) + strings.Repeat("~", endCol-err.Column+1)
-					fmt.Printf("    | %s\n", cli.Colors.Red(pointer))
+					pointerIndent := width + 4 + (startCol - 1)
+					pointer := strings.Repeat(" ", pointerIndent) + strings.Repeat("~", endCol-startCol)
+					fmt.Printf("%s\n", cli.Colors.Red(pointer))
 				}
 			} else {
-				fmt.Printf(" %s | %s\n",
+				fmt.Printf(" %s %s %s\n",
 					cli.Colors.Dim(lineNumStr),
+					cli.Colors.Dim("|"),
 					line)
 			}
 		}
-		fmt.Printf("    |\n")
+
+		fmt.Printf("%s\n", cli.Colors.Dim(pipePrefix))
 	}
 
-	if codeInfo.Tip != "" {
-		fmt.Printf("   %s\n", cli.Colors.Yellow(">>> TIP"))
-		fmt.Printf("    | %s\n", codeInfo.Tip)
-		fmt.Printf("    |\n")
-	}
+	printTip(codeInfo, width)
 }
 
 func PrintWarning(warn SkorpionError, sourceLines []string) {
 	codeInfo := warn.GetCodeInfo()
+
+	// Всегда считаем width — если нет контекста, width = 1
+	width := 1
+	hasContext := len(sourceLines) > 0 && warn.Line > 0 && warn.Line <= len(sourceLines)
+	var ctxStart, ctxEnd int
+	if hasContext {
+		ctxStart = warn.Line - 3
+		if ctxStart < 0 {
+			ctxStart = 0
+		}
+		ctxEnd = warn.Line + 2
+		if ctxEnd > len(sourceLines) {
+			ctxEnd = len(sourceLines)
+		}
+		width = len(fmt.Sprintf("%d", ctxEnd))
+	}
 
 	timestamp := time.Now().Format("2006-01-02T15:04:05")
 	fmt.Printf("%s %s%s%s %s\n",
@@ -95,8 +135,11 @@ func PrintWarning(warn SkorpionError, sourceLines []string) {
 	if filePath == "" {
 		filePath = "<unknown>"
 	}
-	fmt.Printf("   %s %s %s %s %d, %s %d\n",
-		cli.Colors.Dim(">>>"),
+
+	// Шапка: >>> выровнен с | контекста
+	arrowPrefix := strings.Repeat(" ", width+1) + ">>>"
+	fmt.Printf("%s %s %s %s %d, %s %d\n",
+		cli.Colors.Dim(arrowPrefix),
 		cli.Colors.Cyan(filePath),
 		cli.Colors.Dim("|"),
 		cli.Colors.Dim("L:"),
@@ -104,49 +147,45 @@ func PrintWarning(warn SkorpionError, sourceLines []string) {
 		cli.Colors.Dim("C:"),
 		warn.Column)
 
-	if len(sourceLines) > 0 && warn.Line > 0 && warn.Line <= len(sourceLines) {
-		fmt.Printf("    |\n")
-		start := warn.Line - 3
-		if start < 0 {
-			start = 0
-		}
-		end := warn.Line + 2
-		if end > len(sourceLines) {
-			end = len(sourceLines)
-		}
-		for i := start; i < end; i++ {
+	// Пустой префикс для |
+	pipePrefix := strings.Repeat(" ", width+2) + "|"
+
+	if hasContext {
+		fmt.Printf("%s\n", cli.Colors.Dim(pipePrefix))
+
+		for i := ctxStart; i < ctxEnd; i++ {
 			lineNum := i + 1
 			line := sourceLines[i]
-			lineNumStr := fmt.Sprintf("%2d", lineNum)
+			lineNumStr := fmt.Sprintf("%*d", width, lineNum)
+
 			if lineNum == warn.Line {
-				fmt.Printf(" %s | %s\n",
+				fmt.Printf(" %s %s %s\n",
 					cli.Colors.Bold(lineNumStr),
+					cli.Colors.Dim("|"),
 					line)
-				if warn.Column > 0 && warn.Column <= len(line) {
-					endCol := warn.Column
-					for endCol < len(line) && line[endCol] != ' ' && line[endCol] != '"' {
-						endCol++
+
+				if warn.Column > 0 {
+					startCol := warn.Column
+					endCol := warn.EndColumn
+					if endCol <= startCol {
+						endCol = startCol + 1 // 1 символ по умолчанию
 					}
-					if endCol == warn.Column {
-						endCol = warn.Column + 1
-					}
-					pointer := strings.Repeat(" ", warn.Column-1) + strings.Repeat("~", endCol-warn.Column+1)
-					fmt.Printf("    | %s\n", cli.Colors.Yellow(pointer))
+					pointerIndent := width + 4 + (startCol - 1)
+					pointer := strings.Repeat(" ", pointerIndent) + strings.Repeat("~", endCol-startCol)
+					fmt.Printf("%s\n", cli.Colors.Yellow(pointer))
 				}
 			} else {
-				fmt.Printf(" %s | %s\n",
+				fmt.Printf(" %s %s %s\n",
 					cli.Colors.Dim(lineNumStr),
+					cli.Colors.Dim("|"),
 					line)
 			}
 		}
-		fmt.Printf("    |\n")
+
+		fmt.Printf("%s\n", cli.Colors.Dim(pipePrefix))
 	}
 
-	if codeInfo.Tip != "" {
-		fmt.Printf("   %s\n", cli.Colors.Yellow(">>> TIP"))
-		fmt.Printf("    | %s\n", codeInfo.Tip)
-		fmt.Printf("    |\n")
-	}
+	printTip(codeInfo, width)
 }
 
 func PrintErrorReport(report ErrorReport) {

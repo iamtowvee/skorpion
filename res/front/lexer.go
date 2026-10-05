@@ -287,6 +287,11 @@ func (l *Lexer) readNumber() Token {
 			l.col++
 		}
 	}
+	// Суффикс f/F — float
+	if l.pos < len(l.input) && (l.input[l.pos] == 'f' || l.input[l.pos] == 'F') {
+		l.pos++
+		l.col++
+	}
 	literal := l.input[start:l.pos]
 	return Token{Type: TOKEN_NUMBER, Literal: literal, Line: l.line, Column: startCol}
 }

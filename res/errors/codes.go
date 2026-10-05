@@ -1127,6 +1127,14 @@ var ErrorCodes = map[string]ErrorCode{
 		Description: "The function has an empty body.",
 		Tip:         "Add a comment or remove the function.",
 	},
+	"2004": {
+		Code:    "2004",
+		Message: "Could not check unused parameters",
+		Description: "Function body contains an includeC block with raw C code. " +
+			"Parameters used only inside that block cannot be detected by the compiler.",
+		Tip: "If you know the parameters are used inside the includeC block — ignore this warning. " +
+			"Otherwise remove unused parameters or use them in Skorpion code.",
+	},
 
 	// ============================================================================
 	// 2500-2599: Backend / Codegen

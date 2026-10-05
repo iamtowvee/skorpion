@@ -68,7 +68,10 @@ func ParseConfig(path string) *Config {
 			case "testOutPath":
 				cfg.TestOutPath = strings.Trim(value, `"`)
 			case "target":
-				value = strings.Trim(value, "<>")
+				value = strings.TrimSpace(value)
+				// Формат: ("win", "linux") или <"win", "linux">
+				value = strings.Trim(value, `()`)
+				value = strings.Trim(value, `<>`)
 				parts := strings.Split(value, ",")
 				for _, p := range parts {
 					trimmed := strings.TrimSpace(p)
@@ -79,7 +82,9 @@ func ParseConfig(path string) *Config {
 					}
 				}
 			case "authors":
-				value = strings.Trim(value, "<>")
+				value = strings.TrimSpace(value)
+				value = strings.Trim(value, `()`)
+				value = strings.Trim(value, `<>`)
 				parts := strings.Split(value, ",")
 				for _, p := range parts {
 					trimmed := strings.TrimSpace(p)

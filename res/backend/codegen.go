@@ -614,8 +614,8 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 		}
 
 	case "ternary":
-		cg.writeLine(fmt.Sprintf("%s%s %s = %s ? %s : %s;",
-			indent, ins.ReturnType, ins.Result, ins.Arg1, ins.Arg2, ins.Arg3))
+		cg.writeLine(fmt.Sprintf("%s%s = %s ? %s : %s;",
+			indent, ins.Result, ins.Arg1, ins.Arg2, ins.Arg3))
 
 	case "throw":
 		fileArg := ins.Arg2
@@ -641,7 +641,11 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 		cg.writeLine(fmt.Sprintf("%s%s = sk_bool_new(sk_error_type_match(((SkError*)%s)->__type, %s));",
 			indent, ins.Result, ins.Arg1, ins.Arg2))
 	case "error_cast":
-		cg.writeLine(fmt.Sprintf("%s%s = (%s*)%s;", indent, ins.Result, ins.Arg2, ins.Arg1))
+		typeName := ins.Arg2
+		if typeName == "Error" {
+			typeName = "SkError"
+		}
+		cg.writeLine(fmt.Sprintf("%s%s = (%s*)%s;", indent, ins.Result, typeName, ins.Arg1))
 	case "error_instance_create":
 		cg.writeLine(fmt.Sprintf("%s = malloc(sizeof(%s));", ins.Result, ins.Arg2))
 		cg.writeLine(fmt.Sprintf("%s->__type = %s;", ins.Result, ins.Arg1))
@@ -664,7 +668,7 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 		cg.writeLine(fmt.Sprintf("%s    case 6: strcpy(_buf_%s, \"void\"); break;", indent, ins.Result))
 		cg.writeLine(fmt.Sprintf("%s    default: strcpy(_buf_%s, \"unknown\"); break;", indent, ins.Result))
 		cg.writeLine(fmt.Sprintf("%s}", indent))
-		cg.writeLine(fmt.Sprintf("%ssk_string %s = sk_string_new(_buf_%s);", indent, ins.Result, ins.Result))
+		cg.writeLine(fmt.Sprintf("%s%s = sk_string_new(_buf_%s);", indent, ins.Result, ins.Result))
 
 	case "comment":
 		cg.writeLine(fmt.Sprintf("%s%s", indent, ins.Arg1))
@@ -708,11 +712,11 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 	case "array_get":
 		cg.writeLine(fmt.Sprintf("%svoid* %s = sk_array_get(%s.value, %s.value);", indent, ins.Result, ins.Arg1, ins.Arg2))
 	case "array_len":
-		cg.writeLine(fmt.Sprintf("%ssk_int %s = sk_int_new(sk_array_len(%s.value));", indent, ins.Result, ins.Arg1))
+		cg.writeLine(fmt.Sprintf("%s%s = sk_int_new(sk_array_len(%s.value));", indent, ins.Result, ins.Arg1))
 	case "array_get_any":
-		cg.writeLine(fmt.Sprintf("%ssk_any %s = *(sk_any*)sk_array_get(%s.value, %s.value);", indent, ins.Result, ins.Arg1, ins.Arg2))
+		cg.writeLine(fmt.Sprintf("%s%s = *(sk_any*)sk_array_get(%s.value, %s.value);", indent, ins.Result, ins.Arg1, ins.Arg2))
 	case "array_get_typed":
-		cg.writeLine(fmt.Sprintf("%s%s %s = *(%s*)sk_array_get(%s.value, %s.value);", indent, ins.ReturnType, ins.Result, ins.ReturnType, ins.Arg1, ins.Arg2))
+		cg.writeLine(fmt.Sprintf("%s%s = *(%s*)sk_array_get(%s.value, %s.value);", indent, ins.Result, ins.ReturnType, ins.Arg1, ins.Arg2))
 	case "array_add":
 		cg.writeLine(fmt.Sprintf("%ssk_arr %s = sk_arr_new(sk_array_copy(%s.value));", indent, ins.Result, ins.Arg1))
 		cg.writeLine(fmt.Sprintf("%ssk_array_push(%s.value, &%s);", indent, ins.Result, ins.Arg2))
@@ -857,6 +861,9 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 }
 
 func (cg *CodeGenerator) typeToC(typ string) string {
+	if isArrayTypeC(typ) {
+		return "sk_arr"
+	}
 	switch typ {
 	case "int":
 		return "sk_int"
@@ -880,9 +887,21 @@ func (cg *CodeGenerator) typeToC(typ string) string {
 		return "sk_any"
 	case "null":
 		return "void*"
-	default:
-		return "sk_int"
+	case "Error":
+		return "SkError"
 	}
+
+	for _, decl := range cg.IR.ErrorDecls {
+		if decl.Name == typ {
+			return typ
+		}
+	}
+
+	return "sk_int"
+}
+
+func isArrayTypeC(t string) bool {
+	return t == "arr" || strings.HasPrefix(t, "arr[")
 }
 
 func (cg *CodeGenerator) writeLine(line string) {

@@ -98,6 +98,7 @@ func (i *Import) GetType() NodeType { return NODE_IMPORT }
 
 type Function struct {
 	Position
+	NamePos    Position // позиция имени функции (после типа возврата и звёздочки)
 	Name       string
 	ReturnType string
 	Params     []*Param
@@ -107,6 +108,10 @@ type Function struct {
 }
 
 func (f *Function) GetType() NodeType { return NODE_FUNCTION }
+
+// GetNameLine / GetNameColumn — позиция имени функции для ошибок/warnings
+func (f *Function) GetNameLine() int   { return f.NamePos.Line }
+func (f *Function) GetNameColumn() int { return f.NamePos.Column }
 
 // ============================================================================
 // Param
@@ -332,8 +337,11 @@ type Number struct {
 
 func (n *Number) GetType() NodeType { return NODE_NUMBER }
 func (n *Number) GetTypeString() string {
-	if strings.Contains(n.Value, ".") {
+	if strings.HasSuffix(n.Value, "f") || strings.HasSuffix(n.Value, "F") {
 		return "float"
+	}
+	if strings.Contains(n.Value, ".") {
+		return "double"
 	}
 	return "int"
 }

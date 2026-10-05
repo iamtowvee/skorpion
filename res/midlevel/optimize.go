@@ -2,6 +2,7 @@ package midlevel
 
 import (
 	"strconv"
+	"strings"
 
 	"skrp/res/front"
 )
@@ -329,16 +330,18 @@ func (o *Optimizer) tryFoldConstants(bin *front.BinaryExpr) front.Node {
 
 	// Числа
 	if leftIsNum && rightIsNum {
-		leftVal, _ := strconv.ParseFloat(leftNum.Value, 64)
-		rightVal, _ := strconv.ParseFloat(rightNum.Value, 64)
+		leftVal := numberParseFloat(leftNum.Value)
+		rightVal := numberParseFloat(rightNum.Value)
 
 		var result float64
 		var isInt bool
 
-		// Проверяем, что оба операнда — int
-		leftInt, leftErr := strconv.Atoi(leftNum.Value)
-		rightInt, rightErr := strconv.Atoi(rightNum.Value)
-		isInt = leftErr == nil && rightErr == nil
+		leftInt, leftOK := numberParseInt(leftNum.Value)
+		rightInt, rightOK := numberParseInt(rightNum.Value)
+		isInt = leftOK && rightOK
+
+		// Был ли float (хотя бы один операнд с суффиксом f)
+		isFloat := numberIsFloat(leftNum.Value) || numberIsFloat(rightNum.Value)
 
 		switch bin.Op {
 		case "+":
@@ -397,6 +400,9 @@ func (o *Optimizer) tryFoldConstants(bin *front.BinaryExpr) front.Node {
 		if isInt {
 			return &front.Number{Value: strconv.Itoa(int(result))}
 		}
+		if isFloat {
+			return &front.Number{Value: strconv.FormatFloat(result, 'f', -1, 64) + "f"}
+		}
 		return &front.Number{Value: strconv.FormatFloat(result, 'f', -1, 64)}
 	}
 
@@ -426,42 +432,42 @@ func (o *Optimizer) trySimplify(bin *front.BinaryExpr) front.Node {
 	leftNum, leftIsNum := bin.Left.(*front.Number)
 
 	// x + 0 → x, x - 0 → x
-	if rightIsNum && (rightNum.Value == "0" || rightNum.Value == "0.0") {
+	if rightIsNum && isZeroNumber(rightNum.Value) {
 		if bin.Op == "+" || bin.Op == "-" {
 			return bin.Left
 		}
 	}
 
 	// 0 + x → x
-	if leftIsNum && (leftNum.Value == "0" || leftNum.Value == "0.0") {
+	if leftIsNum && isZeroNumber(leftNum.Value) {
 		if bin.Op == "+" {
 			return bin.Right
 		}
 	}
 
 	// x * 1 → x, x / 1 → x
-	if rightIsNum && (rightNum.Value == "1" || rightNum.Value == "1.0") {
+	if rightIsNum && isOneNumber(rightNum.Value) {
 		if bin.Op == "*" || bin.Op == "/" {
 			return bin.Left
 		}
 	}
 
 	// 1 * x → x
-	if leftIsNum && (leftNum.Value == "1" || leftNum.Value == "1.0") {
+	if leftIsNum && isOneNumber(leftNum.Value) {
 		if bin.Op == "*" {
 			return bin.Right
 		}
 	}
 
 	// x * 0 → 0 (только если x — без побочных эффектов)
-	if rightIsNum && (rightNum.Value == "0" || rightNum.Value == "0.0") {
+	if rightIsNum && isZeroNumber(rightNum.Value) {
 		if bin.Op == "*" && o.hasNoSideEffects(bin.Left) {
 			return &front.Number{Value: "0"}
 		}
 	}
 
 	// 0 * x → 0
-	if leftIsNum && (leftNum.Value == "0" || leftNum.Value == "0.0") {
+	if leftIsNum && isZeroNumber(leftNum.Value) {
 		if bin.Op == "*" && o.hasNoSideEffects(bin.Right) {
 			return &front.Number{Value: "0"}
 		}
@@ -529,7 +535,8 @@ func (o *Optimizer) isConstant(node front.Node) bool {
 func (o *Optimizer) getConstantValue(node front.Node) string {
 	switch n := node.(type) {
 	case *front.Number:
-		return n.Value
+		// Для case-паттернов нормализуем: 2.0f → 2.0
+		return numberStripSuffix(n.Value)
 	case *front.String:
 		return n.Value
 	case *front.Ident:
@@ -845,4 +852,43 @@ func (o *Optimizer) optimizeTernary(t *front.TernaryExpr) front.Node {
 	}
 
 	return t
+}
+
+// numberIsFloat — есть ли суффикс f/F
+func numberIsFloat(s string) bool {
+	return strings.HasSuffix(s, "f") || strings.HasSuffix(s, "F")
+}
+
+// numberStripSuffix — убирает суффикс f/F
+func numberStripSuffix(s string) string {
+	if numberIsFloat(s) {
+		return s[:len(s)-1]
+	}
+	return s
+}
+
+// numberParseFloat — парсит число как float64 (без суффикса)
+func numberParseFloat(s string) float64 {
+	v := numberStripSuffix(s)
+	f, _ := strconv.ParseFloat(v, 64)
+	return f
+}
+
+// numberParseInt — парсит число как int (ok = true, если получилось)
+func numberParseInt(s string) (int, bool) {
+	v := numberStripSuffix(s)
+	i, err := strconv.Atoi(v)
+	return i, err == nil
+}
+
+// isZeroNumber — "0", "0.0", "0.0f", "0f"
+func isZeroNumber(s string) bool {
+	v := numberStripSuffix(s)
+	return v == "0" || v == "0.0"
+}
+
+// isOneNumber — "1", "1.0", "1.0f", "1f"
+func isOneNumber(s string) bool {
+	v := numberStripSuffix(s)
+	return v == "1" || v == "1.0"
 }

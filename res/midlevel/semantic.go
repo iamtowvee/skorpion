@@ -194,7 +194,7 @@ func (sa *SemanticAnalyzer) initBuiltinTypes() {
 		"to_double": "double",
 		"to_string": "string",
 		"to_bool":   "bool",
-		"to_arr":    "arr",
+		"to_arr":    "arr[any]",
 	}
 	for name, retType := range builtins {
 		sa.GlobalScope.Define(name, SYM_FUNCTION, retType, true)
@@ -204,13 +204,13 @@ func (sa *SemanticAnalyzer) initBuiltinTypes() {
 func (sa *SemanticAnalyzer) registerFunction(fn *front.Function) {
 	if existing := sa.GlobalScope.Resolve(fn.Name); existing != nil {
 		sa.addError("1500", fmt.Sprintf("Function '%s' already declared", fn.Name),
-			fn.GetLine(), fn.GetColumn(), fn.File)
+			fn.GetNameLine(), fn.GetNameColumn(), fn.File)
 		return
 	}
 	if _, isError := sa.ErrorTypes[fn.Name]; isError {
 		sa.addError("1500",
 			fmt.Sprintf("Name '%s' already used as error type", fn.Name),
-			fn.GetLine(), fn.GetColumn(), fn.File)
+			fn.GetNameLine(), fn.GetNameColumn(), fn.File)
 		return
 	}
 	sa.GlobalScope.Define(fn.Name, SYM_FUNCTION, fn.ReturnType, fn.IsExport)
@@ -232,12 +232,12 @@ func (sa *SemanticAnalyzer) checkMain() bool {
 		if fn.Name == "main" {
 			if len(fn.Params) != 1 {
 				sa.addError("1503", "main() must take exactly one parameter (arr args)",
-					fn.GetLine(), fn.GetColumn(), fn.File)
+					fn.GetNameLine(), fn.GetNameColumn(), fn.File)
 				return false
 			}
-			if fn.Params[0].Type != "arr" {
+			if !isArrayTypeSemantic(fn.Params[0].Type) {
 				sa.addError("1504", "main() parameter must be of type 'arr'",
-					fn.GetLine(), fn.GetColumn(), fn.File)
+					fn.GetNameLine(), fn.GetNameColumn(), fn.File)
 				return false
 			}
 			break
@@ -292,24 +292,54 @@ func (sa *SemanticAnalyzer) analyzeFunction(fn *front.Function) {
 		if fn.ReturnType != "void" && !sa.hasReturn(fn.Body) {
 			sa.addError("1535",
 				fmt.Sprintf("Function '%s' must return a value of type '%s'", fn.Name, fn.ReturnType),
-				fn.GetLine(), fn.GetColumn(), sa.CurrentFile)
+				fn.GetNameLine(), fn.GetNameColumn(), sa.CurrentFile)
 		}
 
 		// Проверка: пустое тело функции
 		if len(fn.Body.Statements) == 0 {
 			errors.NewWarning("2003",
 				fmt.Sprintf("Empty function body in '%s'", fn.Name),
-				fn.GetLine(), fn.GetColumn(), sa.CurrentFile)
+				fn.GetNameLine(), fn.GetNameColumn(), sa.CurrentFile)
 		}
 
 		// Проверка: неиспользуемые параметры
 		used := make(map[string]bool)
 		sa.collectUsedIdents(fn.Body, used)
-		for _, param := range fn.Params {
-			if !used[param.Name] {
-				errors.NewWarning("2001",
-					fmt.Sprintf("Unused parameter '%s' in function '%s'", param.Name, fn.Name),
-					param.GetLine(), param.GetColumn(), sa.CurrentFile)
+
+		hasIncludeC := sa.containsIncludeC(fn.Body)
+
+		// Для main не проверяем args — он может быть не нужен
+		unusedParams := []*front.Param{}
+		if fn.Name != "main" {
+			for _, param := range fn.Params {
+				if !used[param.Name] {
+					unusedParams = append(unusedParams, param)
+				}
+			}
+		}
+
+		if len(unusedParams) > 0 {
+			if hasIncludeC {
+				// Не можем точно сказать — параметр может использоваться внутри includeC
+				names := []string{}
+				for _, p := range unusedParams {
+					names = append(names, "'"+p.Name+"'")
+				}
+				errors.NewWarningSpan("2004",
+					fmt.Sprintf("Could not check if parameters %s in '%s' are used — function contains includeC (raw C code)",
+						strings.Join(names, ", "), fn.Name),
+					fn.GetNameLine(), fn.GetNameColumn(),
+					fn.GetNameLine(), fn.GetNameColumn()+len(fn.Name),
+					sa.CurrentFile)
+			} else {
+				// Точная проверка — параметры точно неиспользуемые
+				for _, param := range unusedParams {
+					errors.NewWarningSpan("2001",
+						fmt.Sprintf("Unused parameter '%s' in function '%s'", param.Name, fn.Name),
+						param.GetLine(), param.GetColumn(),
+						param.GetLine(), param.GetColumn()+len(param.Name),
+						sa.CurrentFile)
+				}
 			}
 		}
 
@@ -555,7 +585,14 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 				}
 			}
 		}
-		sa.CurrentScope.Define(decl.Name, SYM_VARIABLE, "arr", false)
+
+		// Сохраняем полный тип: "arr[any]" или "arr[int]" или "arr[arr[int]]"
+		elemType := decl.ElemType
+		if elemType == "" {
+			elemType = "any"
+		}
+		fullType := "arr[" + elemType + "]"
+		sa.CurrentScope.Define(decl.Name, SYM_VARIABLE, fullType, false)
 		return decl
 	}
 
@@ -722,8 +759,12 @@ func (sa *SemanticAnalyzer) analyzeBinary(bin *front.BinaryExpr) front.Node {
 }
 
 func (sa *SemanticAnalyzer) analyzeNumber(num *front.Number) front.Node {
-	if _, err := strconv.Atoi(num.Value); err != nil {
-		if _, err := strconv.ParseFloat(num.Value, 64); err != nil {
+	value := num.Value
+	if strings.HasSuffix(value, "f") || strings.HasSuffix(value, "F") {
+		value = value[:len(value)-1]
+	}
+	if _, err := strconv.Atoi(value); err != nil {
+		if _, err := strconv.ParseFloat(value, 64); err != nil {
 			sa.addError("1513", fmt.Sprintf("Invalid number '%s'", num.Value),
 				num.GetLine(), num.GetColumn(), sa.CurrentFile)
 		}
@@ -1099,8 +1140,11 @@ func (sa *SemanticAnalyzer) isNumericType(typ string) bool {
 func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 	switch n := node.(type) {
 	case *front.Number:
-		if strings.Contains(n.Value, ".") {
+		if strings.HasSuffix(n.Value, "f") || strings.HasSuffix(n.Value, "F") {
 			return "float"
+		}
+		if strings.Contains(n.Value, ".") {
+			return "double"
 		}
 		return "int"
 	case *front.String:
@@ -1108,7 +1152,7 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 	case *front.NullLiteral:
 		return "void"
 	case *front.ArrayLiteral:
-		return "arr"
+		return "arr[any]"
 	case *front.TypeOf:
 		return "string"
 	case *front.ErrorInstance:
@@ -1160,11 +1204,11 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 		isRightNumeric := rightType == "int" || rightType == "float" || rightType == "double"
 
 		if isLeftNumeric && isRightNumeric {
-			if leftType == "float" || rightType == "float" {
-				return "float"
-			}
 			if leftType == "double" || rightType == "double" {
 				return "double"
+			}
+			if leftType == "float" || rightType == "float" {
+				return "float"
 			}
 			return "int"
 		}
@@ -1209,7 +1253,7 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 		case "to_bool":
 			return "bool"
 		case "to_arr":
-			return "arr"
+			return "arr[any]"
 		}
 
 		for _, fn := range sa.Program.Functions {
@@ -1239,7 +1283,7 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 		return sa.getNodeType(n.Expr)
 
 	case *front.RangeExpr:
-		return "arr"
+		return "arr[int]"
 	case *front.CallRangeExpr:
 		for _, fn := range sa.Program.Functions {
 			if fn.Name == n.Name {
@@ -1406,6 +1450,15 @@ func (sa *SemanticAnalyzer) collectUsedIdents(node front.Node, used map[string]b
 				sa.collectUsedIdents(stmt, used)
 			}
 		}
+	case *front.RangeExpr:
+		if n.Start != nil {
+			sa.collectUsedIdents(n.Start, used)
+		}
+		if n.End != nil {
+			sa.collectUsedIdents(n.End, used)
+		}
+	case *front.IncludeC:
+		// includeC — сырой C, обрабатывается отдельно через containsIncludeC
 	case *front.VarDecl:
 		if n.Expr != nil {
 			sa.collectUsedIdents(n.Expr, used)
@@ -1744,4 +1797,74 @@ func (sa *SemanticAnalyzer) analyzeThrow(throw *front.ThrowStmt) front.Node {
 
 	sa.analyzeNode(throw.Expr)
 	return throw
+}
+
+func (sa *SemanticAnalyzer) containsIncludeC(node front.Node) bool {
+	if node == nil {
+		return false
+	}
+	switch n := node.(type) {
+	case *front.IncludeC:
+		return true
+	case *front.Block:
+		for _, stmt := range n.Statements {
+			if sa.containsIncludeC(stmt) {
+				return true
+			}
+		}
+	case *front.IfStmt:
+		if n.Then != nil && sa.containsIncludeC(n.Then) {
+			return true
+		}
+		for _, elsif := range n.Elsifs {
+			if elsif.Then != nil && sa.containsIncludeC(elsif.Then) {
+				return true
+			}
+		}
+		if n.Else != nil && sa.containsIncludeC(n.Else) {
+			return true
+		}
+	case *front.WhileStmt:
+		return sa.containsIncludeC(n.Body)
+	case *front.ForStmt:
+		return sa.containsIncludeC(n.Body)
+	case *front.TryStmt:
+		if n.Body != nil && sa.containsIncludeC(n.Body) {
+			return true
+		}
+		for _, clause := range n.Catches {
+			if clause.Body != nil && sa.containsIncludeC(clause.Body) {
+				return true
+			}
+		}
+	case *front.CaseStmt:
+		for _, branch := range n.Branches {
+			if branch.Body != nil && sa.containsIncludeC(branch.Body) {
+				return true
+			}
+		}
+		if n.Default != nil && sa.containsIncludeC(n.Default) {
+			return true
+		}
+	}
+	return false
+}
+
+func (sa *SemanticAnalyzer) addErrorSpan(code, message string, line, col, endLine, endCol int, file string) {
+	if code == "" {
+		code = "0000"
+	}
+	if file == "" {
+		file = sa.CurrentFile
+	}
+	sa.Errors = append(sa.Errors, errors.SkorpionError{
+		Code:      code,
+		Message:   message,
+		Line:      line,
+		Column:    col,
+		EndLine:   endLine,
+		EndColumn: endCol,
+		File:      file,
+	})
+	errors.NewErrorSpan(code, message, line, col, endLine, endCol, file)
 }

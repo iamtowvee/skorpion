@@ -226,17 +226,36 @@ func (p *Parser) parseFunction() *Function {
 
 	pos := p.pos()
 
-	// Тип возврата
-	retType := p.peek.Literal
-	p.advance()
+	// Проверяем, что начинается с типа
+	if !p.isType(p.peek) {
+		p.hasErrors = true
+		errors.NewFatalError("0500",
+			fmt.Sprintf("Expected return type, got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
+	}
 
+	// Тип возврата (может быть arr[int], arr[arr[int]] и т.д.)
+	retType := p.parseType()
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+	if retType == "" {
+		p.hasErrors = true
+		errors.NewFatalError("0500",
+			"Expected return type",
+			pos.Line, pos.Column, p.FileName)
+		return nil
+	}
+
+	// Звёздочка неэкспортируемости
 	isExport := true
 	if p.peek.Type == TOKEN_STAR {
 		isExport = false
 		p.advance()
 	}
 
-	// Имя
+	// Имя функции
 	if p.peek.Type != TOKEN_IDENT {
 		p.hasErrors = true
 		errors.NewFatalError("0501",
@@ -244,6 +263,7 @@ func (p *Parser) parseFunction() *Function {
 			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
 	}
+	namePos := p.pos() // позиция peek ДО advance
 	name := p.peek.Literal
 	p.advance()
 
@@ -270,8 +290,18 @@ func (p *Parser) parseFunction() *Function {
 					p.peek.Line, p.peek.Column, p.FileName)
 				return nil
 			}
-			paramType := p.peek.Literal
-			p.advance()
+
+			paramType := p.parseType()
+			if p.hasErrors || errors.HasFatal() {
+				return nil
+			}
+			if paramType == "" {
+				p.hasErrors = true
+				errors.NewFatalError("0502",
+					"Expected parameter type",
+					paramPos.Line, paramPos.Column, p.FileName)
+				return nil
+			}
 
 			if p.peek.Type != TOKEN_IDENT {
 				p.hasErrors = true
@@ -332,6 +362,7 @@ func (p *Parser) parseFunction() *Function {
 
 	return &Function{
 		Position:   pos,
+		NamePos:    namePos,
 		Name:       name,
 		ReturnType: retType,
 		Params:     params,
@@ -639,25 +670,31 @@ func (p *Parser) parseCase() Node {
 		}
 
 		branchPos := p.pos()
-		pattern := p.parseExpression()
-		if pattern == nil {
-			return nil
-		}
 
-		if ident, ok := pattern.(*Ident); ok && ident.Name == "_" {
+		// Default branch: _ { ... }
+		if p.peek.Type == TOKEN_IDENT && p.peek.Literal == "_" {
+			p.advance() // съедаем _
+
 			defaultBlock = p.parseBlock()
 			if defaultBlock == nil {
 				return nil
 			}
+
 			if p.peek.Type != TOKEN_COMMA {
 				p.hasErrors = true
-				errors.NewFatalError("0512",
+				errors.NewFatalError("0572",
 					fmt.Sprintf("Expected ',' after default branch (at %d:%d)", p.peek.Line, p.peek.Column),
 					p.peek.Line, p.peek.Column, p.FileName)
 				return nil
 			}
 			p.advance()
 			break
+		}
+
+		// Обычный паттерн
+		pattern := p.parseExpression()
+		if pattern == nil {
+			return nil
 		}
 
 		body := p.parseBlock()
@@ -817,17 +854,24 @@ func (p *Parser) parseVarDecl() Node {
 
 	pos := p.pos()
 
+	// Массив: arr, arr[int], arr[arr[int]]
 	if p.peek.Literal == "arr" {
-		p.advance()
+		fullType := p.parseType()
+		if p.hasErrors || errors.HasFatal() {
+			return nil
+		}
+		if fullType == "" {
+			p.hasErrors = true
+			errors.NewFatalError("0513",
+				"Expected array type",
+				pos.Line, pos.Column, p.FileName)
+			return nil
+		}
 
-		var elemType string
-
-		if p.peek.Type == TOKEN_LBRACKET {
-			fullArrayType := p.parseArrayType()
-			if p.hasErrors || errors.HasFatal() {
-				return nil
-			}
-			elemType = parseArrayElemTypeFromFullType(fullArrayType)
+		// fullType = "arr" или "arr[int]" или "arr[arr[int]]"
+		elemType := parseArrayElemTypeFromFullType(fullType)
+		if elemType == "" {
+			elemType = "any"
 		}
 
 		if p.peek.Type != TOKEN_IDENT {
@@ -863,6 +907,15 @@ func (p *Parser) parseVarDecl() Node {
 		}
 	}
 
+	// Скалярный тип
+	if !p.isType(p.peek) {
+		p.hasErrors = true
+		errors.NewFatalError("0504",
+			fmt.Sprintf("Expected type, got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
+	}
+
 	varType := p.peek.Literal
 	p.advance()
 
@@ -889,7 +942,13 @@ func (p *Parser) parseVarDecl() Node {
 		p.advance()
 	}
 
-	return &VarDecl{Position: pos, Name: name, Type: varType, Expr: expr, IsArray: false}
+	return &VarDecl{
+		Position: pos,
+		Name:     name,
+		Type:     varType,
+		Expr:     expr,
+		IsArray:  false,
+	}
 }
 
 func (p *Parser) parseAssignmentOrCall() Node {
@@ -1832,4 +1891,25 @@ func (p *Parser) parseThrow() Node {
 		Position: pos,
 		Expr:     expr,
 	}
+}
+
+// parseType читает тип: простое имя или arr[...] (вложенный).
+// Возвращает полную строку типа: "int", "arr", "arr[int]", "arr[arr[int]]".
+// Возвращает "" при ошибке (вызывающий должен сам решить, какой код).
+func (p *Parser) parseType() string {
+	if p.peek.Literal == "arr" {
+		p.advance()
+		if p.peek.Type == TOKEN_LBRACKET {
+			return p.parseArrayType()
+		}
+		return "arr[any]"
+	}
+
+	if !p.isType(p.peek) {
+		return ""
+	}
+
+	typ := p.peek.Literal
+	p.advance()
+	return typ
 }

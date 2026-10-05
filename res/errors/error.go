@@ -15,13 +15,15 @@ var (
 )
 
 type SkorpionError struct {
-	Code    string
-	Message string
-	Line    int
-	Column  int
-	File    string
-	Fatal   bool
-	Warning bool
+	Code      string
+	Message   string
+	Line      int
+	Column    int
+	EndLine   int // опционально: если 0 — не рисуем подчёркивание
+	EndColumn int // опционально
+	File      string
+	Fatal     bool
+	Warning   bool
 }
 
 func (e *SkorpionError) GetCodeInfo() ErrorCode {
@@ -81,6 +83,31 @@ func NewWarning(code, message string, line, col int, file string) {
 		Column:  col,
 		File:    file,
 		Warning: true,
+	})
+}
+
+func NewErrorSpan(code, message string, line, col, endLine, endCol int, file string) {
+	errors = append(errors, SkorpionError{
+		Code:      code,
+		Message:   message,
+		Line:      line,
+		Column:    col,
+		EndLine:   endLine,
+		EndColumn: endCol,
+		File:      file,
+	})
+}
+
+func NewWarningSpan(code, message string, line, col, endLine, endCol int, file string) {
+	warnings = append(warnings, SkorpionError{
+		Code:      code,
+		Message:   message,
+		Line:      line,
+		Column:    col,
+		EndLine:   endLine,
+		EndColumn: endCol,
+		File:      file,
+		Warning:   true,
 	})
 }
 

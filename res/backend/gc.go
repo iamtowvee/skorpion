@@ -496,6 +496,9 @@ func (gc *GCAnalyzer) detectCycles(fn *IRFunction, vars []string) []*Cycle {
 					continue
 				}
 				if gc.containsToken(ins.Arg1, v) {
+					if graph[ins.Result] == nil {
+						graph[ins.Result] = make(map[string]bool)
+					}
 					graph[ins.Result][v] = true
 				}
 			}

@@ -25,6 +25,7 @@ type IRFunction struct {
 	Params         []IRParam
 	Locals         []string
 	ArrayElemTypes map[string]string
+	VarTypes       map[string]string
 	Instructions   []IRInstruction
 }
 

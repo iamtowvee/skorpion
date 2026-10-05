@@ -77,6 +77,7 @@ func (p *Pipeline) processFunction(fn *front.Function) {
 		Locals:         []string{},
 		Instructions:   []IRInstruction{},
 		ArrayElemTypes: make(map[string]string),
+		VarTypes:       make(map[string]string),
 	}
 
 	for _, param := range fn.Params {
@@ -84,6 +85,15 @@ func (p *Pipeline) processFunction(fn *front.Function) {
 			Name: param.Name,
 			Type: param.Type,
 		})
+		irFn.VarTypes[param.Name] = param.Type
+
+		if isArrayType(param.Type) {
+			elemType := parseArrayElemType(param.Type)
+			if elemType == "" {
+				elemType = "any"
+			}
+			irFn.ArrayElemTypes[param.Name] = elemType
+		}
 	}
 
 	p.TryFrames = []string{}
@@ -170,6 +180,9 @@ func (p *Pipeline) processNode(node front.Node, irFn *IRFunction) {
 }
 
 func (p *Pipeline) typeToC(typ string) string {
+	if isArrayType(typ) {
+		return "sk_arr"
+	}
 	switch typ {
 	case "int":
 		return "sk_int"
@@ -201,20 +214,23 @@ func (p *Pipeline) typeToC(typ string) string {
 func (p *Pipeline) processFieldAccess(fa *front.FieldAccess, irFn *IRFunction) string {
 	fieldType := "int"
 
-	// Ищем тип поля в ErrorDecls
-	for _, decl := range p.Program.ErrorDecls {
-		if decl.Name == fa.Object {
-			for _, f := range decl.Fields {
-				if f.Name == fa.Field {
-					fieldType = f.Type
-					break
+	if irFn.VarTypes != nil {
+		if objType, ok := irFn.VarTypes[fa.Object]; ok {
+			if objType == "Error" {
+				if fa.Field == "msg" {
+					fieldType = "string"
+				}
+			} else {
+				allFields := p.collectErrorFields(objType)
+				if ft, exists := allFields[fa.Field]; exists {
+					fieldType = ft
 				}
 			}
 		}
 	}
 
-	// Встроенный Error.msg
-	if fa.Field == "msg" {
+	// Фолбэк: если ничего не нашли, но поле msg — считаем string
+	if fieldType == "int" && fa.Field == "msg" {
 		fieldType = "string"
 	}
 
@@ -231,6 +247,37 @@ func (p *Pipeline) processFieldAccess(fa *front.FieldAccess, irFn *IRFunction) s
 	})
 
 	return result
+}
+
+func (p *Pipeline) collectErrorFields(typeName string) map[string]string {
+	fields := make(map[string]string)
+
+	var decl *front.ErrorDecl
+	for _, d := range p.Program.ErrorDecls {
+		if d.Name == typeName {
+			decl = d
+			break
+		}
+	}
+	if decl == nil {
+		return fields
+	}
+
+	if decl.Parent != "" && decl.Parent != "Error" {
+		parentFields := p.collectErrorFields(decl.Parent)
+		for k, v := range parentFields {
+			fields[k] = v
+		}
+	}
+	if decl.Parent == "Error" || decl.Parent == "" {
+		fields["msg"] = "string"
+	}
+
+	for _, f := range decl.Fields {
+		fields[f.Name] = f.Type
+	}
+
+	return fields
 }
 
 func (p *Pipeline) processTry(try *front.TryStmt, irFn *IRFunction) {
@@ -321,7 +368,14 @@ func (p *Pipeline) processTry(try *front.TryStmt, irFn *IRFunction) {
 			if typeName == "" {
 				typeName = "Error"
 			}
-			irFn.Locals = append(irFn.Locals, typeName+"* "+clause.VarName)
+			cType := typeName + "*"
+			if typeName == "Error" {
+				cType = "SkError*"
+			}
+			irFn.Locals = append(irFn.Locals, cType+" "+clause.VarName)
+			if irFn.VarTypes != nil {
+				irFn.VarTypes[clause.VarName] = typeName
+			}
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op:     "error_cast",
 				Result: clause.VarName,
@@ -646,6 +700,14 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 	if decl.IsArray {
 		irFn.Locals = append(irFn.Locals, "sk_arr "+decl.Name)
 
+		if irFn.VarTypes != nil {
+			elemType := decl.ElemType
+			if elemType == "" {
+				elemType = "any"
+			}
+			irFn.VarTypes[decl.Name] = "arr[" + elemType + "]"
+		}
+
 		if irFn.ArrayElemTypes == nil {
 			irFn.ArrayElemTypes = make(map[string]string)
 		}
@@ -731,6 +793,10 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 
 	cType := p.typeToC(decl.Type)
 	irFn.Locals = append(irFn.Locals, cType+" "+decl.Name)
+
+	if irFn.VarTypes != nil {
+		irFn.VarTypes[decl.Name] = decl.Type
+	}
 
 	// Регистрация строк
 	if p.TryDepth > 0 && decl.Type == "string" {
@@ -1079,6 +1145,77 @@ func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string
 		}
 	}
 
+	// Приводим операнды к resultT
+	if leftT != resultT {
+		newLeft := p.newTemp()
+		switch resultT {
+		case "double":
+			irFn.Locals = append(irFn.Locals, "sk_double "+newLeft)
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:         "call",
+				Result:     newLeft,
+				Arg1:       "sk_double_new",
+				Arg2:       fmt.Sprintf("(double)%s.value", leftVal),
+				ReturnType: "sk_double",
+			})
+		case "float":
+			irFn.Locals = append(irFn.Locals, "sk_float "+newLeft)
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:         "call",
+				Result:     newLeft,
+				Arg1:       "sk_float_new",
+				Arg2:       fmt.Sprintf("(float)%s.value", leftVal),
+				ReturnType: "sk_float",
+			})
+		case "int":
+			irFn.Locals = append(irFn.Locals, "sk_int "+newLeft)
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:         "call",
+				Result:     newLeft,
+				Arg1:       "sk_int_new",
+				Arg2:       fmt.Sprintf("(int)%s.value", leftVal),
+				ReturnType: "sk_int",
+			})
+		}
+		leftVal = newLeft
+		leftT = resultT
+	}
+
+	if rightT != resultT {
+		newRight := p.newTemp()
+		switch resultT {
+		case "double":
+			irFn.Locals = append(irFn.Locals, "sk_double "+newRight)
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:         "call",
+				Result:     newRight,
+				Arg1:       "sk_double_new",
+				Arg2:       fmt.Sprintf("(double)%s.value", rightVal),
+				ReturnType: "sk_double",
+			})
+		case "float":
+			irFn.Locals = append(irFn.Locals, "sk_float "+newRight)
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:         "call",
+				Result:     newRight,
+				Arg1:       "sk_float_new",
+				Arg2:       fmt.Sprintf("(float)%s.value", rightVal),
+				ReturnType: "sk_float",
+			})
+		case "int":
+			irFn.Locals = append(irFn.Locals, "sk_int "+newRight)
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:         "call",
+				Result:     newRight,
+				Arg1:       "sk_int_new",
+				Arg2:       fmt.Sprintf("(int)%s.value", rightVal),
+				ReturnType: "sk_int",
+			})
+		}
+		rightVal = newRight
+		rightT = resultT
+	}
+
 	// Сравнения
 	if bin.Op == "<" || bin.Op == ">" || bin.Op == "==" || bin.Op == "!=" || bin.Op == "<=" || bin.Op == ">=" {
 		result := p.newTemp()
@@ -1163,6 +1300,10 @@ func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string
 func (p *Pipeline) processExpression(expr front.Node, irFn *IRFunction) string {
 	switch n := expr.(type) {
 	case *front.Number:
+		if strings.HasSuffix(n.Value, "f") || strings.HasSuffix(n.Value, "F") {
+			val := n.Value[:len(n.Value)-1]
+			return fmt.Sprintf("sk_float_new(%sf)", val)
+		}
 		if strings.Contains(n.Value, ".") {
 			return fmt.Sprintf("sk_double_new(%s)", n.Value)
 		}
@@ -1368,7 +1509,7 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 	argsJoined := strings.Join(argsStr, ", ")
 
 	// Определяем тип возврата
-	returnType := "sk_string"
+	returnType := "sk_int"
 	for _, fn := range p.Program.Functions {
 		if fn.Name == simpleName {
 			returnType = p.typeToC(fn.ReturnType)
@@ -2319,6 +2460,9 @@ func (p *Pipeline) processToArr(call *front.CallExpr, irFn *IRFunction) string {
 func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 	switch n := expr.(type) {
 	case *front.Number:
+		if strings.HasSuffix(n.Value, "f") || strings.HasSuffix(n.Value, "F") {
+			return "float"
+		}
 		if strings.Contains(n.Value, ".") {
 			return "double"
 		}
@@ -2330,6 +2474,20 @@ func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 	case *front.ErrorInstance:
 		return n.TypeName
 	case *front.FieldAccess:
+		if irFn.VarTypes != nil {
+			if objType, ok := irFn.VarTypes[n.Object]; ok {
+				if objType == "Error" {
+					if n.Field == "msg" {
+						return "string"
+					}
+				} else {
+					allFields := p.collectErrorFields(objType)
+					if ft, exists := allFields[n.Field]; exists {
+						return ft
+					}
+				}
+			}
+		}
 		if n.Field == "msg" {
 			return "string"
 		}

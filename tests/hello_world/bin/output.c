@@ -317,10 +317,26 @@ typedef struct SkError {
     sk_string msg;
 } SkError;
 
-typedef struct MyError {
+typedef struct BaseError {
     const char* __type;
     sk_string msg;
-} MyError;
+    sk_int code;
+} BaseError;
+
+typedef struct NetworkError {
+    const char* __type;
+    sk_string msg;
+    sk_string host;
+    sk_int code;
+} NetworkError;
+
+typedef struct TimeoutError {
+    const char* __type;
+    sk_string msg;
+    sk_int seconds;
+    sk_string host;
+    sk_int code;
+} TimeoutError;
 
 typedef struct SkCleanup {
     void** ptr;
@@ -414,62 +430,1268 @@ int sk_error_type_match(const char* actual, const char* expected) {
 }
 
 // Function prototypes
-void f(void);
+sk_int add(sk_int a, sk_int b);
+sk_int sub(sk_int a, sk_int b);
+sk_int mul(sk_int a, sk_int b);
+sk_int divine(sk_int a, sk_int b);
+sk_int mod(sk_int a, sk_int b);
+sk_string greet(sk_string name);
+sk_string repeat(sk_string s, sk_int n);
+sk_bool isEven(sk_int x);
+sk_bool isPositive(sk_int x);
+sk_bool both(sk_bool a, sk_bool b);
+sk_bool either(sk_bool a, sk_bool b);
+sk_float half(sk_int x);
+sk_double square(sk_double x);
+sk_arr makeRange(sk_int start, sk_int end);
+sk_int sumArr(sk_arr a);
+sk_arr makeMixed(void);
+sk_string describe(sk_any x);
+sk_string demoConversions(void);
+sk_string classify(sk_int x);
+sk_string sign(sk_int x);
+sk_int factorial(sk_int n);
+sk_string dayName(sk_int day);
+sk_int safedivide(sk_int a, sk_int b);
+void throwNetworkError(void);
+void demoTry(void);
+void demoTimeout(void);
+sk_int sum3(sk_int a, sk_int b, sk_int c);
+sk_int c_add(sk_int a, sk_int b);
+sk_string greetDefault(sk_string name, sk_string greeting);
+sk_int secret(void);
 void __sk__std_io_send(sk_string line);
 sk_string __sk__std_io_input(sk_string prompt);
 void sendln(sk_any msg);
 void sendf(sk_any msg);
 sk_string input(sk_string prefix);
 
-void f(void) {
-    MyError* t1;
+sk_int add(sk_int a, sk_int b) {
+    sk_int t1;
 
-t1 = malloc(sizeof(MyError));
-t1->__type = "Error.MyError";
-t1->msg = sk_string_new("boom");
-    sk_throw(t1, "main.sk", 8, 5);
+    t1 = sk_int_add(a, b);
+    return t1;
+}
+
+sk_int sub(sk_int a, sk_int b) {
+    sk_int t2;
+
+    t2 = sk_int_sub(a, b);
+    return t2;
+}
+
+sk_int mul(sk_int a, sk_int b) {
+    sk_int t3;
+
+    t3 = sk_int_mul(a, b);
+    return t3;
+}
+
+sk_int divine(sk_int a, sk_int b) {
+    sk_bool t4;
+    BaseError* t5;
+    sk_int t6;
+
+    t4 = sk_int_eq(b, sk_int_new(0));
+    if (t4.value) {
+        goto L1;
+    } else {
+        goto L2;
+    }
+L1:
+t5 = malloc(sizeof(BaseError));
+t5->__type = "Error.BaseError";
+t5->code = sk_int_new(1);
+t5->msg = sk_string_new("division by zero");
+    sk_throw(t5, "main.sk", 27, 9);
+    goto L3;
+L2:
+L3:
+    t6 = sk_int_div(a, b);
+    return t6;
+}
+
+sk_int mod(sk_int a, sk_int b) {
+    sk_int t7;
+
+    t7 = sk_int_mod(a, b);
+    return t7;
+}
+
+sk_string greet(sk_string name) {
+    sk_string t8;
+    sk_string t9;
+
+    t8 = sk_string_concat(sk_string_new("Hello, "), name);
+    t9 = sk_string_concat(t8, sk_string_new("!"));
+    free(t8.value);
+    return t9;
+}
+
+sk_string repeat(sk_string s, sk_int n) {
+    sk_string result;
+    sk_int i;
+    sk_bool t10;
+    sk_string t11;
+    sk_int t12;
+
+    result = sk_string_new("");
+    i = sk_int_new(0);
+L4:
+    t10 = sk_int_lt(i, n);
+    if (t10.value) {
+        goto L5;
+    } else {
+        goto L6;
+    }
+L5:
+    t11 = sk_string_concat(result, s);
+    result = t11;
+    t12 = sk_int_add(i, sk_int_new(1));
+    i = t12;
+    goto L4;
+    free(t11.value);
+L6:
+    return result;
+}
+
+sk_bool isEven(sk_int x) {
+    sk_int t13;
+    sk_bool t14;
+
+    t13 = sk_int_mod(x, sk_int_new(2));
+    t14 = sk_int_eq(t13, sk_int_new(0));
+    return t14;
+}
+
+sk_bool isPositive(sk_int x) {
+    sk_bool t15;
+
+    t15 = sk_int_gt(x, sk_int_new(0));
+    return t15;
+}
+
+sk_bool both(sk_bool a, sk_bool b) {
+    sk_bool t16;
+
+    t16 = sk_bool_and(a, b);
+    return t16;
+}
+
+sk_bool either(sk_bool a, sk_bool b) {
+    sk_bool t17;
+
+    t17 = sk_bool_or(a, b);
+    return t17;
+}
+
+sk_float half(sk_int x) {
+    sk_float t18;
+    sk_float t19;
+
+    t18 = sk_float_new((float)x.value);
+    t19 = sk_float_div(t18, sk_float_new(2.0f));
+    return t19;
+}
+
+sk_double square(sk_double x) {
+    sk_double t20;
+
+    t20 = sk_double_mul(x, x);
+    return t20;
+}
+
+sk_arr makeRange(sk_int start, sk_int end) {
+    sk_arr result;
+    sk_arr t21;
+    sk_array* t22;
+
+    t22 = sk_range_new(start.value, end.value);
+    t21 = sk_arr_new(t22);
+    result = t21;
+    return result;
+}
+
+sk_int sumArr(sk_arr a) {
+    sk_int total;
+    sk_int i;
+    sk_int t23;
+    sk_bool t24;
+    sk_int t25;
+    sk_int t26;
+    sk_int t27;
+
+    total = sk_int_new(0);
+    i = sk_int_new(0);
+L7:
+    t23 = sk_int_new(sk_array_len(a.value));
+    t24 = sk_int_lt(i, t23);
+    if (t24.value) {
+        goto L8;
+    } else {
+        goto L9;
+    }
+L8:
+    t25 = *(sk_int*)sk_array_get(a.value, i.value);
+    t26 = sk_int_add(total, t25);
+    total = t26;
+    t27 = sk_int_add(i, sk_int_new(1));
+    i = t27;
+    goto L7;
+L9:
+    return total;
+}
+
+sk_arr makeMixed(void) {
+    sk_arr result;
+    sk_arr t28;
+    sk_array* t29;
+    sk_any t30;
+    sk_any t31;
+    sk_any t32;
+    sk_any t33;
+
+    t29 = sk_array_new(sizeof(sk_any), 5);
+    t28 = sk_arr_new(t29);
+    sk_array_free(t29);
+    t30 = any_int(sk_int_new(1));
+    sk_array_push_any(t28.value, t30);
+    t31 = any_string(sk_string_new("two"));
+    sk_array_push_any(t28.value, t31);
+    t32 = any_double(sk_double_new(3.0));
+    sk_array_push_any(t28.value, t32);
+    t33 = any_bool(sk_bool_new(1));
+    sk_array_push_any(t28.value, t33);
+    result = t28;
+    return result;
+}
+
+sk_string describe(sk_any x) {
+    sk_string t34;
+    sk_string t35;
+    sk_string t36;
+    sk_string t37;
+
+    char _buf_t34[32];
+    switch (x.type) {
+        case 0: strcpy(_buf_t34, "int"); break;
+        case 1: strcpy(_buf_t34, "string"); break;
+        case 2: strcpy(_buf_t34, "float"); break;
+        case 3: strcpy(_buf_t34, "double"); break;
+        case 4: strcpy(_buf_t34, "bool"); break;
+        case 5: strcpy(_buf_t34, "arr"); break;
+        case 6: strcpy(_buf_t34, "void"); break;
+        default: strcpy(_buf_t34, "unknown"); break;
+    }
+    t34 = sk_string_new(_buf_t34);
+    t35 = sk_string_concat(t34, sk_string_new(" = "));
+    t36 = any_to_string(x);
+    t37 = sk_string_concat(t35, t36);
+    free(t36.value);
+    free(t35.value);
+    return t37;
+}
+
+sk_string demoConversions(void) {
+    sk_string s;
+    sk_int i;
+    sk_int t38;
+    sk_float f;
+    sk_float t39;
+    sk_double d;
+    sk_double t40;
+    sk_bool b;
+    sk_bool t41;
+    sk_string back;
+    sk_string t42;
+    sk_string t43;
+    sk_string t44;
+    sk_string t45;
+    sk_string t46;
+    sk_string t47;
+    sk_string t48;
+    sk_string t49;
+    sk_string t50;
+    sk_string t51;
+
+    s = sk_string_new("42");
+    t38 = sk_string_to_int(s);
+    i = t38;
+    t39 = sk_string_to_float(sk_string_new("3.14"));
+    f = t39;
+    t40 = sk_string_to_double(sk_string_new("2.71828"));
+    d = t40;
+    t41 = sk_int_to_bool(sk_int_new(1));
+    b = t41;
+    t42 = sk_int_to_string(i);
+    t43 = sk_string_concat(t42, sk_string_new(","));
+    free(t42.value);
+    t44 = sk_float_to_string(f);
+    t45 = sk_string_concat(t43, t44);
+    free(t44.value);
+    free(t43.value);
+    t46 = sk_string_concat(t45, sk_string_new(","));
+    free(t45.value);
+    t47 = sk_double_to_string(d);
+    t48 = sk_string_concat(t46, t47);
+    free(t47.value);
+    free(t46.value);
+    t49 = sk_string_concat(t48, sk_string_new(","));
+    free(t48.value);
+    t50 = sk_bool_to_string(b);
+    t51 = sk_string_concat(t49, t50);
+    free(t50.value);
+    free(t49.value);
+    back = t51;
+    free(t51.value);
+    return back;
+}
+
+sk_string classify(sk_int x) {
+    sk_bool t52;
+    sk_bool t53;
+
+    t52 = sk_int_lt(x, sk_int_new(0));
+    if (t52.value) {
+        goto L10;
+    } else {
+        goto L11;
+    }
+L10:
+    return sk_string_new("negative");
+    goto L12;
+L11:
+    t53 = sk_int_eq(x, sk_int_new(0));
+    if (t53.value) {
+        goto L13;
+    } else {
+        goto L14;
+    }
+L13:
+    return sk_string_new("zero");
+    goto L12;
+L14:
+    return sk_string_new("positive");
+L12:
+}
+
+sk_string sign(sk_int x) {
+    sk_bool t54;
+    sk_string t55;
+
+    t54 = sk_int_ge(x, sk_int_new(0));
+    t55 = t54.value ? sk_string_new("non-negative") : sk_string_new("negative");
+    return t55;
+}
+
+sk_int factorial(sk_int n) {
+    sk_int result;
+    sk_int i;
+    sk_bool t56;
+    sk_int t57;
+    sk_int t58;
+
+    result = sk_int_new(1);
+    i = sk_int_new(1);
+L15:
+    t56 = sk_int_le(i, n);
+    if (t56.value) {
+        goto L16;
+    } else {
+        goto L17;
+    }
+L16:
+    t57 = sk_int_mul(result, i);
+    result = t57;
+    t58 = sk_int_add(i, sk_int_new(1));
+    i = t58;
+    goto L15;
+L17:
+    return result;
+}
+
+sk_string dayName(sk_int day) {
+    sk_bool t59;
+    sk_bool t60;
+    sk_bool t61;
+    sk_bool t62;
+    sk_bool t63;
+    sk_bool t64;
+    sk_bool t65;
+
+    t59 = sk_int_eq(day, sk_int_new(1));
+    if (t59.value) {
+        goto L19;
+    } else {
+        goto L20;
+    }
+L19:
+    return sk_string_new("Monday");
+    goto L18;
+L20:
+    t60 = sk_int_eq(day, sk_int_new(2));
+    if (t60.value) {
+        goto L21;
+    } else {
+        goto L22;
+    }
+L21:
+    return sk_string_new("Tuesday");
+    goto L18;
+L22:
+    t61 = sk_int_eq(day, sk_int_new(3));
+    if (t61.value) {
+        goto L23;
+    } else {
+        goto L24;
+    }
+L23:
+    return sk_string_new("Wednesday");
+    goto L18;
+L24:
+    t62 = sk_int_eq(day, sk_int_new(4));
+    if (t62.value) {
+        goto L25;
+    } else {
+        goto L26;
+    }
+L25:
+    return sk_string_new("Thursday");
+    goto L18;
+L26:
+    t63 = sk_int_eq(day, sk_int_new(5));
+    if (t63.value) {
+        goto L27;
+    } else {
+        goto L28;
+    }
+L27:
+    return sk_string_new("Friday");
+    goto L18;
+L28:
+    t64 = sk_int_eq(day, sk_int_new(6));
+    if (t64.value) {
+        goto L29;
+    } else {
+        goto L30;
+    }
+L29:
+    return sk_string_new("Saturday");
+    goto L18;
+L30:
+    t65 = sk_int_eq(day, sk_int_new(7));
+    if (t65.value) {
+        goto L31;
+    } else {
+        goto L32;
+    }
+L31:
+    return sk_string_new("Sunday");
+    goto L18;
+L32:
+L33:
+    return sk_string_new("Unknown");
+L18:
+    return sk_string_new("?");
+}
+
+sk_int safedivide(sk_int a, sk_int b) {
+    SkTryFrame t66;
+    void* t67;
+    sk_int t68;
+    sk_bool t69;
+    BaseError* e;
+    sk_string t70;
+    sk_string t71;
+    sk_string t72;
+    sk_int t73;
+    sk_string t74;
+    sk_string t75;
+    sk_string t76;
+    sk_any t77;
+
+    sk_try_push(&t66);
+    if (setjmp(sk_try_stack->env) != 0) {
+        goto L35;
+    }
+    t68 = divine(a, b);
+    sk_try_pop(&t66);
+    return t68;
+    goto L34;
+L35:
+    sk_try_pop(&t66);
+    t67 = t66.error;
+    t69 = sk_bool_new(sk_error_type_match(((SkError*)t67)->__type, "Error.BaseError"));
+    if (t69.value) {
+        goto L35_body;
+    } else {
+        goto L36;
+    }
+L35_body:
+    e = (BaseError*)t67;
+t70 = e->msg;
+    t71 = sk_string_concat(sk_string_new("Caught: "), t70);
+    t72 = sk_string_concat(t71, sk_string_new(" (code "));
+    free(t71.value);
+t73 = e->code;
+    t74 = sk_int_to_string(t73);
+    t75 = sk_string_concat(t72, t74);
+    free(t74.value);
+    free(t72.value);
+    t76 = sk_string_concat(t75, sk_string_new(")"));
+    free(t75.value);
+    t77 = any_string(t76);
+    free(t76.value);
+    sendln(t77);
+    return sk_int_new(-1);
+    sk_error_free(t67);
+    goto L34;
+L36:
+    t67 = t66.error;
+    sk_throw(t67, "main.sk", 180, 5);
+L34:
+}
+
+void throwNetworkError(void) {
+    NetworkError* t78;
+
+t78 = malloc(sizeof(NetworkError));
+t78->__type = "Error.BaseError.NetworkError";
+t78->host = sk_string_new("example.com");
+t78->msg = sk_string_new("connection failed");
+    sk_throw(t78, "main.sk", 189, 5);
     return;
+}
+
+void demoTry(void) {
+    SkTryFrame t79;
+    void* t80;
+    sk_bool t81;
+    NetworkError* e;
+    sk_string t82;
+    sk_string t83;
+    sk_string t84;
+    sk_string t85;
+    sk_string t86;
+    sk_any t87;
+    SkError* err;
+    sk_string t88;
+    sk_string t89;
+    sk_any t90;
+
+    sk_try_push(&t79);
+    if (setjmp(sk_try_stack->env) != 0) {
+        goto L38;
+    }
+    throwNetworkError();
+    goto L37;
+L38:
+    sk_try_pop(&t79);
+    t80 = t79.error;
+    t81 = sk_bool_new(sk_error_type_match(((SkError*)t80)->__type, "Error.BaseError.NetworkError"));
+    if (t81.value) {
+        goto L38_body;
+    } else {
+        goto L39;
+    }
+L38_body:
+    e = (NetworkError*)t80;
+t82 = e->host;
+    t83 = sk_string_concat(sk_string_new("Network error: host="), t82);
+    t84 = sk_string_concat(t83, sk_string_new(" msg="));
+    free(t83.value);
+t85 = e->msg;
+    t86 = sk_string_concat(t84, t85);
+    free(t84.value);
+    t87 = any_string(t86);
+    free(t86.value);
+    sendln(t87);
+    sk_error_free(t80);
+    goto L37;
+L39:
+L40:
+    sk_try_pop(&t79);
+    t80 = t79.error;
+    err = (SkError*)t80;
+t88 = err->msg;
+    t89 = sk_string_concat(sk_string_new("Generic error: "), t88);
+    t90 = any_string(t89);
+    free(t89.value);
+    sendln(t90);
+    sk_error_free(t80);
+    goto L37;
+L37:
+    return;
+}
+
+void demoTimeout(void) {
+    SkTryFrame t91;
+    void* t92;
+    TimeoutError* t93;
+    sk_bool t94;
+    TimeoutError* e;
+    sk_string t95;
+    sk_string t96;
+    sk_string t97;
+    sk_int t98;
+    sk_string t99;
+    sk_string t100;
+    sk_string t101;
+    sk_string t102;
+    sk_string t103;
+    sk_any t104;
+
+    sk_try_push(&t91);
+    if (setjmp(sk_try_stack->env) != 0) {
+        goto L43;
+    }
+t93 = malloc(sizeof(TimeoutError));
+t93->__type = "Error.BaseError.NetworkError.TimeoutError";
+t93->host = sk_string_new("slow.com");
+t93->msg = sk_string_new("timed out");
+    sk_throw(t93, "main.sk", 204, 9);
+    goto L42;
+L43:
+    sk_try_pop(&t91);
+    t92 = t91.error;
+    t94 = sk_bool_new(sk_error_type_match(((SkError*)t92)->__type, "Error.BaseError.NetworkError.TimeoutError"));
+    if (t94.value) {
+        goto L43_body;
+    } else {
+        goto L44;
+    }
+L43_body:
+    e = (TimeoutError*)t92;
+t95 = e->host;
+    t96 = sk_string_concat(sk_string_new("Timeout: "), t95);
+    t97 = sk_string_concat(t96, sk_string_new(" ("));
+    free(t96.value);
+t98 = e->seconds;
+    t99 = sk_int_to_string(t98);
+    t100 = sk_string_concat(t97, t99);
+    free(t99.value);
+    free(t97.value);
+    t101 = sk_string_concat(t100, sk_string_new("s) — "));
+    free(t100.value);
+t102 = e->msg;
+    t103 = sk_string_concat(t101, t102);
+    free(t101.value);
+    t104 = any_string(t103);
+    free(t103.value);
+    sendln(t104);
+    sk_error_free(t92);
+    goto L42;
+L44:
+    t92 = t91.error;
+    sk_throw(t92, "main.sk", 203, 5);
+L42:
+    return;
+}
+
+sk_int sum3(sk_int a, sk_int b, sk_int c) {
+    sk_int t105;
+    sk_int t106;
+
+    t105 = sk_int_add(a, b);
+    t106 = sk_int_add(t105, c);
+    return t106;
+}
+
+sk_int c_add(sk_int a, sk_int b) {
+    return sk_int_new(a.value + b.value);
+    return sk_int_new(0);
+}
+
+sk_string greetDefault(sk_string name, sk_string greeting) {
+    sk_string t107;
+    sk_string t108;
+    sk_string t109;
+
+    t107 = sk_string_concat(greeting, sk_string_new(", "));
+    t108 = sk_string_concat(t107, name);
+    free(t107.value);
+    t109 = sk_string_concat(t108, sk_string_new("!"));
+    free(t108.value);
+    return t109;
+}
+
+sk_int secret(void) {
+    return sk_int_new(42);
 }
 
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
-    SkTryFrame t2;
-    void* t3;
-    sk_bool t4;
-    MyError* e;
-    sk_string t5;
-    sk_any t6;
-    sk_any t7;
+    sk_any t110;
+    sk_any t111;
+    sk_any t112;
+    sk_int t113;
+    sk_string t114;
+    sk_string t115;
+    sk_any t116;
+    sk_int t117;
+    sk_string t118;
+    sk_string t119;
+    sk_any t120;
+    sk_int t121;
+    sk_string t122;
+    sk_string t123;
+    sk_any t124;
+    sk_int t125;
+    sk_string t126;
+    sk_string t127;
+    sk_any t128;
+    sk_int t129;
+    sk_string t130;
+    sk_string t131;
+    sk_any t132;
+    sk_any t133;
+    sk_any t134;
+    sk_string t135;
+    sk_any t136;
+    sk_string t137;
+    sk_any t138;
+    sk_any t139;
+    sk_any t140;
+    sk_bool t141;
+    sk_string t142;
+    sk_string t143;
+    sk_any t144;
+    sk_bool t145;
+    sk_string t146;
+    sk_string t147;
+    sk_any t148;
+    sk_bool t149;
+    sk_string t150;
+    sk_string t151;
+    sk_any t152;
+    sk_bool t153;
+    sk_string t154;
+    sk_string t155;
+    sk_any t156;
+    sk_bool t157;
+    sk_string t158;
+    sk_string t159;
+    sk_any t160;
+    sk_any t161;
+    sk_any t162;
+    sk_float t163;
+    sk_string t164;
+    sk_string t165;
+    sk_any t166;
+    sk_double t167;
+    sk_string t168;
+    sk_string t169;
+    sk_any t170;
+    sk_any t171;
+    sk_any t172;
+    sk_arr r;
+    sk_arr t173;
+    sk_string t174;
+    sk_string t175;
+    sk_any t176;
+    sk_int t177;
+    sk_string t178;
+    sk_string t179;
+    sk_any t180;
+    sk_any t181;
+    sk_arr mixed;
+    sk_arr t182;
+    sk_string t183;
+    sk_string t184;
+    sk_any t185;
+    sk_any t186;
+    sk_any t187;
+    sk_any t188;
+    sk_string t189;
+    sk_any t190;
+    sk_any t191;
+    sk_string t192;
+    sk_any t193;
+    sk_any t194;
+    sk_string t195;
+    sk_any t196;
+    sk_any t197;
+    sk_string t198;
+    sk_any t199;
+    sk_any t200;
+    sk_any t201;
+    sk_string t202;
+    sk_any t203;
+    sk_any t204;
+    sk_any t205;
+    sk_string t206;
+    sk_string t207;
+    sk_any t208;
+    sk_string t209;
+    sk_string t210;
+    sk_any t211;
+    sk_string t212;
+    sk_string t213;
+    sk_any t214;
+    sk_any t215;
+    sk_any t216;
+    sk_string t217;
+    sk_string t218;
+    sk_any t219;
+    sk_string t220;
+    sk_string t221;
+    sk_any t222;
+    sk_any t223;
+    sk_any t224;
+    sk_int t225;
+    sk_string t226;
+    sk_string t227;
+    sk_any t228;
+    sk_any t229;
+    sk_any t230;
+    sk_string t231;
+    sk_string t232;
+    sk_any t233;
+    sk_string t234;
+    sk_string t235;
+    sk_any t236;
+    sk_string t237;
+    sk_string t238;
+    sk_any t239;
+    sk_any t240;
+    sk_any t241;
+    sk_int t242;
+    sk_string t243;
+    sk_string t244;
+    sk_any t245;
+    sk_int t246;
+    sk_string t247;
+    sk_string t248;
+    sk_any t249;
+    sk_any t250;
+    sk_any t251;
+    sk_int t252;
+    sk_string t253;
+    sk_string t254;
+    sk_any t255;
+    sk_any t256;
+    sk_any t257;
+    sk_int t258;
+    sk_string t259;
+    sk_string t260;
+    sk_any t261;
+    sk_any t262;
+    sk_any t263;
+    sk_string t264;
+    sk_any t265;
+    sk_string t266;
+    sk_any t267;
+    sk_string t268;
+    sk_any t269;
+    sk_any t270;
+    sk_any t271;
+    sk_int t272;
+    sk_string t273;
+    sk_string t274;
+    sk_any t275;
+    sk_any t276;
+    sk_any t277;
+    sk_int x;
+    sk_string s;
+    sk_arr a;
+    sk_string t278;
+    sk_string t279;
+    sk_string t280;
+    sk_string t281;
+    sk_string t282;
+    sk_any t283;
+    sk_string t284;
+    sk_string t285;
+    sk_string t286;
+    sk_string t287;
+    sk_string t288;
+    sk_any t289;
+    sk_string t290;
+    sk_string t291;
+    sk_string t292;
+    sk_string t293;
+    sk_string t294;
+    sk_any t295;
+    sk_string t296;
+    sk_string t297;
+    sk_string t298;
+    sk_any t299;
+    sk_any t300;
+    sk_arr het;
+    sk_arr t301;
+    sk_array* t302;
+    sk_any t303;
+    sk_any t304;
+    sk_any t305;
+    sk_any t306;
+    sk_string t307;
+    sk_string t308;
+    sk_any t309;
+    sk_any t310;
+    sk_any t311;
 
-    sk_try_push(&t2);
-    if (setjmp(sk_try_stack->env) != 0) {
-        goto L2;
-    }
-    f();
-    goto L1;
-L2:
-    sk_try_pop(&t2);
-    t3 = t2.error;
-    t4 = sk_bool_new(sk_error_type_match(((SkError*)t3)->__type, "Error.MyError"));
-    if (t4.value) {
-        goto L2_body;
-    } else {
-        goto L3;
-    }
-L2_body:
-    e = (MyError*)t3;
-t5 = e->msg;
-    t6 = any_string(t5);
-    sendln(t6);
-    sk_error_free(t3);
-    goto L1;
-L3:
-    t3 = t2.error;
-    sk_throw(t3, "main.sk", 12, 5);
-L1:
-    t7 = any_string(sk_string_new("done\\q"));
-    sendln(t7);
+    t110 = any_string(sk_string_new("=== Skorpion Language Test ==="));
+    sendln(t110);
+    t111 = any_string(sk_string_new(""));
+    sendln(t111);
+    t112 = any_string(sk_string_new("--- Arithmetic ---"));
+    sendln(t112);
+    t113 = add(sk_int_new(2), sk_int_new(3));
+    t114 = sk_int_to_string(t113);
+    t115 = sk_string_concat(sk_string_new("add(2, 3) = "), t114);
+    free(t114.value);
+    t116 = any_string(t115);
+    free(t115.value);
+    sendln(t116);
+    t117 = sub(sk_int_new(10), sk_int_new(4));
+    t118 = sk_int_to_string(t117);
+    t119 = sk_string_concat(sk_string_new("sub(10, 4) = "), t118);
+    free(t118.value);
+    t120 = any_string(t119);
+    free(t119.value);
+    sendln(t120);
+    t121 = mul(sk_int_new(3), sk_int_new(5));
+    t122 = sk_int_to_string(t121);
+    t123 = sk_string_concat(sk_string_new("mul(3, 5) = "), t122);
+    free(t122.value);
+    t124 = any_string(t123);
+    free(t123.value);
+    sendln(t124);
+    t125 = divine(sk_int_new(20), sk_int_new(4));
+    t126 = sk_int_to_string(t125);
+    t127 = sk_string_concat(sk_string_new("divine(20, 4) = "), t126);
+    free(t126.value);
+    t128 = any_string(t127);
+    free(t127.value);
+    sendln(t128);
+    t129 = mod(sk_int_new(17), sk_int_new(5));
+    t130 = sk_int_to_string(t129);
+    t131 = sk_string_concat(sk_string_new("mod(17, 5) = "), t130);
+    free(t130.value);
+    t132 = any_string(t131);
+    free(t131.value);
+    sendln(t132);
+    t133 = any_string(sk_string_new(""));
+    sendln(t133);
+    t134 = any_string(sk_string_new("--- Strings ---"));
+    sendln(t134);
+    t135 = greet(sk_string_new("Skorpion"));
+    t136 = any_string(t135);
+    sendln(t136);
+    t137 = repeat(sk_string_new("ab"), sk_int_new(3));
+    t138 = any_string(t137);
+    sendln(t138);
+    t139 = any_string(sk_string_new(""));
+    sendln(t139);
+    t140 = any_string(sk_string_new("--- Bool ---"));
+    sendln(t140);
+    t141 = isEven(sk_int_new(4));
+    t142 = sk_bool_to_string(t141);
+    t143 = sk_string_concat(sk_string_new("isEven(4) = "), t142);
+    free(t142.value);
+    t144 = any_string(t143);
+    free(t143.value);
+    sendln(t144);
+    t145 = isEven(sk_int_new(7));
+    t146 = sk_bool_to_string(t145);
+    t147 = sk_string_concat(sk_string_new("isEven(7) = "), t146);
+    free(t146.value);
+    t148 = any_string(t147);
+    free(t147.value);
+    sendln(t148);
+    t149 = isPositive(sk_int_new(-5));
+    t150 = sk_bool_to_string(t149);
+    t151 = sk_string_concat(sk_string_new("isPositive(-5) = "), t150);
+    free(t150.value);
+    t152 = any_string(t151);
+    free(t151.value);
+    sendln(t152);
+    t153 = both(sk_bool_new(1), sk_bool_new(0));
+    t154 = sk_bool_to_string(t153);
+    t155 = sk_string_concat(sk_string_new("both(true, false) = "), t154);
+    free(t154.value);
+    t156 = any_string(t155);
+    free(t155.value);
+    sendln(t156);
+    t157 = either(sk_bool_new(1), sk_bool_new(0));
+    t158 = sk_bool_to_string(t157);
+    t159 = sk_string_concat(sk_string_new("either(true, false) = "), t158);
+    free(t158.value);
+    t160 = any_string(t159);
+    free(t159.value);
+    sendln(t160);
+    t161 = any_string(sk_string_new(""));
+    sendln(t161);
+    t162 = any_string(sk_string_new("--- Float / Double ---"));
+    sendln(t162);
+    t163 = half(sk_int_new(7));
+    t164 = sk_float_to_string(t163);
+    t165 = sk_string_concat(sk_string_new("half(7) = "), t164);
+    free(t164.value);
+    t166 = any_string(t165);
+    free(t165.value);
+    sendln(t166);
+    t167 = square(sk_double_new(3.0));
+    t168 = sk_double_to_string(t167);
+    t169 = sk_string_concat(sk_string_new("square(3.0) = "), t168);
+    free(t168.value);
+    t170 = any_string(t169);
+    free(t169.value);
+    sendln(t170);
+    t171 = any_string(sk_string_new(""));
+    sendln(t171);
+    t172 = any_string(sk_string_new("--- Arrays ---"));
+    sendln(t172);
+    t173 = makeRange(sk_int_new(1), sk_int_new(5));
+    r = t173;
+    t174 = sk_arr_to_string(r);
+    t175 = sk_string_concat(sk_string_new("range(1..5) = "), t174);
+    free(t174.value);
+    t176 = any_string(t175);
+    free(t175.value);
+    sendln(t176);
+    t177 = sumArr(r);
+    t178 = sk_int_to_string(t177);
+    t179 = sk_string_concat(sk_string_new("sumArr = "), t178);
+    free(t178.value);
+    t180 = any_string(t179);
+    free(t179.value);
+    sendln(t180);
+    t181 = any_string(sk_string_new(""));
+    sendln(t181);
+    t182 = makeMixed();
+    mixed = t182;
+    t183 = sk_arr_to_string(mixed);
+    t184 = sk_string_concat(sk_string_new("mixed = "), t183);
+    free(t183.value);
+    t185 = any_string(t184);
+    free(t184.value);
+    sendln(t185);
+    t186 = any_string(sk_string_new(""));
+    sendln(t186);
+    t187 = any_string(sk_string_new("--- Any / typeof ---"));
+    sendln(t187);
+    t188 = any_int(sk_int_new(42));
+    t189 = describe(t188);
+    t190 = any_string(t189);
+    sendln(t190);
+    t191 = any_string(sk_string_new("hello"));
+    t192 = describe(t191);
+    t193 = any_string(t192);
+    sendln(t193);
+    t194 = any_double(sk_double_new(3.14));
+    t195 = describe(t194);
+    t196 = any_string(t195);
+    sendln(t196);
+    t197 = any_bool(sk_bool_new(1));
+    t198 = describe(t197);
+    t199 = any_string(t198);
+    sendln(t199);
+    t200 = any_string(sk_string_new(""));
+    sendln(t200);
+    t201 = any_string(sk_string_new("--- Conversions ---"));
+    sendln(t201);
+    t202 = demoConversions();
+    t203 = any_string(t202);
+    sendln(t203);
+    t204 = any_string(sk_string_new(""));
+    sendln(t204);
+    t205 = any_string(sk_string_new("--- If / elsif / else ---"));
+    sendln(t205);
+    t206 = classify(sk_int_new(-5));
+    t207 = sk_string_concat(sk_string_new("classify(-5) = "), t206);
+    t208 = any_string(t207);
+    free(t207.value);
+    sendln(t208);
+    t209 = classify(sk_int_new(0));
+    t210 = sk_string_concat(sk_string_new("classify(0) = "), t209);
+    t211 = any_string(t210);
+    free(t210.value);
+    sendln(t211);
+    t212 = classify(sk_int_new(7));
+    t213 = sk_string_concat(sk_string_new("classify(7) = "), t212);
+    t214 = any_string(t213);
+    free(t213.value);
+    sendln(t214);
+    t215 = any_string(sk_string_new(""));
+    sendln(t215);
+    t216 = any_string(sk_string_new("--- Ternary ---"));
+    sendln(t216);
+    t217 = sign(sk_int_new(-3));
+    t218 = sk_string_concat(sk_string_new("sign(-3) = "), t217);
+    t219 = any_string(t218);
+    free(t218.value);
+    sendln(t219);
+    t220 = sign(sk_int_new(3));
+    t221 = sk_string_concat(sk_string_new("sign(3) = "), t220);
+    t222 = any_string(t221);
+    free(t221.value);
+    sendln(t222);
+    t223 = any_string(sk_string_new(""));
+    sendln(t223);
+    t224 = any_string(sk_string_new("--- Loops ---"));
+    sendln(t224);
+    t225 = factorial(sk_int_new(5));
+    t226 = sk_int_to_string(t225);
+    t227 = sk_string_concat(sk_string_new("factorial(5) = "), t226);
+    free(t226.value);
+    t228 = any_string(t227);
+    free(t227.value);
+    sendln(t228);
+    t229 = any_string(sk_string_new(""));
+    sendln(t229);
+    t230 = any_string(sk_string_new("--- Case ---"));
+    sendln(t230);
+    t231 = dayName(sk_int_new(1));
+    t232 = sk_string_concat(sk_string_new("dayName(1) = "), t231);
+    t233 = any_string(t232);
+    free(t232.value);
+    sendln(t233);
+    t234 = dayName(sk_int_new(7));
+    t235 = sk_string_concat(sk_string_new("dayName(7) = "), t234);
+    t236 = any_string(t235);
+    free(t235.value);
+    sendln(t236);
+    t237 = dayName(sk_int_new(99));
+    t238 = sk_string_concat(sk_string_new("dayName(99) = "), t237);
+    t239 = any_string(t238);
+    free(t238.value);
+    sendln(t239);
+    t240 = any_string(sk_string_new(""));
+    sendln(t240);
+    t241 = any_string(sk_string_new("--- Try / catch / throw ---"));
+    sendln(t241);
+    t242 = safedivide(sk_int_new(10), sk_int_new(2));
+    t243 = sk_int_to_string(t242);
+    t244 = sk_string_concat(sk_string_new("safedivide(10, 2) = "), t243);
+    free(t243.value);
+    t245 = any_string(t244);
+    free(t244.value);
+    sendln(t245);
+    t246 = safedivide(sk_int_new(10), sk_int_new(0));
+    t247 = sk_int_to_string(t246);
+    t248 = sk_string_concat(sk_string_new("safedivide(10, 0) = "), t247);
+    free(t247.value);
+    t249 = any_string(t248);
+    free(t248.value);
+    sendln(t249);
+    demoTry();
+    demoTimeout();
+    t250 = any_string(sk_string_new(""));
+    sendln(t250);
+    t251 = any_string(sk_string_new("--- Range call ---"));
+    sendln(t251);
+    t252 = sum3(sk_int_new(1), sk_int_new(2), sk_int_new(3));
+    t253 = sk_int_to_string(t252);
+    t254 = sk_string_concat(sk_string_new("(1..3).sum3() = "), t253);
+    free(t253.value);
+    t255 = any_string(t254);
+    free(t254.value);
+    sendln(t255);
+    t256 = any_string(sk_string_new(""));
+    sendln(t256);
+    t257 = any_string(sk_string_new("--- Include C ---"));
+    sendln(t257);
+    t258 = c_add(sk_int_new(5), sk_int_new(7));
+    t259 = sk_int_to_string(t258);
+    t260 = sk_string_concat(sk_string_new("c_add(5, 7) = "), t259);
+    free(t259.value);
+    t261 = any_string(t260);
+    free(t260.value);
+    sendln(t261);
+    t262 = any_string(sk_string_new(""));
+    sendln(t262);
+    t263 = any_string(sk_string_new("--- Default parameters ---"));
+    sendln(t263);
+    t264 = greetDefault(sk_string_new("world"), sk_string_new("Hello"));
+    t265 = any_string(t264);
+    sendln(t265);
+    t266 = greetDefault(sk_string_new("Skorpion"), sk_string_new("Hello"));
+    t267 = any_string(t266);
+    sendln(t267);
+    t268 = greetDefault(sk_string_new("Skorpion"), sk_string_new("Hi"));
+    t269 = any_string(t268);
+    sendln(t269);
+    t270 = any_string(sk_string_new(""));
+    sendln(t270);
+    t271 = any_string(sk_string_new("--- Non-exportable ---"));
+    sendln(t271);
+    t272 = secret();
+    t273 = sk_int_to_string(t272);
+    t274 = sk_string_concat(sk_string_new("secret() = "), t273);
+    free(t273.value);
+    t275 = any_string(t274);
+    free(t274.value);
+    sendln(t275);
+    t276 = any_string(sk_string_new(""));
+    sendln(t276);
+    t277 = any_string(sk_string_new("--- Null ---"));
+    sendln(t277);
+    x = SK_NULL_int;
+    s = SK_NULL_string;
+    a = SK_NULL_arr;
+    t278 = sk_string_new("int");
+    t279 = sk_string_concat(sk_string_new("type(x) = "), t278);
+    t280 = sk_string_concat(t279, sk_string_new(", $x = "));
+    free(t279.value);
+    t281 = sk_int_to_string(x);
+    t282 = sk_string_concat(t280, t281);
+    free(t281.value);
+    free(t280.value);
+    t283 = any_string(t282);
+    free(t282.value);
+    sendln(t283);
+    t284 = sk_string_new("string");
+    t285 = sk_string_concat(sk_string_new("type(s) = "), t284);
+    t286 = sk_string_concat(t285, sk_string_new(", $s = "));
+    free(t285.value);
+    t287 = s;
+    t288 = sk_string_concat(t286, t287);
+    free(t286.value);
+    t289 = any_string(t288);
+    free(t288.value);
+    sendln(t289);
+    t290 = sk_string_new("arr");
+    t291 = sk_string_concat(sk_string_new("type(a) = "), t290);
+    t292 = sk_string_concat(t291, sk_string_new(", $a = "));
+    free(t291.value);
+    t293 = sk_arr_to_string(a);
+    t294 = sk_string_concat(t292, t293);
+    free(t293.value);
+    free(t292.value);
+    t295 = any_string(t294);
+    free(t294.value);
+    sendln(t295);
+    t297 = sk_string_new("void");
+    t298 = sk_string_concat(sk_string_new("type(null) = "), t297);
+    t299 = any_string(t298);
+    free(t298.value);
+    sendln(t299);
+    t300 = any_string(sk_string_new(""));
+    sendln(t300);
+    t302 = sk_array_new(sizeof(sk_any), 5);
+    t301 = sk_arr_new(t302);
+    sk_array_free(t302);
+    t303 = any_int(sk_int_new(1));
+    sk_array_push_any(t301.value, t303);
+    t304 = any_string(sk_string_new("two"));
+    sk_array_push_any(t301.value, t304);
+    t305 = any_double(sk_double_new(3.5));
+    sk_array_push_any(t301.value, t305);
+    t306 = any_bool(sk_bool_new(1));
+    sk_array_push_any(t301.value, t306);
+    het = t301;
+    t307 = sk_arr_to_string(het);
+    t308 = sk_string_concat(sk_string_new("heterogeneous = "), t307);
+    free(t307.value);
+    t309 = any_string(t308);
+    free(t308.value);
+    sendln(t309);
+    t310 = any_string(sk_string_new(""));
+    sendln(t310);
+    t311 = any_string(sk_string_new("=== All tests passed ==="));
+    sendln(t311);
     return 0;
 }
 
@@ -496,30 +1718,30 @@ sk_string __sk__std_io_input(sk_string prompt) {
 }
 
 void sendln(sk_any msg) {
-    sk_string t8;
-    sk_string t9;
+    sk_string t312;
+    sk_string t313;
 
-    t8 = any_to_string(msg);
-    t9 = sk_string_concat(t8, sk_string_new("\n"));
-    free(t8.value);
-    __sk__std_io_send(t9);
-    free(t9.value);
+    t312 = any_to_string(msg);
+    t313 = sk_string_concat(t312, sk_string_new("\n"));
+    free(t312.value);
+    __sk__std_io_send(t313);
+    free(t313.value);
     return;
 }
 
 void sendf(sk_any msg) {
-    sk_string t10;
+    sk_string t314;
 
-    t10 = any_to_string(msg);
-    __sk__std_io_send(t10);
-    free(t10.value);
+    t314 = any_to_string(msg);
+    __sk__std_io_send(t314);
+    free(t314.value);
     return;
 }
 
 sk_string input(sk_string prefix) {
-    sk_string t11;
+    sk_string t315;
 
-    t11 = __sk__std_io_input(prefix);
-    return t11;
+    t315 = __sk__std_io_input(prefix);
+    return t315;
 }
 
