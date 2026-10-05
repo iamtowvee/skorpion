@@ -14,14 +14,15 @@ const (
 )
 
 type Symbol struct {
-	Name       string
-	Kind       SymbolKind
-	Type       string
-	RealType   string
-	IsExported bool
-	IsConst    bool
-	Value      interface{} // для констант
-	Scope      *Scope
+	Name        string
+	Kind        SymbolKind
+	Type        string // declared: "int", "arr[int]", "T<int,float>"
+	CurrentType string // compile-time known для union: "int" / "" (unknown)
+	RealType    string
+	IsExported  bool
+	IsConst     bool
+	Value       interface{} // для констант
+	Scope       *Scope
 }
 
 type Scope struct {

@@ -725,6 +725,50 @@ var ErrorCodes = map[string]ErrorCode{
 		Description: "The number literal is malformed.",
 		Tip:         "Check the number format.",
 	},
+	"0608": {
+		Code:        "0608",
+		Message:     "Expected '<' after 'T'",
+		Description: "The union type T must be followed by '<' and a list of types.",
+		Tip:         "Use: 'T<int, float>'.",
+	},
+	"0609": {
+		Code:        "0609",
+		Message:     "Expected '>' after T<...>",
+		Description: "The union type list was not closed with '>'.",
+		Tip:         "Add '>' at the end: 'T<int, float>'.",
+	},
+	"0610": {
+		Code:        "0610",
+		Message:     "Empty T<...>",
+		Description: "T<...> requires at least one type inside the angle brackets.",
+		Tip:         "Use: 'T<int>', 'T<int, float>', etc.",
+	},
+	"0611": {
+		Code:        "0611",
+		Message:     "Nested T<...>",
+		Description: "T<...> cannot contain another T<...> inside. Union of unions is not supported.",
+		Tip:         "Use a single-level T<A, B, C> instead of T<T<A, B>, C>.",
+	},
+	"0612": {
+		Code:        "0612",
+		Message:     "Type not in union",
+		Description: "The assigned value's type is not in the union's type list.",
+		Tip:         "Use a type from the union, or extend the union.",
+	},
+	"0613": {
+		Code:        "0613",
+		Message:     "Operation not valid for union",
+		Description: "The operation is not valid for any type combination in the union.",
+		Tip:         "Check the operator and the union's type list.",
+	},
+	"0614": {
+		Code:    "0614",
+		Message: "Operation may fail at runtime",
+		Description: "The operation is valid for some type combinations in the union, " +
+			"but not all. If the wrong runtime type is encountered, the program will fail.",
+		Tip: "Use detruncate(x) to narrow the type before the operation, or " +
+			"extend the union to cover all combinations.",
+	},
 
 	// ============================================================================
 	// 1500-1599: Semantic errors

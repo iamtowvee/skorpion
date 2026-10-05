@@ -343,6 +343,55 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("}")
 	cg.writeLine("")
 
+	// ===== any arithmetic (runtime dispatch) =====
+	cg.writeLine("sk_any sk_any_add(sk_any a, sk_any b) {")
+	cg.writeLine("    if (a.type == 6 || b.type == 6) return any_null();")
+	cg.writeLine("    if (a.type == 1 || b.type == 1) return any_string(sk_string_concat(any_to_string(a), any_to_string(b)));")
+	cg.writeLine("    if (a.type == 3 || b.type == 3) return any_double(sk_double_add(any_to_double(a), any_to_double(b)));")
+	cg.writeLine("    if (a.type == 2 || b.type == 2) return any_float(sk_float_add(any_to_float(a), any_to_float(b)));")
+	cg.writeLine("    if (a.type == 0 && b.type == 0) return any_int(sk_int_add(any_to_int(a), any_to_int(b)));")
+	cg.writeLine("    return any_null();")
+	cg.writeLine("}")
+
+	cg.writeLine("sk_any sk_any_sub(sk_any a, sk_any b) {")
+	cg.writeLine("    if (a.type == 6 || b.type == 6) return any_null();")
+	cg.writeLine("    if (a.type == 3 || b.type == 3) return any_double(sk_double_sub(any_to_double(a), any_to_double(b)));")
+	cg.writeLine("    if (a.type == 2 || b.type == 2) return any_float(sk_float_sub(any_to_float(a), any_to_float(b)));")
+	cg.writeLine("    if (a.type == 0 && b.type == 0) return any_int(sk_int_sub(any_to_int(a), any_to_int(b)));")
+	cg.writeLine("    return any_null();")
+	cg.writeLine("}")
+
+	cg.writeLine("sk_any sk_any_mul(sk_any a, sk_any b) {")
+	cg.writeLine("    if (a.type == 6 || b.type == 6) return any_null();")
+	cg.writeLine("    if (a.type == 3 || b.type == 3) return any_double(sk_double_mul(any_to_double(a), any_to_double(b)));")
+	cg.writeLine("    if (a.type == 2 || b.type == 2) return any_float(sk_float_mul(any_to_float(a), any_to_float(b)));")
+	cg.writeLine("    if (a.type == 0 && b.type == 0) return any_int(sk_int_mul(any_to_int(a), any_to_int(b)));")
+	cg.writeLine("    return any_null();")
+	cg.writeLine("}")
+
+	cg.writeLine("sk_any sk_any_div(sk_any a, sk_any b) {")
+	cg.writeLine("    if (a.type == 6 || b.type == 6) return any_null();")
+	cg.writeLine("    if (a.type == 3 || b.type == 3) return any_double(sk_double_div(any_to_double(a), any_to_double(b)));")
+	cg.writeLine("    if (a.type == 2 || b.type == 2) return any_float(sk_float_div(any_to_float(a), any_to_float(b)));")
+	cg.writeLine("    if (a.type == 0 && b.type == 0) return any_int(sk_int_div(any_to_int(a), any_to_int(b)));")
+	cg.writeLine("    return any_null();")
+	cg.writeLine("}")
+
+	cg.writeLine("sk_any sk_any_mod(sk_any a, sk_any b) {")
+	cg.writeLine("    if (a.type == 6 || b.type == 6) return any_null();")
+	cg.writeLine("    if (a.type == 0 && b.type == 0) return any_int(sk_int_mod(any_to_int(a), any_to_int(b)));")
+	cg.writeLine("    return any_null();")
+	cg.writeLine("}")
+
+	cg.writeLine("sk_any sk_any_pow(sk_any a, sk_any b) {")
+	cg.writeLine("    if (a.type == 6 || b.type == 6) return any_null();")
+	cg.writeLine("    if (a.type == 3 || b.type == 3) return any_double(sk_double_pow(any_to_double(a), any_to_double(b)));")
+	cg.writeLine("    if (a.type == 2 || b.type == 2) return any_float(sk_float_pow(any_to_float(a), any_to_float(b)));")
+	cg.writeLine("    if (a.type == 0 && b.type == 0) return any_int(sk_int_pow(any_to_int(a), any_to_int(b)));")
+	cg.writeLine("    return any_null();")
+	cg.writeLine("}")
+	cg.writeLine("")
+
 	cg.writeLine("sk_string sk_arr_to_string(sk_arr a) {")
 	cg.writeLine("    if (a.__is_null) return sk_string_new(\"null\");")
 	cg.writeLine("    return sk_array_to_string(a.value);")
@@ -888,6 +937,9 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 }
 
 func (cg *CodeGenerator) typeToC(typ string) string {
+	if isUnionTypeC(typ) {
+		return "sk_any"
+	}
 	if isArrayTypeC(typ) {
 		return "sk_arr"
 	}
@@ -925,6 +977,10 @@ func (cg *CodeGenerator) typeToC(typ string) string {
 	}
 
 	return "sk_int"
+}
+
+func isUnionTypeC(t string) bool {
+	return strings.HasPrefix(t, "T<") && strings.HasSuffix(t, ">")
 }
 
 func isArrayTypeC(t string) bool {

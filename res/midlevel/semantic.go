@@ -488,6 +488,7 @@ func (sa *SemanticAnalyzer) analyzeTry(try *front.TryStmt) front.Node {
 		}
 	}
 
+	sa.resetUnionCurrentTypes()
 	return try
 }
 
@@ -525,8 +526,45 @@ func (sa *SemanticAnalyzer) analyzeUnary(unary *front.UnaryExpr) front.Node {
 }
 
 func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
+	// === Union T<...> ===
+	if isUnionType(decl.Type) {
+		types := parseUnionTypes(decl.Type)
+
+		// Запрет вложенных union
+		for _, t := range types {
+			if isUnionType(t) {
+				sa.addError("0611",
+					"Cannot nest T<...> inside T<...>",
+					decl.GetLine(), decl.GetColumn(), sa.CurrentFile)
+				return decl
+			}
+		}
+
+		// Проверка Expr
+		if decl.Expr != nil {
+			exprType := sa.getNodeType(decl.Expr)
+			if exprType == "void" {
+				sa.addError("1557",
+					"Cannot assign null to union — cannot predict future value type",
+					decl.GetLine(), decl.GetColumn(), sa.CurrentFile)
+				return decl
+			}
+			if !isTypeInUnion(decl.Type, exprType) {
+				sa.addError("0612",
+					fmt.Sprintf("Type '%s' is not in union '%s'", exprType, decl.Type),
+					decl.GetLine(), decl.GetColumn(), sa.CurrentFile)
+				return decl
+			}
+			decl.CurrentType = exprType
+		}
+
+		sym := sa.CurrentScope.Define(decl.Name, SYM_VARIABLE, decl.Type, false)
+		sym.CurrentType = decl.CurrentType
+		return decl
+	}
+
+	// === Массив arr[...] ===
 	if decl.IsArray {
-		// Запрет arr[void]
 		if decl.ElemType == "void" {
 			sa.addError("1543",
 				"Cannot declare array of type 'void' — all elements would be null",
@@ -538,7 +576,6 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 			if arrLit, ok := decl.Expr.(*front.ArrayLiteral); ok {
 				expectedElemType := decl.ElemType
 
-				// Гетерогенный массив (arr или arr[any]) — null запрещён
 				if expectedElemType == "" || expectedElemType == "any" {
 					for _, elem := range arrLit.Elements {
 						if _, isNull := elem.(*front.NullLiteral); isNull {
@@ -548,12 +585,10 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 						}
 					}
 				} else {
-					// Явный тип — проверяем элементы
 					for _, elem := range arrLit.Elements {
 						if isArrayTypeSemantic(expectedElemType) {
 							if _, ok := elem.(*front.ArrayLiteral); !ok {
 								if _, isNull := elem.(*front.NullLiteral); isNull {
-									// null для arr[arr[...]] — тоже ошибка
 									sa.addError("1542",
 										fmt.Sprintf("Cannot use null in array of type '%s'", expectedElemType),
 										elem.GetLine(), elem.GetColumn(), sa.CurrentFile)
@@ -566,7 +601,6 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 							}
 						} else {
 							elemType := sa.getNodeType(elem)
-							// null (void) совместим с любым скалярным типом
 							if elemType == "void" {
 								continue
 							}
@@ -586,7 +620,6 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 			}
 		}
 
-		// Сохраняем полный тип: "arr[any]" или "arr[int]" или "arr[arr[int]]"
 		elemType := decl.ElemType
 		if elemType == "" {
 			elemType = "any"
@@ -596,6 +629,7 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 		return decl
 	}
 
+	// === Скаляр ===
 	if existing := sa.CurrentScope.ResolveLocal(decl.Name); existing != nil {
 		sa.addError("1505", fmt.Sprintf("Variable '%s' already declared in this scope", decl.Name),
 			decl.GetLine(), decl.GetColumn(), sa.CurrentFile)
@@ -612,9 +646,7 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 	if decl.Expr != nil {
 		exprType = sa.getNodeType(decl.Expr)
 
-		// null имеет тип void
 		if exprType == "void" {
-			// Запрещаем void x = null и any x = null
 			if decl.Type == "void" {
 				sa.addError("1558",
 					"Cannot declare variable of type 'void'",
@@ -627,7 +659,6 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 					decl.GetLine(), decl.GetColumn(), sa.CurrentFile)
 				return decl
 			}
-			// Для всех остальных типов (int, string, float, double, bool, arr, dict) — ок
 			sa.CurrentScope.Define(decl.Name, SYM_VARIABLE, decl.Type, false)
 			return decl
 		}
@@ -664,37 +695,52 @@ func (sa *SemanticAnalyzer) analyzeAssign(assign *front.Assign) front.Node {
 		return assign
 	}
 
-	if assign.Expr != nil {
-		exprType := sa.getNodeType(assign.Expr)
+	if assign.Expr == nil {
+		return assign
+	}
 
+	exprType := sa.getNodeType(assign.Expr)
+
+	// === Union ===
+	if isUnionType(sym.Type) {
 		if exprType == "void" {
-			// null можно присвоить любому типу кроме any и void
-			if sym.Type == "void" {
-				sa.addError("1559",
-					"Cannot assign null to 'void'",
-					assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
-				return assign
-			}
-			if sym.Type == "any" {
-				sa.addError("1557",
-					"Cannot assign null to 'any' — cannot predict future value type",
-					assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
-				return assign
-			}
-			// ок — переменная сохраняет свой тип, но становится null
+			sym.CurrentType = ""
 			return assign
 		}
-
-		if sym.Type == "any" {
-			// any принимает любой не-void тип
-		} else if sym.Type != exprType && exprType != "" {
-			sa.addError("1510", fmt.Sprintf("Type mismatch: cannot assign '%s' to '%s' (variable '%s')",
-				exprType, sym.Type, assign.Name),
+		if !isTypeInUnion(sym.Type, exprType) {
+			sa.addError("0612",
+				fmt.Sprintf("Type '%s' is not in union '%s'", exprType, sym.Type),
 				assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
 			return assign
 		}
-	} else {
-		debug.Debug("No expression to analyze\n")
+		sym.CurrentType = exprType
+		return assign
+	}
+
+	// === Обычные проверки ===
+	if exprType == "void" {
+		if sym.Type == "void" {
+			sa.addError("1559",
+				"Cannot assign null to 'void'",
+				assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
+			return assign
+		}
+		if sym.Type == "any" {
+			sa.addError("1557",
+				"Cannot assign null to 'any' — cannot predict future value type",
+				assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
+			return assign
+		}
+		return assign
+	}
+
+	if sym.Type == "any" {
+		// ок
+	} else if sym.Type != exprType && exprType != "" {
+		sa.addError("1510", fmt.Sprintf("Type mismatch: cannot assign '%s' to '%s' (variable '%s')",
+			exprType, sym.Type, assign.Name),
+			assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
+		return assign
 	}
 
 	debug.Debug("analyzeAssign completed successfully\n")
@@ -712,6 +758,11 @@ func (sa *SemanticAnalyzer) analyzeBinary(bin *front.BinaryExpr) front.Node {
 
 	leftType := sa.getNodeType(left)
 	rightType := sa.getNodeType(right)
+
+	// === Union ===
+	if isUnionType(leftType) || isUnionType(rightType) {
+		return sa.analyzeUnionBinary(bin, leftType, rightType)
+	}
 
 	// Деление на ноль-литерал
 	if bin.Op == "/" {
@@ -736,6 +787,18 @@ func (sa *SemanticAnalyzer) analyzeBinary(bin *front.BinaryExpr) front.Node {
 				bin.Op, leftType, rightType),
 				bin.GetLine(), bin.GetColumn(), sa.CurrentFile)
 		}
+	case "%":
+		if leftType == "void" || rightType == "void" {
+			sa.addError("1553",
+				"Cannot use null in arithmetic operation",
+				bin.GetLine(), bin.GetColumn(), sa.CurrentFile)
+			return bin
+		}
+		if leftType != "int" || rightType != "int" {
+			sa.addError("1511", fmt.Sprintf("Modulo '%%' requires int (got %s and %s)",
+				leftType, rightType),
+				bin.GetLine(), bin.GetColumn(), sa.CurrentFile)
+		}
 	case "&&", "||":
 		if leftType != "bool" && leftType != "" {
 			sa.addError("1528",
@@ -756,6 +819,88 @@ func (sa *SemanticAnalyzer) analyzeBinary(bin *front.BinaryExpr) front.Node {
 	}
 
 	return bin
+}
+
+// analyzeUnionBinary — операция над union
+func (sa *SemanticAnalyzer) analyzeUnionBinary(bin *front.BinaryExpr, leftType, rightType string) front.Node {
+	leftCT := sa.getCurrentType(bin.Left)
+	rightCT := sa.getCurrentType(bin.Right)
+
+	// Собираем все возможные комбинации
+	leftOptions := []string{leftType}
+	if isUnionType(leftType) {
+		if leftCT != "" {
+			leftOptions = []string{leftCT}
+		} else {
+			leftOptions = parseUnionTypes(leftType)
+		}
+	}
+	rightOptions := []string{rightType}
+	if isUnionType(rightType) {
+		if rightCT != "" {
+			rightOptions = []string{rightCT}
+		} else {
+			rightOptions = parseUnionTypes(rightType)
+		}
+	}
+
+	validCount := 0
+	invalidCombos := []string{}
+	for _, l := range leftOptions {
+		for _, r := range rightOptions {
+			if sa.isBinaryOpValid(bin.Op, l, r) {
+				validCount++
+			} else {
+				invalidCombos = append(invalidCombos, l+" "+bin.Op+" "+r)
+			}
+		}
+	}
+
+	totalCombos := len(leftOptions) * len(rightOptions)
+
+	if validCount == 0 {
+		sa.addError("0613",
+			fmt.Sprintf("Operation '%s' is not valid for any combination in union", bin.Op),
+			bin.GetLine(), bin.GetColumn(), sa.CurrentFile)
+	} else if validCount < totalCombos {
+		sa.addError("0614",
+			fmt.Sprintf("Operation '%s' may fail at runtime: not valid for %s",
+				bin.Op, strings.Join(invalidCombos, ", ")),
+			bin.GetLine(), bin.GetColumn(), sa.CurrentFile)
+	}
+
+	return bin
+}
+
+// getCurrentType — узнать CurrentType выражения (для union-переменных)
+func (sa *SemanticAnalyzer) getCurrentType(node front.Node) string {
+	if ident, ok := node.(*front.Ident); ok {
+		sym := sa.CurrentScope.Resolve(ident.Name)
+		if sym != nil && isUnionType(sym.Type) {
+			return sym.CurrentType
+		}
+	}
+	return ""
+}
+
+// isBinaryOpValid — можно ли применить op к типам l и r
+func (sa *SemanticAnalyzer) isBinaryOpValid(op, l, r string) bool {
+	switch op {
+	case "+":
+		if l == "string" || r == "string" {
+			return true // concat
+		}
+		return sa.isNumericType(l) && sa.isNumericType(r)
+	case "-", "*", "/", "**":
+		return sa.isNumericType(l) && sa.isNumericType(r)
+	case "%":
+		return l == "int" && r == "int"
+	case "&&", "||":
+		return l == "bool" && r == "bool"
+	case "<", ">", "<=", ">=", "==", "!=":
+		return sa.isNumericType(l) && sa.isNumericType(r)
+	}
+	return false
 }
 
 func (sa *SemanticAnalyzer) analyzeNumber(num *front.Number) front.Node {
@@ -790,20 +935,41 @@ func (sa *SemanticAnalyzer) analyzeIdent(ident *front.Ident) front.Node {
 }
 
 func (sa *SemanticAnalyzer) analyzeReturn(ret *front.ReturnStmt) front.Node {
-	if ret.Expr != nil {
-		exprType := sa.getNodeType(ret.Expr)
-
-		if sa.CurrentFunction.ReturnType == "void" {
+	if sa.CurrentFunction.ReturnType == "void" {
+		if ret.Expr != nil {
 			sa.addError("1515", "Cannot return value from void function",
+				ret.GetLine(), ret.GetColumn(), sa.CurrentFile)
+		}
+		return ret
+	}
+
+	// Union return
+	if isUnionType(sa.CurrentFunction.ReturnType) {
+		if ret.Expr == nil {
+			sa.addError("1517",
+				fmt.Sprintf("Expected return value of type '%s'", sa.CurrentFunction.ReturnType),
 				ret.GetLine(), ret.GetColumn(), sa.CurrentFile)
 			return ret
 		}
-
-		// null (void) можно вернуть из любой non-void функции
+		exprType := sa.getNodeType(ret.Expr)
 		if exprType == "void" {
 			return ret
 		}
+		if !isTypeInUnion(sa.CurrentFunction.ReturnType, exprType) {
+			sa.addError("0612",
+				fmt.Sprintf("Return type '%s' is not in union '%s'",
+					exprType, sa.CurrentFunction.ReturnType),
+				ret.GetLine(), ret.GetColumn(), sa.CurrentFile)
+		}
+		return ret
+	}
 
+	// Обычный return
+	if ret.Expr != nil {
+		exprType := sa.getNodeType(ret.Expr)
+		if exprType == "void" {
+			return ret
+		}
 		if sa.CurrentFunction.ReturnType != exprType && exprType != "" {
 			sa.addError("1516", fmt.Sprintf("Return type mismatch: expected '%s', got '%s'",
 				sa.CurrentFunction.ReturnType, exprType),
@@ -811,11 +977,9 @@ func (sa *SemanticAnalyzer) analyzeReturn(ret *front.ReturnStmt) front.Node {
 			return ret
 		}
 	} else {
-		if sa.CurrentFunction.ReturnType != "void" {
-			sa.addError("1517", fmt.Sprintf("Expected return value of type '%s'", sa.CurrentFunction.ReturnType),
-				ret.GetLine(), ret.GetColumn(), sa.CurrentFile)
-			return ret
-		}
+		sa.addError("1517", fmt.Sprintf("Expected return value of type '%s'", sa.CurrentFunction.ReturnType),
+			ret.GetLine(), ret.GetColumn(), sa.CurrentFile)
+		return ret
 	}
 	return ret
 }
@@ -843,14 +1007,14 @@ func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
 		simpleName = parts[len(parts)-1]
 	}
 
-	// Builtins принимают любое количество аргументов
 	builtinFuncs := map[string]bool{
-		"to_int":    true,
-		"to_float":  true,
-		"to_double": true,
-		"to_string": true,
-		"to_bool":   true,
-		"to_arr":    true,
+		"to_int":     true,
+		"to_float":   true,
+		"to_double":  true,
+		"to_string":  true,
+		"to_bool":    true,
+		"to_arr":     true,
+		"detruncate": true,
 	}
 	if builtinFuncs[simpleName] {
 		for _, arg := range args {
@@ -890,6 +1054,24 @@ func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
 		paramType := targetFunc.Params[i].Type
 
 		debug.Debug("Arg %d: type=%s, expected=%s\n", i, argType, paramType)
+
+		// Union-параметр
+		if isUnionType(paramType) {
+			if argType == "void" {
+				sa.addError("1552",
+					fmt.Sprintf("Cannot pass null to union parameter %d", i+1),
+					arg.GetLine(), arg.GetColumn(), sa.CurrentFile)
+				return call
+			}
+			if !isTypeInUnion(paramType, argType) && argType != "" {
+				sa.addError("0612",
+					fmt.Sprintf("Argument %d: type '%s' is not in union '%s'",
+						i+1, argType, paramType),
+					arg.GetLine(), arg.GetColumn(), sa.CurrentFile)
+				return call
+			}
+			continue
+		}
 
 		if argType == "void" && paramType == "any" {
 			sa.addError("1552",
@@ -1027,6 +1209,7 @@ func (sa *SemanticAnalyzer) analyzeIf(ifStmt *front.IfStmt) front.Node {
 		sa.analyzeBlock(ifStmt.Else, false)
 	}
 
+	sa.resetUnionCurrentTypes()
 	return ifStmt
 }
 
@@ -1068,6 +1251,7 @@ func (sa *SemanticAnalyzer) analyzeCase(caseStmt *front.CaseStmt) front.Node {
 		sa.analyzeBlock(caseStmt.Default, false)
 	}
 
+	sa.resetUnionCurrentTypes()
 	return caseStmt
 }
 
@@ -1094,6 +1278,7 @@ func (sa *SemanticAnalyzer) analyzeWhile(while *front.WhileStmt) front.Node {
 		sa.analyzeBlock(while.Body, false)
 	}
 
+	sa.resetUnionCurrentTypes()
 	return while
 }
 
@@ -1118,10 +1303,23 @@ func (sa *SemanticAnalyzer) analyzeFor(forStmt *front.ForStmt) front.Node {
 		sa.analyzeBlock(forStmt.Body, false)
 	}
 
+	sa.resetUnionCurrentTypes()
 	return forStmt
 }
 
 func (sa *SemanticAnalyzer) isValidType(typ string) bool {
+	if isUnionType(typ) {
+		for _, t := range parseUnionTypes(typ) {
+			if !sa.isValidType(t) {
+				return false
+			}
+			if isUnionType(t) {
+				return false // вложенные запрещены
+			}
+		}
+		return true
+	}
+
 	validTypes := map[string]bool{
 		"int": true, "string": true, "float": true, "double": true,
 		"bool": true, "char": true, "arr": true, "dict": true,
@@ -1254,6 +1452,8 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 			return "bool"
 		case "to_arr":
 			return "arr[any]"
+		case "detruncate":
+			return "string"
 		}
 
 		for _, fn := range sa.Program.Functions {
@@ -1867,4 +2067,49 @@ func (sa *SemanticAnalyzer) addErrorSpan(code, message string, line, col, endLin
 		File:      file,
 	})
 	errors.NewErrorSpan(code, message, line, col, endLine, endCol, file)
+}
+
+// ============================================================================
+// Union types (T<...>)
+// ============================================================================
+
+// isUnionType проверяет, является ли тип union "T<A,B,...>"
+func isUnionType(t string) bool {
+	return strings.HasPrefix(t, "T<") && strings.HasSuffix(t, ">")
+}
+
+// parseUnionTypes извлекает список типов из "T<A,B,C>"
+func parseUnionTypes(t string) []string {
+	if !isUnionType(t) {
+		return nil
+	}
+	inner := t[2 : len(t)-1]
+	parts := strings.Split(inner, ",")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	return parts
+}
+
+// isTypeInUnion проверяет, входит ли t в union
+func isTypeInUnion(union, t string) bool {
+	types := parseUnionTypes(union)
+	for _, u := range types {
+		if u == t {
+			return true
+		}
+	}
+	return false
+}
+
+// resetUnionCurrentTypes сбрасывает CurrentType всех union-символов
+// во всех scope от текущего до глобального.
+func (sa *SemanticAnalyzer) resetUnionCurrentTypes() {
+	for s := sa.CurrentScope; s != nil; s = s.Parent {
+		for _, sym := range s.Symbols {
+			if isUnionType(sym.Type) {
+				sym.CurrentType = ""
+			}
+		}
+	}
 }

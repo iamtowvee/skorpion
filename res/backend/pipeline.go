@@ -180,6 +180,9 @@ func (p *Pipeline) processNode(node front.Node, irFn *IRFunction) {
 }
 
 func (p *Pipeline) typeToC(typ string) string {
+	if isUnionTypeP(typ) {
+		return "sk_any"
+	}
 	if isArrayType(typ) {
 		return "sk_arr"
 	}
@@ -209,6 +212,11 @@ func (p *Pipeline) typeToC(typ string) string {
 	default:
 		return "sk_int"
 	}
+}
+
+// isUnionTypeP — то же, что isUnionType в семантике, но локально
+func isUnionTypeP(t string) bool {
+	return strings.HasPrefix(t, "T<") && strings.HasSuffix(t, ">")
 }
 
 func (p *Pipeline) processFieldAccess(fa *front.FieldAccess, irFn *IRFunction) string {
@@ -697,6 +705,45 @@ func (p *Pipeline) processUnary(unary *front.UnaryExpr, irFn *IRFunction) string
 }
 
 func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
+	// === Union T<...> ===
+	if isUnionTypeP(decl.Type) {
+		irFn.Locals = append(irFn.Locals, "sk_any "+decl.Name)
+		if irFn.VarTypes != nil {
+			irFn.VarTypes[decl.Name] = decl.Type
+		}
+
+		if decl.Expr != nil {
+			exprType := p.getExprType(decl.Expr, irFn)
+			exprResult := p.processExpression(decl.Expr, irFn)
+
+			if exprType == "any" {
+				// Уже sk_any
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op:     "=",
+					Result: decl.Name,
+					Arg1:   exprResult,
+				})
+			} else {
+				wrapper := p.getAnyWrapperByType(exprType)
+				tempVar := p.newTemp()
+				irFn.Locals = append(irFn.Locals, "sk_any "+tempVar)
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op:         "call",
+					Result:     tempVar,
+					Arg1:       wrapper,
+					Arg2:       exprResult,
+					ReturnType: "sk_any",
+				})
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op:     "=",
+					Result: decl.Name,
+					Arg1:   tempVar,
+				})
+			}
+		}
+		return
+	}
+
 	if decl.IsArray {
 		irFn.Locals = append(irFn.Locals, "sk_arr "+decl.Name)
 
@@ -875,6 +922,39 @@ func (p *Pipeline) processAssign(assign *front.Assign, irFn *IRFunction) {
 		return
 	}
 
+	// === Union T<...> ===
+	if irFn.VarTypes != nil {
+		if varType, ok := irFn.VarTypes[assign.Name]; ok && isUnionTypeP(varType) {
+			exprType := p.getExprType(assign.Expr, irFn)
+			exprResult := p.processExpression(assign.Expr, irFn)
+
+			if exprType == "any" {
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op:     "=",
+					Result: assign.Name,
+					Arg1:   exprResult,
+				})
+			} else {
+				wrapper := p.getAnyWrapperByType(exprType)
+				tempVar := p.newTemp()
+				irFn.Locals = append(irFn.Locals, "sk_any "+tempVar)
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op:         "call",
+					Result:     tempVar,
+					Arg1:       wrapper,
+					Arg2:       exprResult,
+					ReturnType: "sk_any",
+				})
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op:     "=",
+					Result: assign.Name,
+					Arg1:   tempVar,
+				})
+			}
+			return
+		}
+	}
+
 	exprType := p.getExprType(assign.Expr, irFn)
 
 	// Определяем тип переменной
@@ -952,6 +1032,68 @@ func (p *Pipeline) processAssign(assign *front.Assign, irFn *IRFunction) {
 func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string {
 	leftType := p.getExprType(bin.Left, irFn)
 	rightType := p.getExprType(bin.Right, irFn)
+
+	// === Union ===
+	if isUnionTypeP(leftType) || isUnionTypeP(rightType) {
+		leftVal := p.processExpression(bin.Left, irFn)
+		rightVal := p.processExpression(bin.Right, irFn)
+
+		if !isUnionTypeP(leftType) {
+			wrapper := p.getAnyWrapperByType(leftType)
+			tempL := p.newTemp()
+			irFn.Locals = append(irFn.Locals, "sk_any "+tempL)
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:         "call",
+				Result:     tempL,
+				Arg1:       wrapper,
+				Arg2:       leftVal,
+				ReturnType: "sk_any",
+			})
+			leftVal = tempL
+		}
+
+		if !isUnionTypeP(rightType) {
+			wrapper := p.getAnyWrapperByType(rightType)
+			tempR := p.newTemp()
+			irFn.Locals = append(irFn.Locals, "sk_any "+tempR)
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:         "call",
+				Result:     tempR,
+				Arg1:       wrapper,
+				Arg2:       rightVal,
+				ReturnType: "sk_any",
+			})
+			rightVal = tempR
+		}
+
+		result := p.newTemp()
+		irFn.Locals = append(irFn.Locals, "sk_any "+result)
+
+		var fnName string
+		switch bin.Op {
+		case "+":
+			fnName = "sk_any_add"
+		case "-":
+			fnName = "sk_any_sub"
+		case "*":
+			fnName = "sk_any_mul"
+		case "/":
+			fnName = "sk_any_div"
+		case "%":
+			fnName = "sk_any_mod"
+		case "**":
+			fnName = "sk_any_pow"
+		}
+
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "call",
+			Result:     result,
+			Arg1:       fnName,
+			Arg2:       leftVal + ", " + rightVal,
+			ReturnType: "sk_any",
+		})
+		return result
+	}
 
 	if bin.Op == "+" && isArrayType(leftType) {
 		// Проверяем, что слева идентификатор (имя переменной)
@@ -1377,8 +1519,27 @@ func (p *Pipeline) processReturn(ret *front.ReturnStmt, irFn *IRFunction) {
 	if ret.Expr != nil {
 		exprType := p.getExprType(ret.Expr, irFn)
 
-		// null (void) → SK_NULL_<returnType>
-		if exprType == "void" {
+		if isUnionTypeP(irFn.ReturnType) {
+			// Union return
+			expr := p.processExpression(ret.Expr, irFn)
+
+			if exprType == "any" {
+				// Уже sk_any — не оборачивать
+				exprResult = expr
+			} else {
+				wrapper := p.getAnyWrapperByType(exprType)
+				tempVar := p.newTemp()
+				irFn.Locals = append(irFn.Locals, "sk_any "+tempVar)
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op:         "call",
+					Result:     tempVar,
+					Arg1:       wrapper,
+					Arg2:       expr,
+					ReturnType: "sk_any",
+				})
+				exprResult = tempVar
+			}
+		} else if exprType == "void" {
 			cType := p.typeToC(irFn.ReturnType)
 			exprResult = "SK_NULL_" + strings.TrimPrefix(cType, "sk_")
 		} else {
@@ -1482,6 +1643,8 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 		return p.processToBool(&front.CallExpr{Name: "to_bool", Args: args}, irFn)
 	case "to_arr":
 		return p.processToArr(&front.CallExpr{Name: "to_arr", Args: args}, irFn)
+	case "detruncate":
+		return p.processDetruncate(&front.CallExpr{Name: "detruncate", Args: args}, irFn)
 	}
 
 	// Ищем целевую функцию
@@ -1536,27 +1699,94 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 	return result
 }
 
-// prepareArg подготавливает аргумент: оборачивает в any или распаковывает из any
+// processDetruncate — возвращает declared тип переменной как строку.
+// Compile-time: известен из VarTypes / Params / AST.
+func (p *Pipeline) processDetruncate(call *front.CallExpr, irFn *IRFunction) string {
+	result := p.newTemp()
+	irFn.Locals = append(irFn.Locals, "sk_string "+result)
+
+	if len(call.Args) == 0 {
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "=",
+			Result: result,
+			Arg1:   `sk_string_new("void")`,
+		})
+		return result
+	}
+
+	arg := call.Args[0]
+
+	// Определяем declared тип аргумента
+	declType := p.getDeclaredType(arg, irFn)
+
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:         "call",
+		Result:     result,
+		Arg1:       "sk_string_new",
+		Arg2:       fmt.Sprintf(`"%s"`, declType),
+		ReturnType: "sk_string",
+	})
+
+	return result
+}
+
+// getDeclaredType возвращает объявленный (статический) тип выражения.
+// Для Ident — из VarTypes / Params.
+// Для литералов — их собственный тип.
+// Для остального — "unknown".
+func (p *Pipeline) getDeclaredType(expr front.Node, irFn *IRFunction) string {
+	switch n := expr.(type) {
+	case *front.Ident:
+		// Параметры
+		for _, param := range irFn.Params {
+			if param.Name == n.Name {
+				return param.Type
+			}
+		}
+		// Локальные с известным Skorpion-типом
+		if irFn.VarTypes != nil {
+			if t, ok := irFn.VarTypes[n.Name]; ok {
+				return t
+			}
+		}
+		return "unknown"
+	case *front.Number:
+		if strings.HasSuffix(n.Value, "f") || strings.HasSuffix(n.Value, "F") {
+			return "float"
+		}
+		if strings.Contains(n.Value, ".") {
+			return "double"
+		}
+		return "int"
+	case *front.String:
+		return "string"
+	case *front.NullLiteral:
+		return "void"
+	case *front.ArrayLiteral:
+		return "arr[any]"
+	case *front.ErrorInstance:
+		return n.TypeName
+	case *front.FieldAccess:
+		if n.Field == "msg" {
+			return "string"
+		}
+		return "int"
+	default:
+		return "unknown"
+	}
+}
+
 func (p *Pipeline) prepareArg(argExpr front.Node, paramType string, irFn *IRFunction) string {
 	argType := p.getExprType(argExpr, irFn)
 	argValue := p.processExpression(argExpr, irFn)
 
-	if argType == "void" {
-		if paramType == "any" {
-			return "any_null()"
-		}
-		cType := p.typeToC(paramType)
-		return "SK_NULL_" + strings.TrimPrefix(cType, "sk_")
-	}
-
-	if argType == "void" && paramType == "any" {
-		// Это должно отлавливаться семантикой, но на всякий случай
-		return "any_null()"
-	}
-
-	if paramType == "any" {
-		if argType == "any" {
+	// Union или any — если arg уже sk_any, не оборачивать
+	if isUnionTypeP(paramType) || paramType == "any" {
+		if argType == "any" || isUnionTypeP(argType) {
 			return argValue
+		}
+		if argType == "void" {
+			return "any_null()"
 		}
 		wrapper := p.getAnyWrapperByType(argType)
 		tempVar := p.newTemp()
@@ -1571,7 +1801,12 @@ func (p *Pipeline) prepareArg(argExpr front.Node, paramType string, irFn *IRFunc
 		return tempVar
 	}
 
-	if argType == "any" {
+	if argType == "void" {
+		cType := p.typeToC(paramType)
+		return "SK_NULL_" + strings.TrimPrefix(cType, "sk_")
+	}
+
+	if argType == "any" || isUnionTypeP(argType) {
 		getter := p.getAnyGetterByType(paramType)
 		tempVar := p.newTemp()
 		irFn.Locals = append(irFn.Locals, p.typeToC(paramType)+" "+tempVar)
@@ -2535,6 +2770,9 @@ func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 	case *front.BinaryExpr:
 		leftType := p.getExprType(n.Left, irFn)
 		rightType := p.getExprType(n.Right, irFn)
+		if isUnionTypeP(leftType) || isUnionTypeP(rightType) {
+			return "any"
+		}
 		if n.Op == "+" && (leftType == "string" || rightType == "string" || leftType == "any" || rightType == "any") {
 			return "string"
 		}
@@ -2579,6 +2817,8 @@ func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 			return "bool"
 		case "to_arr":
 			return "arr"
+		case "detruncate":
+			return "string"
 		}
 
 		for _, fn := range p.Program.Functions {

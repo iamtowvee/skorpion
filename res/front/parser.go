@@ -103,7 +103,7 @@ func expectErrorInfo(tt TokenType) (string, string) {
 func (p *Parser) isType(token Token) bool {
 	result := false
 	switch token.Literal {
-	case "void", "int", "string", "float", "double", "bool", "char", "arr", "dict", "any":
+	case "void", "int", "string", "float", "double", "bool", "char", "arr", "dict", "any", "T":
 		result = true
 	}
 	debug.Debug("isType(%s) = %v", token.Literal, result)
@@ -435,7 +435,7 @@ func (p *Parser) parseStatement() Node {
 			return p.parseErrorDecl()
 		case "throw":
 			return p.parseThrow()
-		case "int", "string", "float", "double", "bool", "char", "arr", "dict", "any":
+		case "int", "string", "float", "double", "bool", "char", "arr", "dict", "any", "T":
 			return p.parseVarDecl()
 		}
 	case TOKEN_INCLUDE_C:
@@ -907,7 +907,7 @@ func (p *Parser) parseVarDecl() Node {
 		}
 	}
 
-	// Скалярный тип
+	// Скалярный тип или union
 	if !p.isType(p.peek) {
 		p.hasErrors = true
 		errors.NewFatalError("0504",
@@ -916,8 +916,10 @@ func (p *Parser) parseVarDecl() Node {
 		return nil
 	}
 
-	varType := p.peek.Literal
-	p.advance()
+	varType := p.parseType()
+	if varType == "" {
+		return nil
+	}
 
 	if p.peek.Type != TOKEN_IDENT {
 		p.hasErrors = true
@@ -1901,10 +1903,16 @@ func (p *Parser) parseThrow() Node {
 	}
 }
 
-// parseType читает тип: простое имя или arr[...] (вложенный).
-// Возвращает полную строку типа: "int", "arr", "arr[int]", "arr[arr[int]]".
-// Возвращает "" при ошибке (вызывающий должен сам решить, какой код).
+// parseType читает тип: простое имя, arr[...], T<...>.
+// Возвращает полную строку типа: "int", "arr[int]", "arr[any]", "T<int,float>".
+// Для T<A> возвращает "A" (нормализация).
+// Для T<A,B> возвращает "T<A,B>".
 func (p *Parser) parseType() string {
+	// T<...>
+	if p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "T" {
+		return p.parseUnionType()
+	}
+
 	if p.peek.Literal == "arr" {
 		p.advance()
 		if p.peek.Type == TOKEN_LBRACKET {
@@ -1920,4 +1928,66 @@ func (p *Parser) parseType() string {
 	typ := p.peek.Literal
 	p.advance()
 	return typ
+}
+
+// parseUnionType читает T<A, B, ...>.
+// T<A> → "A". T<A,B> → "T<A,B>".
+// Запрещает вложенные T<...>.
+func (p *Parser) parseUnionType() string {
+	p.advance() // T
+
+	if p.peek.Type != TOKEN_LT {
+		p.hasErrors = true
+		errors.NewFatalError("0608",
+			fmt.Sprintf("Expected '<' after 'T', got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return ""
+	}
+	p.advance()
+
+	types := []string{}
+	for {
+		// Явно запрещаем вложенные T<...>
+		if p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "T" {
+			p.hasErrors = true
+			errors.NewFatalError("0611",
+				"Cannot nest T<...> inside T<...>",
+				p.peek.Line, p.peek.Column, p.FileName)
+			return ""
+		}
+
+		t := p.parseType()
+		if t == "" {
+			return ""
+		}
+		types = append(types, t)
+
+		if p.peek.Type == TOKEN_COMMA {
+			p.advance()
+			continue
+		}
+		break
+	}
+
+	if len(types) == 0 {
+		p.hasErrors = true
+		errors.NewFatalError("0610",
+			"T<...> requires at least one type",
+			p.peek.Line, p.peek.Column, p.FileName)
+		return ""
+	}
+
+	if p.peek.Type != TOKEN_GT {
+		p.hasErrors = true
+		errors.NewFatalError("0609",
+			fmt.Sprintf("Expected '>' after T<...>, got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return ""
+	}
+	p.advance()
+
+	if len(types) == 1 {
+		return types[0]
+	}
+	return "T<" + strings.Join(types, ",") + ">"
 }

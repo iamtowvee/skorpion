@@ -98,13 +98,14 @@ func (i *Import) GetType() NodeType { return NODE_IMPORT }
 
 type Function struct {
 	Position
-	NamePos    Position // позиция имени функции (после типа возврата и звёздочки)
-	Name       string
-	ReturnType string
-	Params     []*Param
-	Body       *Block
-	IsExport   bool
-	File       string
+	NamePos     Position
+	Name        string
+	ReturnType  string   // declared
+	ReturnUnion []string // если union — список типов; пусто = не union
+	Params      []*Param
+	Body        *Block
+	IsExport    bool
+	File        string
 }
 
 func (f *Function) GetType() NodeType { return NODE_FUNCTION }
@@ -120,7 +121,8 @@ func (f *Function) GetNameColumn() int { return f.NamePos.Column }
 type Param struct {
 	Position
 	Name         string
-	Type         string
+	Type         string // declared
+	CurrentType  string // для union — известный тип
 	DefaultValue Node
 }
 
@@ -213,11 +215,12 @@ func (a *ArrayAdd) GetType() NodeType { return NODE_ARRAY_ADD }
 
 type VarDecl struct {
 	Position
-	Name     string
-	Type     string
-	ElemType string
-	Expr     Node
-	IsArray  bool
+	Name        string
+	Type        string
+	CurrentType string
+	ElemType    string
+	Expr        Node
+	IsArray     bool
 }
 
 func (v *VarDecl) GetType() NodeType     { return NODE_VAR_DECL }
