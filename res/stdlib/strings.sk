@@ -1,0 +1,28 @@
+includeC ~~~
+size_t __sk__utf8__strlen(const char *s) {
+    size_t count = 0;
+    while (*s) {
+        if ((*s & 0xC0) != 0x80) {
+            count++;
+        }
+        s++;
+    }
+    return count;
+}
+~~~
+
+int len(string line) {
+  includeC ~~~
+    size_t len = __sk__utf8__strlen(line);
+    int n = (len > INT_MAX) ? -1 : (int)len;
+    return n;
+  ~~~
+  return 0
+}
+
+int bytes(string line) {
+  includeC ~~~
+    return len(line);
+  ~~~
+  return 0
+}
