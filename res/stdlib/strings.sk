@@ -1,3 +1,10 @@
+/* ------------------------------------
+                std/strings
+    ---------------------------------
+      SPDX-License-Identifier: MIT
+      Copyrights (c) 2026 iamtowvee
+  ------------------------------------- */
+
 includeC ~~~
 size_t __sk__utf8__strlen(const char *s) {
     size_t count = 0;
