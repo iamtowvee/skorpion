@@ -419,6 +419,8 @@ func (sa *SemanticAnalyzer) analyzeNode(node front.Node) front.Node {
 		sa.analyzeNode(n.Start)
 		sa.analyzeNode(n.End)
 		return n
+	case *front.FormatExpr:
+		return sa.analyzeFormatExpr(n)
 	case *front.IncludeC:
 		debug.Debug("IncludeC node found\n")
 		return n
@@ -1476,6 +1478,11 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 		debug.Debug("  function %s not found\n", n.Name)
 		return ""
 
+	case *front.FormatExpr:
+		if n.Mode == "Nf" && n.N == 0 {
+			return "int"
+		}
+		return sa.getNodeType(n.Expr)
 	case *front.UnaryExpr:
 		if n.Op == "$" {
 			return "string"
@@ -2112,4 +2119,21 @@ func (sa *SemanticAnalyzer) resetUnionCurrentTypes() {
 			}
 		}
 	}
+}
+
+// analyzeFormatExpr — проверка ^Nf / ^X...
+func (sa *SemanticAnalyzer) analyzeFormatExpr(fe *front.FormatExpr) front.Node {
+	sa.analyzeNode(fe.Expr)
+
+	exprType := sa.getNodeType(fe.Expr)
+
+	// Только для numeric
+	if !sa.isNumericType(exprType) && exprType != "" {
+		sa.addError("0626",
+			fmt.Sprintf("Format operator '^' can only be applied to numeric types, got '%s'", exprType),
+			fe.GetLine(), fe.GetColumn(), sa.CurrentFile)
+		return fe
+	}
+
+	return fe
 }

@@ -1,9 +1,25 @@
 use #std/io
 
-T<int,float,double> sk_pow(T<int,float,double> a, T<int,float,double> b) {
+T<int,float,double> powl(T<int,float,double> a, T<int,float,double> b) {
     return a ** b
 }
 
 void main(arr args) {
-    sendln(sk_pow(10.4, 5.4f))
+    double a = 3.14^4f      // value=3.14, prec=4
+    double b = a + 1.0      // value=4.14, prec=4 (max(4, -1) = 4)
+    sendln(b)               // "4.1400"
+
+    double c = 3.14^2f + 3.14^4f  // prec = max(2, 4) = 4
+    sendln(c)               // "6.2800"
+
+    double d = 3.14^2f + 1.0      // prec = 2
+    sendln(d)               // "4.14"
+
+    double e = 3.14^2f * 2        // int 2 → double 2.0, prec = 2
+    sendln(e)               // "6.28"
+
+    double f = -3.14^2f     // -(3.14^2f) = -3.14, prec = 2
+    sendln(f)               // "-3.14"
+
+    sendln(powl(4.3, 5))
 }

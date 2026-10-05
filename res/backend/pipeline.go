@@ -70,6 +70,7 @@ func (p *Pipeline) Process() *IRProgram {
 func (p *Pipeline) processFunction(fn *front.Function) {
 	irFn := IRFunction{
 		Name:           fn.Name,
+		CName:          computeCName(fn.Name),
 		ReturnType:     fn.ReturnType,
 		IsExport:       fn.IsExport,
 		File:           fn.File,
@@ -1480,6 +1481,8 @@ func (p *Pipeline) processExpression(expr front.Node, irFn *IRFunction) string {
 		return p.processTypeOf(n, irFn)
 	case *front.CallExpr:
 		return p.processCallExpr(n, irFn)
+	case *front.FormatExpr:
+		return p.processFormatExpr(n, irFn)
 	case *front.UnaryExpr:
 		return p.processUnary(n, irFn)
 	case *front.ArrayLiteral:
@@ -1603,7 +1606,7 @@ func (p *Pipeline) processCall(call *front.CallExpr, irFn *IRFunction) {
 
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:   "call",
-		Arg1: funcName,
+		Arg1: p.cNameForFunc(funcName),
 		Arg2: argsStr,
 	})
 }
@@ -1691,7 +1694,7 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:         "call",
 		Result:     result,
-		Arg1:       simpleName,
+		Arg1:       p.cNameForFunc(simpleName),
 		Arg2:       argsJoined,
 		ReturnType: returnType,
 	})
@@ -2172,7 +2175,7 @@ func (p *Pipeline) processArrayAdd(add *front.ArrayAdd, irFn *IRFunction) string
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:         "call",
 		Result:     copyTmp,
-		Arg1:       "sk_array_copy",
+		Arg1:       "sk_array_deep_copy",
 		Arg2:       add.Name + ".value",
 		ReturnType: "sk_array*",
 	})
@@ -2184,29 +2187,7 @@ func (p *Pipeline) processArrayAdd(add *front.ArrayAdd, irFn *IRFunction) string
 		ReturnType: "sk_arr",
 	})
 
-	if elemType == "any" {
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:   "call",
-			Arg1: "sk_array_push",
-			Arg2: result + ".value, &" + elemVal,
-		})
-	} else {
-		wrapper := p.getAnyWrapperByType(elemType)
-		tempVar := p.newTemp()
-		irFn.Locals = append(irFn.Locals, "sk_any "+tempVar)
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:         "call",
-			Result:     tempVar,
-			Arg1:       wrapper,
-			Arg2:       elemVal,
-			ReturnType: "sk_any",
-		})
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:   "call",
-			Arg1: "sk_array_push",
-			Arg2: result + ".value, &" + tempVar,
-		})
-	}
+	pushArrayElem(irFn, result, elemType, elemVal)
 
 	return result
 }
@@ -2223,7 +2204,7 @@ func (p *Pipeline) processArrayAddName(name string, elemExpr front.Node, irFn *I
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:         "call",
 		Result:     copyTmp,
-		Arg1:       "sk_array_copy",
+		Arg1:       "sk_array_deep_copy",
 		Arg2:       name + ".value",
 		ReturnType: "sk_array*",
 	})
@@ -2235,29 +2216,7 @@ func (p *Pipeline) processArrayAddName(name string, elemExpr front.Node, irFn *I
 		ReturnType: "sk_arr",
 	})
 
-	if elemType == "any" {
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:   "call",
-			Arg1: "sk_array_push",
-			Arg2: result + ".value, &" + elemVal,
-		})
-	} else {
-		wrapper := p.getAnyWrapperByType(elemType)
-		tempVar := p.newTemp()
-		irFn.Locals = append(irFn.Locals, "sk_any "+tempVar)
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:         "call",
-			Result:     tempVar,
-			Arg1:       wrapper,
-			Arg2:       elemVal,
-			ReturnType: "sk_any",
-		})
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:   "call",
-			Arg1: "sk_array_push",
-			Arg2: result + ".value, &" + tempVar,
-		})
-	}
+	pushArrayElem(irFn, result, elemType, elemVal)
 
 	return result
 }
@@ -2789,6 +2748,11 @@ func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 			return "float"
 		}
 		return "int"
+	case *front.FormatExpr:
+		if n.Mode == "Nf" && n.N == 0 {
+			return "int"
+		}
+		return p.getExprType(n.Expr, irFn)
 	case *front.UnaryExpr:
 		if n.Op == "$" {
 			return "string"
@@ -3025,19 +2989,11 @@ func (p *Pipeline) processArrayLiteralTyped(lit *front.ArrayLiteral, expectedEle
 		val := p.processExpressionTyped(elem, innerElemType, irFn)
 
 		if isArrayType(expectedElemType) {
-			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:   "call",
-				Arg1: "sk_array_push",
-				Arg2: result + ".value, &" + val,
-			})
+			pushArrayElem(irFn, result, expectedElemType, val)
 		} else if expectedElemType == "" || expectedElemType == "any" {
 			elemTypeName := p.getExprType(elem, irFn)
 			if elemTypeName == "any" {
-				irFn.Instructions = append(irFn.Instructions, IRInstruction{
-					Op:   "call",
-					Arg1: "sk_array_push_any",
-					Arg2: result + ".value, " + val,
-				})
+				pushArrayElem(irFn, result, "any", val)
 			} else {
 				wrapper := p.getAnyWrapperByType(elemTypeName)
 				tempVar := p.newTemp()
@@ -3049,11 +3005,7 @@ func (p *Pipeline) processArrayLiteralTyped(lit *front.ArrayLiteral, expectedEle
 					Arg2:       val,
 					ReturnType: "sk_any",
 				})
-				irFn.Instructions = append(irFn.Instructions, IRInstruction{
-					Op:   "call",
-					Arg1: "sk_array_push_any",
-					Arg2: result + ".value, " + tempVar,
-				})
+				pushArrayElem(irFn, result, "any", tempVar)
 			}
 		} else {
 			// Явный скалярный тип — null превращаем в SK_NULL_<тип>
@@ -3067,17 +3019,9 @@ func (p *Pipeline) processArrayLiteralTyped(lit *front.ArrayLiteral, expectedEle
 					Result: nullVar,
 					Arg1:   nullMacro,
 				})
-				irFn.Instructions = append(irFn.Instructions, IRInstruction{
-					Op:   "call",
-					Arg1: "sk_array_push",
-					Arg2: result + ".value, &" + nullVar,
-				})
+				pushArrayElem(irFn, result, expectedElemType, nullVar)
 			} else {
-				irFn.Instructions = append(irFn.Instructions, IRInstruction{
-					Op:   "call",
-					Arg1: "sk_array_push",
-					Arg2: result + ".value, &" + val,
-				})
+				pushArrayElem(irFn, result, expectedElemType, val)
 			}
 		}
 	}
@@ -3147,7 +3091,7 @@ func (p *Pipeline) processCallRange(call *front.CallRangeExpr, irFn *IRFunction)
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:         "call",
 		Result:     result,
-		Arg1:       funcName,
+		Arg1:       p.cNameForFunc(funcName),
 		Arg2:       argsStr,
 		ReturnType: returnType,
 	})
@@ -3209,4 +3153,141 @@ func (p *Pipeline) processTernary(t *front.TernaryExpr, irFn *IRFunction) string
 	})
 
 	return result
+}
+
+// processFormatExpr — генерация ^Nf или ^X...
+func (p *Pipeline) processFormatExpr(fe *front.FormatExpr, irFn *IRFunction) string {
+	exprType := p.getExprType(fe.Expr, irFn)
+	expr := p.processExpression(fe.Expr, irFn)
+
+	// int — no-op (возвращаем как есть)
+	if exprType == "int" {
+		return expr
+	}
+
+	cType := p.typeToC(exprType) // sk_float или sk_double
+	isFloat := exprType == "float"
+
+	// ^0f — int
+	if fe.Mode == "Nf" && fe.N == 0 {
+		result := p.newTemp()
+		irFn.Locals = append(irFn.Locals, "sk_int "+result)
+
+		var fnName string
+		if isFloat {
+			fnName = "sk_float_to_int_trunc"
+		} else {
+			fnName = "sk_double_to_int_trunc"
+		}
+
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "call",
+			Result:     result,
+			Arg1:       fnName,
+			Arg2:       expr,
+			ReturnType: "sk_int",
+		})
+		return result
+	}
+
+	// ^Nf (N > 0) — обрезка до N знаков
+	if fe.Mode == "Nf" {
+		result := p.newTemp()
+		irFn.Locals = append(irFn.Locals, cType+" "+result)
+
+		var fnName string
+		if isFloat {
+			fnName = "sk_float_with_prec"
+		} else {
+			fnName = "sk_double_with_prec"
+		}
+
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "call",
+			Result:     result,
+			Arg1:       fnName,
+			Arg2:       fmt.Sprintf("%s, %d", expr, fe.N),
+			ReturnType: cType,
+		})
+		return result
+	}
+
+	// ^X... — обрезка символов с конца
+	if fe.Mode == "X" {
+		result := p.newTemp()
+		irFn.Locals = append(irFn.Locals, cType+" "+result)
+
+		var fnName string
+		if isFloat {
+			fnName = "sk_float_trim"
+		} else {
+			fnName = "sk_double_trim"
+		}
+
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "call",
+			Result:     result,
+			Arg1:       fnName,
+			Arg2:       fmt.Sprintf("%s, \"%s\"", expr, fe.TrimSet),
+			ReturnType: cType,
+		})
+		return result
+	}
+
+	return expr
+}
+
+// pushArrayElem добавляет элемент в массив через правильную deep-функцию
+// в зависимости от типа элемента.
+func pushArrayElem(irFn *IRFunction, arrVar string, elemType string, elemVal string) {
+	var fnName string
+	var arg string
+
+	if elemType == "any" || isUnionTypeP(elemType) {
+		fnName = "sk_array_push_any"
+		arg = arrVar + ".value, " + elemVal
+	} else if elemType == "string" {
+		fnName = "sk_array_push_string"
+		arg = arrVar + ".value, " + elemVal
+	} else if isArrayType(elemType) {
+		fnName = "sk_array_push_arr"
+		arg = arrVar + ".value, " + elemVal
+	} else {
+		// int/float/double/bool — копия по значению
+		fnName = "sk_array_push"
+		arg = arrVar + ".value, &" + elemVal
+	}
+
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:   "call",
+		Arg1: fnName,
+		Arg2: arg,
+	})
+}
+
+// computeCName возвращает C-имя функции Skorpion.
+// main, sk_*, any_*, __sk__* — без изменений.
+// Остальные — с префиксом __sk__.
+func computeCName(name string) string {
+	if name == "main" {
+		return "main"
+	}
+	if strings.HasPrefix(name, "sk_") ||
+		strings.HasPrefix(name, "any_") ||
+		strings.HasPrefix(name, "__sk__") {
+		return name
+	}
+	return "__sk__" + name
+}
+
+// cNameForFunc ищет функцию по имени и возвращает её C-имя.
+// Если не найдена — считает как пользовательскую (__sk__<name>).
+func (p *Pipeline) cNameForFunc(name string) string {
+	for _, fn := range p.Program.Functions {
+		if fn.Name == name {
+			return computeCName(fn.Name)
+		}
+	}
+	// если это импортированная функция — тоже __sk__
+	return computeCName(name)
 }

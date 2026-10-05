@@ -32,6 +32,7 @@ const (
 	TOKEN_MINUS
 	TOKEN_STAR
 	TOKEN_SLASH
+	TOKEN_CARET
 	TOKEN_POW
 	TOKEN_EQUALS
 	TOKEN_LT
@@ -132,6 +133,8 @@ func (l *Lexer) NextToken() Token {
 		return l.makeToken(TOKEN_PLUS, "+")
 	case '-':
 		return l.makeToken(TOKEN_MINUS, "-")
+	case '^':
+		return l.makeToken(TOKEN_CARET, "^")
 	case '*':
 		if l.peek() == '*' {
 			col := l.col
@@ -530,6 +533,8 @@ func (tt TokenType) String() string {
 		return "||"
 	case TOKEN_QUESTION:
 		return "?"
+	case TOKEN_CARET:
+		return "^"
 	case TOKEN_COLON:
 		return ":"
 	case TOKEN_PERCENT:

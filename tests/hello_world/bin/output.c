@@ -10,22 +10,23 @@
 // Skorpion type definitions
 
 typedef struct { int value; int __is_null; } sk_int;
-typedef struct { float value; int __is_null; } sk_float;
-typedef struct { double value; int __is_null; } sk_double;
+typedef struct { float value; int __is_null; int prec; } sk_float;
+typedef struct { double value; int __is_null; int prec; } sk_double;
 typedef struct { int value; int __is_null; } sk_bool;
 typedef struct { char* value; int __is_null; } sk_string;
 typedef struct sk_array sk_array;
 typedef struct { sk_array* value; int __is_null; } sk_arr;
 
 #define SK_NULL_int    ((sk_int){0, 1})
-#define SK_NULL_float  ((sk_float){0, 1})
-#define SK_NULL_double ((sk_double){0, 1})
+#define SK_NULL_float  ((sk_float){0, 1, -1})
+#define SK_NULL_double ((sk_double){0, 1, -1})
 #define SK_NULL_bool   ((sk_bool){0, 1})
 #define SK_NULL_string ((sk_string){NULL, 1})
 #define SK_NULL_arr    ((sk_arr){NULL, 1})
 
 typedef struct {
     int type; // 0=int, 1=string, 2=float, 3=double, 4=bool, 5=arr, 6=null
+    int prec; // для float/double: точность; -1 = без
     union {
         int i;
         float f;
@@ -45,8 +46,8 @@ struct sk_array {
 };
 
 sk_int sk_int_new(int v) { sk_int r; r.value = v; r.__is_null = 0; return r; }
-sk_float sk_float_new(float v) { sk_float r; r.value = v; r.__is_null = 0; return r; }
-sk_double sk_double_new(double v) { sk_double r; r.value = v; r.__is_null = 0; return r; }
+sk_float sk_float_new(float v) { sk_float r; r.value = v; r.__is_null = 0; r.prec = -1; return r; }
+sk_double sk_double_new(double v) { sk_double r; r.value = v; r.__is_null = 0; r.prec = -1; return r; }
 sk_bool sk_bool_new(int v) { sk_bool r; r.value = v ? 1 : 0; r.__is_null = 0; return r; }
 sk_string sk_string_new(const char* v) { sk_string r; r.value = v ? strdup(v) : NULL; r.__is_null = v ? 0 : 1; return r; }
 sk_string sk_string_new_take(char* v) { sk_string r; r.value = v; r.__is_null = v ? 0 : 1; return r; }
@@ -86,15 +87,17 @@ sk_bool sk_int_ge(sk_int a, sk_int b) { if (a.__is_null || b.__is_null) return S
 sk_bool sk_int_eq(sk_int a, sk_int b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value == b.value); }
 sk_bool sk_int_ne(sk_int a, sk_int b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value != b.value); }
 
-sk_float sk_float_add(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_float; return sk_float_new(a.value + b.value); }
-sk_float sk_float_sub(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_float; return sk_float_new(a.value - b.value); }
-sk_float sk_float_mul(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_float; return sk_float_new(a.value * b.value); }
-sk_float sk_float_div(sk_float a, sk_float b) { if (a.__is_null || b.__is_null || b.value == 0.0f) return SK_NULL_float; return sk_float_new(a.value / b.value); }
+sk_float sk_float_add(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_float; sk_float r = sk_float_new(a.value + b.value); r.prec = (a.prec >= 0 && b.prec >= 0) ? (a.prec > b.prec ? a.prec : b.prec) : (a.prec >= 0 ? a.prec : b.prec); return r; }
+sk_float sk_float_sub(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_float; sk_float r = sk_float_new(a.value - b.value); r.prec = (a.prec >= 0 && b.prec >= 0) ? (a.prec > b.prec ? a.prec : b.prec) : (a.prec >= 0 ? a.prec : b.prec); return r; }
+sk_float sk_float_mul(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_float; sk_float r = sk_float_new(a.value * b.value); r.prec = (a.prec >= 0 && b.prec >= 0) ? (a.prec > b.prec ? a.prec : b.prec) : (a.prec >= 0 ? a.prec : b.prec); return r; }
+sk_float sk_float_div(sk_float a, sk_float b) { if (a.__is_null || b.__is_null || b.value == 0.0f) return SK_NULL_float; sk_float r = sk_float_new(a.value / b.value); r.prec = (a.prec >= 0 && b.prec >= 0) ? (a.prec > b.prec ? a.prec : b.prec) : (a.prec >= 0 ? a.prec : b.prec); return r; }
 sk_float sk_float_pow(sk_float a, sk_float b) {
     if (a.__is_null || b.__is_null) return SK_NULL_float;
-    return sk_float_new(powf(a.value, b.value));
+    sk_float r = sk_float_new(powf(a.value, b.value));
+    r.prec = (a.prec >= 0 && b.prec >= 0) ? (a.prec > b.prec ? a.prec : b.prec) : (a.prec >= 0 ? a.prec : b.prec);
+    return r;
 }
-sk_float sk_float_neg(sk_float a) { if (a.__is_null) return SK_NULL_float; return sk_float_new(-a.value); }
+sk_float sk_float_neg(sk_float a) { if (a.__is_null) return SK_NULL_float; sk_float r = sk_float_new(-a.value); r.prec = a.prec; return r; }
 sk_bool sk_float_lt(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value < b.value); }
 sk_bool sk_float_gt(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value > b.value); }
 sk_bool sk_float_le(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value <= b.value); }
@@ -102,15 +105,17 @@ sk_bool sk_float_ge(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) re
 sk_bool sk_float_eq(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value == b.value); }
 sk_bool sk_float_ne(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value != b.value); }
 
-sk_double sk_double_add(sk_double a, sk_double b) { if (a.__is_null || b.__is_null) return SK_NULL_double; return sk_double_new(a.value + b.value); }
-sk_double sk_double_sub(sk_double a, sk_double b) { if (a.__is_null || b.__is_null) return SK_NULL_double; return sk_double_new(a.value - b.value); }
-sk_double sk_double_mul(sk_double a, sk_double b) { if (a.__is_null || b.__is_null) return SK_NULL_double; return sk_double_new(a.value * b.value); }
-sk_double sk_double_div(sk_double a, sk_double b) { if (a.__is_null || b.__is_null || b.value == 0.0) return SK_NULL_double; return sk_double_new(a.value / b.value); }
+sk_double sk_double_add(sk_double a, sk_double b) { if (a.__is_null || b.__is_null) return SK_NULL_double; sk_double r = sk_double_new(a.value + b.value); r.prec = (a.prec >= 0 && b.prec >= 0) ? (a.prec > b.prec ? a.prec : b.prec) : (a.prec >= 0 ? a.prec : b.prec); return r; }
+sk_double sk_double_sub(sk_double a, sk_double b) { if (a.__is_null || b.__is_null) return SK_NULL_double; sk_double r = sk_double_new(a.value - b.value); r.prec = (a.prec >= 0 && b.prec >= 0) ? (a.prec > b.prec ? a.prec : b.prec) : (a.prec >= 0 ? a.prec : b.prec); return r; }
+sk_double sk_double_mul(sk_double a, sk_double b) { if (a.__is_null || b.__is_null) return SK_NULL_double; sk_double r = sk_double_new(a.value * b.value); r.prec = (a.prec >= 0 && b.prec >= 0) ? (a.prec > b.prec ? a.prec : b.prec) : (a.prec >= 0 ? a.prec : b.prec); return r; }
+sk_double sk_double_div(sk_double a, sk_double b) { if (a.__is_null || b.__is_null || b.value == 0.0) return SK_NULL_double; sk_double r = sk_double_new(a.value / b.value); r.prec = (a.prec >= 0 && b.prec >= 0) ? (a.prec > b.prec ? a.prec : b.prec) : (a.prec >= 0 ? a.prec : b.prec); return r; }
 sk_double sk_double_pow(sk_double a, sk_double b) {
     if (a.__is_null || b.__is_null) return SK_NULL_double;
-    return sk_double_new(pow(a.value, b.value));
+    sk_double r = sk_double_new(pow(a.value, b.value));
+    r.prec = (a.prec >= 0 && b.prec >= 0) ? (a.prec > b.prec ? a.prec : b.prec) : (a.prec >= 0 ? a.prec : b.prec);
+    return r;
 }
-sk_double sk_double_neg(sk_double a) { if (a.__is_null) return SK_NULL_double; return sk_double_new(-a.value); }
+sk_double sk_double_neg(sk_double a) { if (a.__is_null) return SK_NULL_double; sk_double r = sk_double_new(-a.value); r.prec = a.prec; return r; }
 sk_bool sk_double_lt(sk_double a, sk_double b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value < b.value); }
 sk_bool sk_double_gt(sk_double a, sk_double b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value > b.value); }
 sk_bool sk_double_le(sk_double a, sk_double b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value <= b.value); }
@@ -123,8 +128,8 @@ sk_bool sk_bool_and(sk_bool a, sk_bool b) { if (a.__is_null || b.__is_null) retu
 sk_bool sk_bool_or(sk_bool a, sk_bool b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value || b.value); }
 
 sk_string sk_int_to_string(sk_int a) { if (a.__is_null) return sk_string_new("null"); char buf[32]; snprintf(buf, 32, "%d", a.value); return sk_string_new(buf); }
-sk_string sk_float_to_string(sk_float a) { if (a.__is_null) return sk_string_new("null"); char buf[32]; snprintf(buf, 32, "%f", a.value); return sk_string_new(buf); }
-sk_string sk_double_to_string(sk_double a) { if (a.__is_null) return sk_string_new("null"); char buf[32]; snprintf(buf, 32, "%f", a.value); return sk_string_new(buf); }
+sk_string sk_float_to_string(sk_float a) { if (a.__is_null) return sk_string_new("null"); char buf[32]; if (a.prec >= 0) snprintf(buf, 32, "%.*f", a.prec, a.value); else snprintf(buf, 32, "%f", a.value); return sk_string_new(buf); }
+sk_string sk_double_to_string(sk_double a) { if (a.__is_null) return sk_string_new("null"); char buf[32]; if (a.prec >= 0) snprintf(buf, 32, "%.*f", a.prec, a.value); else snprintf(buf, 32, "%f", a.value); return sk_string_new(buf); }
 sk_string sk_bool_to_string(sk_bool a) { if (a.__is_null) return sk_string_new("null"); return sk_string_new(a.value ? "true" : "false"); }
 sk_string sk_string_to_string(sk_string a) { if (a.__is_null) return sk_string_new("null"); return sk_string_new(a.value); }
 
@@ -140,6 +145,59 @@ sk_int sk_double_to_int(sk_double a) { if (a.__is_null) return SK_NULL_int; retu
 sk_bool sk_int_to_bool(sk_int a) { if (a.__is_null) return SK_NULL_bool; return sk_bool_new(a.value != 0); }
 sk_bool sk_float_to_bool(sk_float a) { if (a.__is_null) return SK_NULL_bool; return sk_bool_new(a.value != 0.0f); }
 sk_bool sk_double_to_bool(sk_double a) { if (a.__is_null) return SK_NULL_bool; return sk_bool_new(a.value != 0.0); }
+
+
+// Format operator ^ runtime
+sk_int sk_double_to_int_trunc(sk_double a) { if (a.__is_null) return SK_NULL_int; return sk_int_new((int)a.value); }
+sk_int sk_float_to_int_trunc(sk_float a) { if (a.__is_null) return SK_NULL_int; return sk_int_new((int)a.value); }
+
+sk_double sk_double_with_prec(sk_double a, int prec) {
+    if (a.__is_null) return SK_NULL_double;
+    if (prec < 0) prec = 0;
+    if (prec > 20) prec = 20;
+    char buf[64];
+    snprintf(buf, 64, "%.*f", prec, a.value);
+    sk_double r; r.value = atof(buf); r.__is_null = 0; r.prec = prec; return r;
+}
+sk_float sk_float_with_prec(sk_float a, int prec) {
+    if (a.__is_null) return SK_NULL_float;
+    if (prec < 0) prec = 0;
+    if (prec > 20) prec = 20;
+    char buf[64];
+    snprintf(buf, 64, "%.*f", prec, a.value);
+    sk_float r; r.value = (float)atof(buf); r.__is_null = 0; r.prec = prec; return r;
+}
+
+sk_double sk_double_trim(sk_double a, const char* trimSet) {
+    if (a.__is_null) return SK_NULL_double;
+    char buf[64];
+    snprintf(buf, 64, "%.10f", a.value);
+    int len = strlen(buf);
+    while (len > 0 && buf[len-1] == '0') len--;
+    if (len > 0 && buf[len-1] == '.') len--;
+    buf[len] = '\0';
+    while (len > 0 && strchr(trimSet, buf[len-1])) len--;
+    buf[len] = '\0';
+    int prec = 0;
+    char* dot = strchr(buf, '.');
+    if (dot) prec = strlen(dot + 1);
+    sk_double r; r.value = atof(buf); r.__is_null = 0; r.prec = prec; return r;
+}
+sk_float sk_float_trim(sk_float a, const char* trimSet) {
+    if (a.__is_null) return SK_NULL_float;
+    char buf[64];
+    snprintf(buf, 64, "%.10f", a.value);
+    int len = strlen(buf);
+    while (len > 0 && buf[len-1] == '0') len--;
+    if (len > 0 && buf[len-1] == '.') len--;
+    buf[len] = '\0';
+    while (len > 0 && strchr(trimSet, buf[len-1])) len--;
+    buf[len] = '\0';
+    int prec = 0;
+    char* dot = strchr(buf, '.');
+    if (dot) prec = strlen(dot + 1);
+    sk_float r; r.value = (float)atof(buf); r.__is_null = 0; r.prec = prec; return r;
+}
 
 sk_string sk_string_concat(sk_string a, sk_string b) {
     if (a.__is_null && b.__is_null) return SK_NULL_string;
@@ -170,13 +228,14 @@ void sk_array_push(sk_array* a, void* elem) {
     memcpy((char*)a->data + a->length * a->elem_size, elem, a->elem_size);
     a->length++;
 }
+sk_array* sk_array_deep_copy(sk_array* a);
 void sk_array_push_int(sk_array* a, sk_int v) { sk_array_push(a, &v); }
-void sk_array_push_string(sk_array* a, sk_string v) { sk_array_push(a, &v); }
+void sk_array_push_string(sk_array* a, sk_string v) { sk_string copy = v.__is_null ? SK_NULL_string : sk_string_new(v.value); sk_array_push(a, &copy); }
 void sk_array_push_float(sk_array* a, sk_float v) { sk_array_push(a, &v); }
 void sk_array_push_double(sk_array* a, sk_double v) { sk_array_push(a, &v); }
 void sk_array_push_bool(sk_array* a, sk_bool v) { sk_array_push(a, &v); }
-void sk_array_push_any(sk_array* a, sk_any v) { sk_array_push(a, &v); }
-void sk_array_push_arr(sk_array* a, sk_arr v) { sk_array_push(a, &v); }
+void sk_array_push_any(sk_array* a, sk_any v) { sk_any copy = v; if (v.type == 1 && v.data.s) copy.data.s = strdup(v.data.s); else if (v.type == 5 && v.data.p) copy.data.p = sk_array_deep_copy((sk_array*)v.data.p); sk_array_push(a, &copy); }
+void sk_array_push_arr(sk_array* a, sk_arr v) { sk_arr copy = v.__is_null ? SK_NULL_arr : sk_arr_new(sk_array_deep_copy(v.value)); sk_array_push(a, &copy); }
 
 void* sk_array_get(sk_array* a, int index) {
     if (index < 0 || index >= a->length) return NULL;
@@ -214,16 +273,17 @@ sk_array* sk_range_new(int start, int end) {
     return a;
 }
 
-sk_any any_null(void) { sk_any a; a.type = 6; a.data.p = NULL; return a; }
-sk_any any_int(sk_int v) { sk_any a; a.type = 0; a.data.i = v.value; return a; }
-sk_any any_string(sk_string v) { sk_any a; a.type = 1; a.data.s = v.value; return a; }
-sk_any any_float(sk_float v) { sk_any a; a.type = 2; a.data.f = v.value; return a; }
-sk_any any_double(sk_double v) { sk_any a; a.type = 3; a.data.d = v.value; return a; }
-sk_any any_bool(sk_bool v) { sk_any a; a.type = 4; a.data.b = v.value; return a; }
-sk_any any_arr(sk_arr v) { sk_any a; a.type = 5; a.data.p = v.value; return a; }
+sk_any any_null(void) { sk_any a; a.type = 6; a.prec = -1; a.data.p = NULL; return a; }
+sk_any any_int(sk_int v) { sk_any a; a.type = 0; a.prec = -1; a.data.i = v.value; return a; }
+sk_any any_string(sk_string v) { sk_any a; a.type = 1; a.prec = -1; a.data.s = v.value ? strdup(v.value) : NULL; return a; }
+sk_any any_float(sk_float v) { sk_any a; a.type = 2; a.prec = v.prec; a.data.f = v.value; return a; }
+sk_any any_double(sk_double v) { sk_any a; a.type = 3; a.prec = v.prec; a.data.d = v.value; return a; }
+sk_any any_bool(sk_bool v) { sk_any a; a.type = 4; a.prec = -1; a.data.b = v.value; return a; }
+sk_any any_arr(sk_arr v) { sk_any a; a.type = 5; a.prec = -1; a.data.p = v.value ? sk_array_deep_copy(v.value) : NULL; return a; }
 
 sk_string sk_array_to_string(sk_array* a);
 void sk_any_free(sk_any* a);
+void sk_array_deep_free(sk_array* a);
 
 sk_int any_to_int(sk_any a) {
     if (a.type == 6) return SK_NULL_int;
@@ -238,25 +298,31 @@ sk_int any_to_int(sk_any a) {
 }
 sk_float any_to_float(sk_any a) {
     if (a.type == 6) return SK_NULL_float;
+    sk_float r;
     switch (a.type) {
-        case 0: return sk_float_new((float)a.data.i);
-        case 1: return sk_float_new((float)atof(a.data.s));
-        case 2: return sk_float_new(a.data.f);
-        case 3: return sk_float_new((float)a.data.d);
-        case 4: return sk_float_new(a.data.b ? 1.0f : 0.0f);
+        case 0: r = sk_float_new((float)a.data.i); break;
+        case 1: r = sk_float_new((float)atof(a.data.s)); break;
+        case 2: r = sk_float_new(a.data.f); break;
+        case 3: r = sk_float_new((float)a.data.d); break;
+        case 4: r = sk_float_new(a.data.b ? 1.0f : 0.0f); break;
         default: return SK_NULL_float;
     }
+    if (a.prec >= 0) r.prec = a.prec;
+    return r;
 }
 sk_double any_to_double(sk_any a) {
     if (a.type == 6) return SK_NULL_double;
+    sk_double r;
     switch (a.type) {
-        case 0: return sk_double_new((double)a.data.i);
-        case 1: return sk_double_new(atof(a.data.s));
-        case 2: return sk_double_new((double)a.data.f);
-        case 3: return sk_double_new(a.data.d);
-        case 4: return sk_double_new(a.data.b ? 1.0 : 0.0);
+        case 0: r = sk_double_new((double)a.data.i); break;
+        case 1: r = sk_double_new(atof(a.data.s)); break;
+        case 2: r = sk_double_new((double)a.data.f); break;
+        case 3: r = sk_double_new(a.data.d); break;
+        case 4: r = sk_double_new(a.data.b ? 1.0 : 0.0); break;
         default: return SK_NULL_double;
     }
+    if (a.prec >= 0) r.prec = a.prec;
+    return r;
 }
 sk_bool any_to_bool(sk_any a) {
     if (a.type == 6) return SK_NULL_bool;
@@ -275,8 +341,8 @@ sk_string any_to_string(sk_any a) {
     switch (a.type) {
         case 0: snprintf(buf, 64, "%d", a.data.i); return sk_string_new(buf);
         case 1: return sk_string_new(a.data.s);
-        case 2: snprintf(buf, 64, "%f", a.data.f); return sk_string_new(buf);
-        case 3: snprintf(buf, 64, "%f", a.data.d); return sk_string_new(buf);
+        case 2: if (a.prec >= 0) snprintf(buf, 64, "%.*f", a.prec, a.data.f); else snprintf(buf, 64, "%f", a.data.f); return sk_string_new(buf);
+        case 3: if (a.prec >= 0) snprintf(buf, 64, "%.*f", a.prec, a.data.d); else snprintf(buf, 64, "%f", a.data.d); return sk_string_new(buf);
         case 4: return sk_string_new(a.data.b ? "true" : "false");
         case 5: return sk_array_to_string((sk_array*)a.data.p);
         default: return sk_string_new("unknown");
@@ -284,7 +350,7 @@ sk_string any_to_string(sk_any a) {
 }
 sk_arr any_to_arr(sk_any a) {
     if (a.type == 6) return SK_NULL_arr;
-    if (a.type == 5) return sk_arr_new((sk_array*)a.data.p);
+    if (a.type == 5) return sk_arr_new(sk_array_deep_copy((sk_array*)a.data.p));
     return SK_NULL_arr;
 }
 
@@ -376,6 +442,56 @@ sk_string sk_array_to_string(sk_array* a) {
     return sk_string_new_take(buf);
 }
 
+sk_array* sk_array_deep_copy(sk_array* a) {
+    sk_array* new = sk_array_new(a->elem_size, a->elem_type);
+    for (int i = 0; i < a->length; i++) {
+        void* elem = sk_array_get(a, i);
+        switch (a->elem_type) {
+            case 0: { sk_int* v = (sk_int*)elem; sk_array_push_int(new, *v); break; }
+            case 1: { sk_string* v = (sk_string*)elem; sk_string c = v->__is_null ? SK_NULL_string : sk_string_new(v->value); sk_array_push_string(new, c); break; }
+            case 2: { sk_float* v = (sk_float*)elem; sk_array_push_float(new, *v); break; }
+            case 3: { sk_double* v = (sk_double*)elem; sk_array_push_double(new, *v); break; }
+            case 4: { sk_bool* v = (sk_bool*)elem; sk_array_push_bool(new, *v); break; }
+            case 5: {
+                sk_any* v = (sk_any*)elem;
+                sk_any c;
+                if (v->type == 6) c = any_null();
+                else if (v->type == 1) c = any_string(sk_string_new(v->data.s));
+                else if (v->type == 5) c = any_arr(sk_arr_new(sk_array_deep_copy((sk_array*)v->data.p)));
+                else c = *v;
+                sk_array_push_any(new, c);
+                break;
+            }
+            case 6: {
+                sk_arr* v = (sk_arr*)elem;
+                sk_arr c = v->__is_null ? SK_NULL_arr : sk_arr_new(sk_array_deep_copy(v->value));
+                sk_array_push_arr(new, c);
+                break;
+            }
+        }
+    }
+    return new;
+}
+
+void sk_array_deep_free(sk_array* a) {
+    if (!a) return;
+    for (int i = 0; i < a->length; i++) {
+        void* elem = sk_array_get(a, i);
+        switch (a->elem_type) {
+            case 1: { sk_string* v = (sk_string*)elem; if (!v->__is_null && v->value) free(v->value); break; }
+            case 5: {
+                sk_any* v = (sk_any*)elem;
+                if (v->type == 1 && v->data.s) free(v->data.s);
+                else if (v->type == 5 && v->data.p) sk_array_deep_free((sk_array*)v->data.p);
+                break;
+            }
+            case 6: { sk_arr* v = (sk_arr*)elem; if (!v->__is_null) sk_array_deep_free(v->value); break; }
+        }
+    }
+    free(a->data);
+    free(a);
+}
+
 typedef struct SkCleanup {
     void** ptr;
     int type;
@@ -393,7 +509,7 @@ SkTryFrame* sk_try_stack = NULL;
 
 void sk_any_free(sk_any* a) {
     if (a->type == 1 && a->data.s) { free(a->data.s); a->data.s = NULL; }
-    else if (a->type == 5 && a->data.p) { sk_array_free((sk_array*)a->data.p); a->data.p = NULL; }
+    else if (a->type == 5 && a->data.p) { sk_array_deep_free((sk_array*)a->data.p); a->data.p = NULL; }
     a->type = -1;
 }
 
@@ -468,14 +584,14 @@ int sk_error_type_match(const char* actual, const char* expected) {
 }
 
 // Function prototypes
-sk_any sk_pow(sk_any a, sk_any b);
+sk_any __sk__powl(sk_any a, sk_any b);
 void __sk__std_io_send(sk_string line);
 sk_string __sk__std_io_input(sk_string prompt);
-void sendln(sk_any msg);
-void sendf(sk_any msg);
-sk_string input(sk_string prefix);
+void __sk__sendln(sk_any msg);
+void __sk__sendf(sk_any msg);
+sk_string __sk__input(sk_string prefix);
 
-sk_any sk_pow(sk_any a, sk_any b) {
+sk_any __sk__powl(sk_any a, sk_any b) {
     sk_any t1;
 
     t1 = sk_any_pow(a, b);
@@ -485,14 +601,63 @@ sk_any sk_pow(sk_any a, sk_any b) {
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
-    sk_any t2;
-    sk_any t3;
+    sk_double a;
+    sk_double t2;
+    sk_double b;
+    sk_double t3;
     sk_any t4;
+    sk_double c;
+    sk_double t5;
+    sk_double t6;
+    sk_double t7;
+    sk_any t8;
+    sk_double d;
+    sk_double t9;
+    sk_double t10;
+    sk_any t11;
+    sk_double e;
+    sk_double t12;
+    sk_double t13;
+    sk_double t14;
+    sk_any t15;
+    sk_double f;
+    sk_double t16;
+    sk_any t17;
+    sk_any t18;
+    sk_any t19;
+    sk_any t20;
 
-    t2 = any_double(sk_double_new(10.4));
-    t3 = any_float(sk_float_new(5.4f));
-    t4 = sk_pow(t2, t3);
-    sendln(t4);
+    t2 = sk_double_with_prec(sk_double_new(3.14), 4);
+    a = t2;
+    t3 = sk_double_add(a, sk_double_new(1.0));
+    b = t3;
+    t4 = any_double(b);
+    __sk__sendln(t4);
+    t5 = sk_double_with_prec(sk_double_new(3.14), 2);
+    t6 = sk_double_with_prec(sk_double_new(3.14), 4);
+    t7 = sk_double_add(t5, t6);
+    c = t7;
+    t8 = any_double(c);
+    __sk__sendln(t8);
+    t9 = sk_double_with_prec(sk_double_new(3.14), 2);
+    t10 = sk_double_add(t9, sk_double_new(1.0));
+    d = t10;
+    t11 = any_double(d);
+    __sk__sendln(t11);
+    t12 = sk_double_with_prec(sk_double_new(3.14), 2);
+    t13 = sk_double_new((double)sk_int_new(2).value);
+    t14 = sk_double_mul(t12, t13);
+    e = t14;
+    t15 = any_double(e);
+    __sk__sendln(t15);
+    t16 = sk_double_with_prec(sk_double_new(-3.14), 2);
+    f = t16;
+    t17 = any_double(f);
+    __sk__sendln(t17);
+    t18 = any_double(sk_double_new(4.3));
+    t19 = any_int(sk_int_new(5));
+    t20 = __sk__powl(t18, t19);
+    __sk__sendln(t20);
     return 0;
 }
 
@@ -518,31 +683,31 @@ sk_string __sk__std_io_input(sk_string prompt) {
             return sk_string_new(buffer);
 }
 
-void sendln(sk_any msg) {
-    sk_string t5;
-    sk_string t6;
+void __sk__sendln(sk_any msg) {
+    sk_string t21;
+    sk_string t22;
 
-    t5 = any_to_string(msg);
-    t6 = sk_string_concat(t5, sk_string_new("\n"));
-    free(t5.value);
-    __sk__std_io_send(t6);
-    free(t6.value);
+    t21 = any_to_string(msg);
+    t22 = sk_string_concat(t21, sk_string_new("\n"));
+    free(t21.value);
+    __sk__std_io_send(t22);
+    free(t22.value);
     return;
 }
 
-void sendf(sk_any msg) {
-    sk_string t7;
+void __sk__sendf(sk_any msg) {
+    sk_string t23;
 
-    t7 = any_to_string(msg);
-    __sk__std_io_send(t7);
-    free(t7.value);
+    t23 = any_to_string(msg);
+    __sk__std_io_send(t23);
+    free(t23.value);
     return;
 }
 
-sk_string input(sk_string prefix) {
-    sk_string t8;
+sk_string __sk__input(sk_string prefix) {
+    sk_string t24;
 
-    t8 = __sk__std_io_input(prefix);
-    return t8;
+    t24 = __sk__std_io_input(prefix);
+    return t24;
 }
 

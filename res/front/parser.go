@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"skrp/res/debug"
 	"skrp/res/errors"
+	"strconv"
 	"strings"
 )
 
@@ -1169,7 +1170,132 @@ func (p *Parser) parseUnary() Node {
 		}
 		return &UnaryExpr{Position: pos, Op: "-", Expr: expr}
 	}
-	return p.parsePrimary()
+
+	expr := p.parsePrimary()
+	if expr == nil {
+		return nil
+	}
+
+	// Постфиксный формат ^Nf или ^X...
+	if p.peek.Type == TOKEN_CARET {
+		return p.parseFormatSuffix(expr)
+	}
+
+	return expr
+}
+
+// parseFormatSuffix читает ^Nf или ^X... после выражения.
+func (p *Parser) parseFormatSuffix(expr Node) Node {
+	if p.peek.Type != TOKEN_CARET {
+		return expr
+	}
+
+	pos := p.pos()
+	p.advance() // ^
+
+	// ^Nf — ^ + число + f
+	if p.peek.Type == TOKEN_NUMBER {
+		val := p.peek.Literal
+		p.advance()
+
+		if !strings.HasSuffix(val, "f") && !strings.HasSuffix(val, "F") {
+			p.hasErrors = true
+			errors.NewFatalError("0620",
+				fmt.Sprintf("Expected 'f' after precision in ^%s", val),
+				p.peek.Line, p.peek.Column, p.FileName)
+			return nil
+		}
+
+		nStr := val[:len(val)-1]
+		n, err := strconv.Atoi(nStr)
+		if err != nil || n < 0 {
+			p.hasErrors = true
+			errors.NewFatalError("0621",
+				fmt.Sprintf("Invalid precision '%s' in format", nStr),
+				pos.Line, pos.Column, p.FileName)
+			return nil
+		}
+		if n > 20 {
+			p.hasErrors = true
+			errors.NewFatalError("0622",
+				fmt.Sprintf("Precision %d too large (max 20)", n),
+				pos.Line, pos.Column, p.FileName)
+			return nil
+		}
+
+		return &FormatExpr{
+			Position: pos,
+			Expr:     expr,
+			Mode:     "Nf",
+			N:        n,
+		}
+	}
+
+	// ^X... — ^ + X + (цифры | {цифры})
+	if p.peek.Type == TOKEN_IDENT && strings.HasPrefix(p.peek.Literal, "X") {
+		val := p.peek.Literal[1:] // убрать X
+		p.advance()
+
+		// ^X{1,8}
+		if p.peek.Type == TOKEN_LBRACE {
+			p.advance()
+
+			trimSet := ""
+			for p.peek.Type == TOKEN_NUMBER {
+				trimSet += p.peek.Literal
+				p.advance()
+				if p.peek.Type == TOKEN_COMMA {
+					p.advance()
+				}
+			}
+
+			if p.peek.Type != TOKEN_RBRACE {
+				p.hasErrors = true
+				errors.NewFatalError("0623",
+					fmt.Sprintf("Expected '}' in ^X{...}, got '%s'", p.peek.Literal),
+					p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			p.advance()
+
+			if trimSet == "" {
+				p.hasErrors = true
+				errors.NewFatalError("0624",
+					"Empty trim set in ^X{}",
+					pos.Line, pos.Column, p.FileName)
+				return nil
+			}
+
+			return &FormatExpr{
+				Position: pos,
+				Expr:     expr,
+				Mode:     "X",
+				TrimSet:  trimSet,
+			}
+		}
+
+		// ^X9 — уже val содержит "9"
+		if val == "" {
+			p.hasErrors = true
+			errors.NewFatalError("0624",
+				"Expected digits after 'X' in format",
+				pos.Line, pos.Column, p.FileName)
+			return nil
+		}
+
+		return &FormatExpr{
+			Position: pos,
+			Expr:     expr,
+			Mode:     "X",
+			TrimSet:  val,
+		}
+	}
+
+	p.hasErrors = true
+	errors.NewFatalError("0625",
+		fmt.Sprintf("Expected 'Nf' or 'X...' after '^', got '%s'", p.peek.Literal),
+		p.peek.Line, p.peek.Column, p.FileName)
+	return nil
 }
 
 func (p *Parser) parseBinary(prec int) Node {

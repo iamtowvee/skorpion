@@ -769,6 +769,48 @@ var ErrorCodes = map[string]ErrorCode{
 		Tip: "Use detruncate(x) to narrow the type before the operation, or " +
 			"extend the union to cover all combinations.",
 	},
+	"0620": {
+		Code:        "0620",
+		Message:     "Expected 'f' after precision",
+		Description: "The '^' operator requires 'f' after the precision number.",
+		Tip:         "Use: '3.14^2f'.",
+	},
+	"0621": {
+		Code:        "0621",
+		Message:     "Invalid precision",
+		Description: "The precision in '^Nf' must be a non-negative integer.",
+		Tip:         "Use: '3.14^0f', '3.14^2f', etc.",
+	},
+	"0622": {
+		Code:        "0622",
+		Message:     "Precision too large",
+		Description: "Precision in '^Nf' must be <= 20.",
+		Tip:         "Use a smaller precision.",
+	},
+	"0623": {
+		Code:        "0623",
+		Message:     "Expected '}' in ^X{...}",
+		Description: "The trim set in '^X{...}' was not closed with '}'.",
+		Tip:         "Add '}' at the end: '^X{1,8}'.",
+	},
+	"0624": {
+		Code:        "0624",
+		Message:     "Empty trim set",
+		Description: "The trim set in '^X...' must contain at least one digit.",
+		Tip:         "Use: '^X9' or '^X{1,8}'.",
+	},
+	"0625": {
+		Code:        "0625",
+		Message:     "Invalid format specifier",
+		Description: "After '^', either 'Nf' (precision) or 'X...' (trim) is expected.",
+		Tip:         "Use: '^2f' or '^X9'.",
+	},
+	"0626": {
+		Code:        "0626",
+		Message:     "Format only for numbers",
+		Description: "The '^' operator can only be applied to numeric types (int, float, double).",
+		Tip:         "Use '^' only on numbers.",
+	},
 
 	// ============================================================================
 	// 1500-1599: Semantic errors

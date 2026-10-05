@@ -19,6 +19,7 @@ type IRInstruction struct {
 
 type IRFunction struct {
 	Name           string
+	CName          string
 	ReturnType     string
 	IsExport       bool
 	File           string
