@@ -29,7 +29,7 @@ int len(string line) {
 
 int bytes(string line) {
   includeC ~~~
-    return len(line);
+    return strlen(line);
   ~~~
   return 0
 }
