@@ -33,3 +33,8 @@ int bytes(string line) {
   ~~~
   return 0
 }
+
+string concat(string a, string b) {
+  return a + b
+}
+
