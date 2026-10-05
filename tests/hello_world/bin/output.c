@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <setjmp.h>
+#include <math.h>
 
 // Skorpion type definitions
 
@@ -64,6 +65,19 @@ sk_int sk_int_mul(sk_int a, sk_int b) { if (a.__is_null || b.__is_null) return S
 sk_int sk_int_div(sk_int a, sk_int b) { if (a.__is_null || b.__is_null || b.value == 0) return SK_NULL_int; return sk_int_new(a.value / b.value); }
 sk_int sk_int_mod(sk_int a, sk_int b) { if (a.__is_null || b.__is_null || b.value == 0) return SK_NULL_int; return sk_int_new(a.value % b.value); }
 sk_int sk_int_neg(sk_int a) { if (a.__is_null) return SK_NULL_int; return sk_int_new(-a.value); }
+sk_int sk_int_pow(sk_int a, sk_int b) {
+    if (a.__is_null || b.__is_null) return SK_NULL_int;
+    if (b.value < 0) return SK_NULL_int;
+    int result = 1;
+    int base = a.value;
+    int exp = b.value;
+    while (exp > 0) {
+        if (exp & 1) result *= base;
+        base *= base;
+        exp >>= 1;
+    }
+    return sk_int_new(result);
+}
 
 sk_bool sk_int_lt(sk_int a, sk_int b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value < b.value); }
 sk_bool sk_int_gt(sk_int a, sk_int b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value > b.value); }
@@ -76,6 +90,10 @@ sk_float sk_float_add(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) 
 sk_float sk_float_sub(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_float; return sk_float_new(a.value - b.value); }
 sk_float sk_float_mul(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_float; return sk_float_new(a.value * b.value); }
 sk_float sk_float_div(sk_float a, sk_float b) { if (a.__is_null || b.__is_null || b.value == 0.0f) return SK_NULL_float; return sk_float_new(a.value / b.value); }
+sk_float sk_float_pow(sk_float a, sk_float b) {
+    if (a.__is_null || b.__is_null) return SK_NULL_float;
+    return sk_float_new(powf(a.value, b.value));
+}
 sk_float sk_float_neg(sk_float a) { if (a.__is_null) return SK_NULL_float; return sk_float_new(-a.value); }
 sk_bool sk_float_lt(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value < b.value); }
 sk_bool sk_float_gt(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value > b.value); }
@@ -88,6 +106,10 @@ sk_double sk_double_add(sk_double a, sk_double b) { if (a.__is_null || b.__is_nu
 sk_double sk_double_sub(sk_double a, sk_double b) { if (a.__is_null || b.__is_null) return SK_NULL_double; return sk_double_new(a.value - b.value); }
 sk_double sk_double_mul(sk_double a, sk_double b) { if (a.__is_null || b.__is_null) return SK_NULL_double; return sk_double_new(a.value * b.value); }
 sk_double sk_double_div(sk_double a, sk_double b) { if (a.__is_null || b.__is_null || b.value == 0.0) return SK_NULL_double; return sk_double_new(a.value / b.value); }
+sk_double sk_double_pow(sk_double a, sk_double b) {
+    if (a.__is_null || b.__is_null) return SK_NULL_double;
+    return sk_double_new(pow(a.value, b.value));
+}
 sk_double sk_double_neg(sk_double a) { if (a.__is_null) return SK_NULL_double; return sk_double_new(-a.value); }
 sk_bool sk_double_lt(sk_double a, sk_double b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value < b.value); }
 sk_bool sk_double_gt(sk_double a, sk_double b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value > b.value); }

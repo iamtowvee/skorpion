@@ -1190,6 +1190,8 @@ func (p *Parser) parseBinary(prec int) Node {
 		var nextPrec int
 		switch p.peek.Type {
 		case TOKEN_DOTDOT:
+			nextPrec = 6
+		case TOKEN_POW:
 			nextPrec = 5
 		case TOKEN_STAR, TOKEN_SLASH, TOKEN_PERCENT:
 			nextPrec = 4
@@ -1211,7 +1213,13 @@ func (p *Parser) parseBinary(prec int) Node {
 		}
 
 		p.advance()
-		right := p.parseBinary(nextPrec + 1)
+
+		// ** — правоассоциативный
+		nextMinPrec := nextPrec + 1
+		if nextPrec == 5 { // TOKEN_POW
+			nextMinPrec = nextPrec
+		}
+		right := p.parseBinary(nextMinPrec)
 		if right == nil {
 			return nil
 		}

@@ -724,7 +724,7 @@ func (sa *SemanticAnalyzer) analyzeBinary(bin *front.BinaryExpr) front.Node {
 	}
 
 	switch bin.Op {
-	case "+", "-", "*", "/":
+	case "+", "-", "*", "/", "**":
 		if leftType == "void" || rightType == "void" {
 			sa.addError("1553",
 				"Cannot use null in arithmetic operation",

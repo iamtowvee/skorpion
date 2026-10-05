@@ -1262,6 +1262,8 @@ func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string
 			fnName = "sk_int_div"
 		case "%":
 			fnName = "sk_int_mod"
+		case "**":
+			fnName = "sk_int_pow"
 		}
 	} else if resultT == "float" {
 		switch bin.Op {
@@ -1273,6 +1275,8 @@ func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string
 			fnName = "sk_float_mul"
 		case "/":
 			fnName = "sk_float_div"
+		case "**":
+			fnName = "sk_float_pow"
 		}
 	} else if resultT == "double" {
 		switch bin.Op {
@@ -1284,6 +1288,8 @@ func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string
 			fnName = "sk_double_mul"
 		case "/":
 			fnName = "sk_double_div"
+		case "**":
+			fnName = "sk_double_pow"
 		}
 	}
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{

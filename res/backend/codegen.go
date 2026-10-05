@@ -14,7 +14,7 @@ type CodeGenerator struct {
 func NewCodeGenerator(ir *IRProgram) *CodeGenerator {
 	cg := &CodeGenerator{
 		IR:       ir,
-		Includes: []string{"<stdio.h>", "<stdlib.h>", "<string.h>", "<setjmp.h>"},
+		Includes: []string{"<stdio.h>", "<stdlib.h>", "<string.h>", "<setjmp.h>", "<math.h>"},
 	}
 	return cg
 }
@@ -101,6 +101,19 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("sk_int sk_int_div(sk_int a, sk_int b) { if (a.__is_null || b.__is_null || b.value == 0) return SK_NULL_int; return sk_int_new(a.value / b.value); }")
 	cg.writeLine("sk_int sk_int_mod(sk_int a, sk_int b) { if (a.__is_null || b.__is_null || b.value == 0) return SK_NULL_int; return sk_int_new(a.value % b.value); }")
 	cg.writeLine("sk_int sk_int_neg(sk_int a) { if (a.__is_null) return SK_NULL_int; return sk_int_new(-a.value); }")
+	cg.writeLine("sk_int sk_int_pow(sk_int a, sk_int b) {")
+	cg.writeLine("    if (a.__is_null || b.__is_null) return SK_NULL_int;")
+	cg.writeLine("    if (b.value < 0) return SK_NULL_int;")
+	cg.writeLine("    int result = 1;")
+	cg.writeLine("    int base = a.value;")
+	cg.writeLine("    int exp = b.value;")
+	cg.writeLine("    while (exp > 0) {")
+	cg.writeLine("        if (exp & 1) result *= base;")
+	cg.writeLine("        base *= base;")
+	cg.writeLine("        exp >>= 1;")
+	cg.writeLine("    }")
+	cg.writeLine("    return sk_int_new(result);")
+	cg.writeLine("}")
 	cg.writeLine("")
 	cg.writeLine("sk_bool sk_int_lt(sk_int a, sk_int b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value < b.value); }")
 	cg.writeLine("sk_bool sk_int_gt(sk_int a, sk_int b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value > b.value); }")
@@ -115,6 +128,10 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("sk_float sk_float_sub(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_float; return sk_float_new(a.value - b.value); }")
 	cg.writeLine("sk_float sk_float_mul(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_float; return sk_float_new(a.value * b.value); }")
 	cg.writeLine("sk_float sk_float_div(sk_float a, sk_float b) { if (a.__is_null || b.__is_null || b.value == 0.0f) return SK_NULL_float; return sk_float_new(a.value / b.value); }")
+	cg.writeLine("sk_float sk_float_pow(sk_float a, sk_float b) {")
+	cg.writeLine("    if (a.__is_null || b.__is_null) return SK_NULL_float;")
+	cg.writeLine("    return sk_float_new(powf(a.value, b.value));")
+	cg.writeLine("}")
 	cg.writeLine("sk_float sk_float_neg(sk_float a) { if (a.__is_null) return SK_NULL_float; return sk_float_new(-a.value); }")
 	cg.writeLine("sk_bool sk_float_lt(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value < b.value); }")
 	cg.writeLine("sk_bool sk_float_gt(sk_float a, sk_float b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value > b.value); }")
@@ -129,6 +146,10 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("sk_double sk_double_sub(sk_double a, sk_double b) { if (a.__is_null || b.__is_null) return SK_NULL_double; return sk_double_new(a.value - b.value); }")
 	cg.writeLine("sk_double sk_double_mul(sk_double a, sk_double b) { if (a.__is_null || b.__is_null) return SK_NULL_double; return sk_double_new(a.value * b.value); }")
 	cg.writeLine("sk_double sk_double_div(sk_double a, sk_double b) { if (a.__is_null || b.__is_null || b.value == 0.0) return SK_NULL_double; return sk_double_new(a.value / b.value); }")
+	cg.writeLine("sk_double sk_double_pow(sk_double a, sk_double b) {")
+	cg.writeLine("    if (a.__is_null || b.__is_null) return SK_NULL_double;")
+	cg.writeLine("    return sk_double_new(pow(a.value, b.value));")
+	cg.writeLine("}")
 	cg.writeLine("sk_double sk_double_neg(sk_double a) { if (a.__is_null) return SK_NULL_double; return sk_double_new(-a.value); }")
 	cg.writeLine("sk_bool sk_double_lt(sk_double a, sk_double b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value < b.value); }")
 	cg.writeLine("sk_bool sk_double_gt(sk_double a, sk_double b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value > b.value); }")
@@ -755,7 +776,7 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 			cg.writeLine(fmt.Sprintf("%s%s = %s;", indent, ins.Result, ins.Arg1))
 		}
 
-	case "+", "-", "*", "/", "%":
+	case "+", "-", "*", "/", "%", "**":
 		retType := ins.ReturnType
 		if retType == "" {
 			retType = "sk_int"
@@ -773,6 +794,8 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 				fnName = "sk_int_div"
 			case "%":
 				fnName = "sk_int_mod"
+			case "**":
+				fnName = "sk_int_pow"
 			}
 		} else if retType == "sk_float" {
 			switch ins.Op {
@@ -784,6 +807,8 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 				fnName = "sk_float_mul"
 			case "/":
 				fnName = "sk_float_div"
+			case "**":
+				fnName = "sk_float_pow"
 			}
 		} else if retType == "sk_double" {
 			switch ins.Op {
@@ -795,6 +820,8 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 				fnName = "sk_double_mul"
 			case "/":
 				fnName = "sk_double_div"
+			case "**":
+				fnName = "sk_double_pow"
 			}
 		}
 		cg.writeLine(fmt.Sprintf("%s%s %s = %s(%s, %s);", indent, retType, ins.Result, fnName, ins.Arg1, ins.Arg2))

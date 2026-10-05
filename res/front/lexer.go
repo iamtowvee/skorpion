@@ -32,6 +32,7 @@ const (
 	TOKEN_MINUS
 	TOKEN_STAR
 	TOKEN_SLASH
+	TOKEN_POW
 	TOKEN_EQUALS
 	TOKEN_LT
 	TOKEN_GT
@@ -132,6 +133,12 @@ func (l *Lexer) NextToken() Token {
 	case '-':
 		return l.makeToken(TOKEN_MINUS, "-")
 	case '*':
+		if l.peek() == '*' {
+			col := l.col
+			l.pos += 2
+			l.col += 2
+			return Token{Type: TOKEN_POW, Literal: "**", Line: l.line, Column: col}
+		}
 		return l.makeToken(TOKEN_STAR, "*")
 	case '/':
 		return l.makeToken(TOKEN_SLASH, "/")
@@ -487,6 +494,8 @@ func (tt TokenType) String() string {
 		return "*"
 	case TOKEN_SLASH:
 		return "/"
+	case TOKEN_POW:
+		return "**"
 	case TOKEN_EQUALS:
 		return "="
 	case TOKEN_LT:
