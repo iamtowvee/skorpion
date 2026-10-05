@@ -5,6 +5,19 @@
       Copyrights (c) 2026 iamtowvee
   ------------------------------------- */
 
+const VoidCasingError{} = new Error
+
+const VoidMeasurementError{} = new Error 
+const VoidLengthMeasurementError{} = new VoidMeasurementError
+const VoidBytesMeasurementError{} = new VoidMeasurementError
+
+cost VoidActionsError{} = new Error
+const VoidConcatError{} = new VoidActionsError
+
+const VoidLowerizeError{} = new VoidCasingError
+const VoidUpperizeError{} = new VoidCasingError
+const VoidCapitalizeError{} = new VoidCasingError
+
 includeC ~~~
 // UTF-8: длина строки в символах
 size_t __sk__utf8__strlen(const char *s) {
@@ -145,6 +158,9 @@ char* __sk__utf8__change_case(const char *src, int mode) {
 /* === Length === */
 
 int len(string line) {
+  if (line == null) {
+    throw VoidLengthMeasurementError{msg: "Cannot get length 'null'."}
+  }
   includeC ~~~
     size_t len = __sk__utf8__strlen(line);
     int n = (len > INT_MAX) ? -1 : (int)len;
@@ -154,6 +170,9 @@ int len(string line) {
 }
 
 int bytes(string line) {
+  if (line == null) {
+    throw VoidBytesMeasurementError{msg: "Cannot get byte length 'null'."}
+  }
   includeC ~~~
     return strlen(line);
   ~~~
@@ -162,13 +181,19 @@ int bytes(string line) {
 
 /* === Concat === */
 
-string concat(string a, string b) {
+string concat(string a, string b) {{
+  if (a == null || b == null) {
+    throw VoidConcatError{msg: "Cannot concatenate 'null' with string or 'null'."}
+  }
   return a + b
 }
 
 /* === Case === */
 
 string toLowerCase(string line) {
+  if (line == null) {
+    throw VoidLowerizeError{msg: "Unable to convert 'null' to lower case."}
+  }
   includeC ~~~
     return __sk__utf8__change_case(line, 0);
   ~~~
@@ -176,6 +201,9 @@ string toLowerCase(string line) {
 }
 
 string toUpperCase(string line) {
+  if (line == null) {
+    throw VoidUpperizeError{msg: "Unable to convert 'null' to UPPER CASE."}
+  }
   includeC ~~~
     return __sk__utf8__change_case(line, 1);
   ~~~
@@ -183,6 +211,9 @@ string toUpperCase(string line) {
 }
 
 string toCapitalCase(string line) {
+  if (line == null) {
+    throw VoidCapitalizeError{msg: "Unable to convert 'null' to Capital Case."}
+  }
   includeC ~~~
     return __sk__utf8__change_case(line, 2);
   ~~~
