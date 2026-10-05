@@ -5,17 +5,48 @@
       Copyrights (c) 2026 iamtowvee
   ------------------------------------- */
 
+use #std/strings
+
+/* === Errors === */
+
+const RefactorError{} = new Error
+
+const VoidRefactorError{} = new RefactorError
+const CustomRefactorError{} = new const
+
+const VoidToIntRefactorError{} = new VoidRefactorError
+const VoidToBoolRefactorError{} = new VoidRefactorError
+
+const CustomToIntRefactorError{} = new CustomRefactorError
+const CustomToBoolRefactorError{} = new CustomRefactorError
+
+/* === Basic === */
+
 int toInt(any value) {
   int result = 0
   case (type(value)) {
     "int" {
       result = value
     },
-    "int" {
-      result = value
+    "float","double" {
+      result = value.to_int()
     },
-    "int" {
-      result = value
+    "bool" {
+      if (value) {
+        result = 1
+      } else {
+        result = 0
+      }
+    },
+    "void" {
+      result = 0
+    },
+    "arr" {
+      result = value.length
+    },
+    "string" {
+      // TO-DO
+      result = value.to_int()
     },
     _ {
       result = 0
@@ -24,6 +55,157 @@ int toInt(any value) {
   return result
 }
 
-int toBool(any value) {
-  return value.to_int()
+bool toBool(any value) {
+  case (type(value)) {
+    "int","float","double" {
+      if (value > 0) {
+        return true
+      } else {
+        return false
+      }
+    },
+    "bool" {
+      return value
+    },
+    "void" {
+      return false
+    },
+    "arr" {
+      if (value.length > 0) {
+        return true
+      } else {
+        return false
+      }
+    },
+    "string" {
+      if (value.length > 0) {
+        if (value == "true") {
+          return true
+        } else {
+          return false
+        }
+      } else {
+        return false
+      }
+    },
+    _ {
+      return false
+    },
+  }
+}
+
+/* === Strict === */
+
+int toIntStrict(any value) {
+  int result = 0
+  case (type(value)) {
+    "int" {
+      result = value
+    },
+    "float","double" {
+      result = value.to_int()
+    },
+    "bool" {
+      if (value) {
+        result = 1
+      } else {
+        result = 0
+      }
+    },
+    "void" {
+      throw VoidToIntRefactorError{msg: "Cannot convert 'null' to int."}
+    },
+    "arr" {
+      result = value.length
+    },
+    "string" {
+      // TO-DO
+      result = value.to_int()
+    },
+    _ {
+      string line = "Cannot convert type '" + type(value) + "' to int."
+      throw CustomToIntRefactorError{msg: line}
+    },
+  }
+  return result
+}
+
+bool toBoolStrict(any value) {
+  case (type(value)) {
+    "int","float","double" {
+      if (value > 0) {
+        return true
+      } else {
+        return false
+      }
+    },
+    "bool" {
+      return value
+    },
+    "void" {
+      throw VoidToBoolRefactorError{msg: "Cannot convert 'null' to bool."}
+    },
+    "arr" {
+      if (value.length > 0) {
+        return true
+      } else {
+        return false
+      }
+    },
+    "string" {
+      if (value.length > 0) {
+        if (value == "true") {
+          return true
+        } else {
+          return false
+        }
+      } else {
+        return false
+      }
+    },
+    _ {
+      string line = "Cannot convert type '" + type(value) + "' to bool."
+      throw CustomToBoolRefactorError{msg: line}
+    },
+  }
+}
+
+float toFloatStrict(any value) {
+  case (type(value)) {
+    "int","float","double" {
+      r
+    },
+    "bool" {
+      if (value) {
+        return 1.00f
+      } else {
+        return 0.00f
+      }
+    },
+    "void" {
+      throw VoidToBoolRefactorError{msg: "Cannot convert 'null' to bool."}
+    },
+    "arr" {
+      if (value.length > 0) {
+        return true
+      } else {
+        return false
+      }
+    },
+    "string" {
+      if (value.length > 0) {
+        if (value == "true") {
+          return true
+        } else {
+          return false
+        }
+      } else {
+        return false
+      }
+    },
+    _ {
+      string line = "Cannot convert type '" + type(value) + "' to float."
+      throw CustomToBoolRefactorError{msg: line}
+    },
+  }
 }
