@@ -11,7 +11,7 @@ const VoidMeasurementError{} = new Error
 const VoidLengthMeasurementError{} = new VoidMeasurementError
 const VoidBytesMeasurementError{} = new VoidMeasurementError
 
-cost VoidActionsError{} = new Error
+const VoidActionsError{} = new Error
 const VoidConcatError{} = new VoidActionsError
 
 const VoidLowerizeError{} = new VoidCasingError
