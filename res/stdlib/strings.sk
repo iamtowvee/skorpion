@@ -181,7 +181,7 @@ int bytes(string line) {
 
 /* === Concat === */
 
-string concat(string a, string b) {{
+string concat(string a, string b) {
   if (a == null || b == null) {
     throw VoidConcatError{msg: "Cannot concatenate 'null' with string or 'null'."}
   }
