@@ -723,7 +723,6 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 			exprResult := p.processExpression(decl.Expr, irFn)
 
 			if exprType == "any" {
-				// Уже sk_any
 				irFn.Instructions = append(irFn.Instructions, IRInstruction{
 					Op:     "=",
 					Result: decl.Name,
@@ -766,7 +765,6 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 		}
 		irFn.ArrayElemTypes[decl.Name] = decl.ElemType
 
-		// Регистрация в cleanup ДО инициализации (чтобы при throw в инициализаторе — освободить)
 		if p.TryDepth > 0 {
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op:     "try_register",
@@ -778,7 +776,6 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 		if decl.Expr != nil {
 			exprType := p.getExprType(decl.Expr, irFn)
 
-			// null (void) → SK_NULL_arr
 			if exprType == "void" {
 				irFn.Instructions = append(irFn.Instructions, IRInstruction{
 					Op:     "=",
@@ -795,6 +792,8 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 				Arg1:   exprResult,
 			})
 		} else {
+			// Без инициализатора — инлайним sk_array_new в sk_arr_new,
+			// чтобы GC не освободил промежуточный sk_array*
 			var elemType int = 5
 			elemSize := "sizeof(sk_any)"
 			if decl.ElemType != "" {
@@ -824,20 +823,11 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 					}
 				}
 			}
-			tmpVar := p.newTemp()
-			irFn.Locals = append(irFn.Locals, "sk_array* "+tmpVar)
-			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:         "call",
-				Result:     tmpVar,
-				Arg1:       "sk_array_new",
-				Arg2:       fmt.Sprintf("%s, %d", elemSize, elemType),
-				ReturnType: "sk_array*",
-			})
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op:         "call",
 				Result:     decl.Name,
 				Arg1:       "sk_arr_new",
-				Arg2:       tmpVar,
+				Arg2:       fmt.Sprintf("sk_array_new(%s, %d)", elemSize, elemType),
 				ReturnType: "sk_arr",
 			})
 		}
@@ -851,7 +841,6 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 		irFn.VarTypes[decl.Name] = decl.Type
 	}
 
-	// Регистрация строк
 	if p.TryDepth > 0 && decl.Type == "string" {
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:     "try_register",
@@ -860,7 +849,6 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 		})
 	}
 
-	// Регистрация any
 	if p.TryDepth > 0 && decl.Type == "any" {
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:     "try_register",
@@ -872,10 +860,8 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 	if decl.Expr != nil {
 		exprType := p.getExprType(decl.Expr, irFn)
 
-		// null (void) → SK_NULL_<decl.Type>
 		if exprType == "void" {
 			if decl.Type == "void" || decl.Type == "any" {
-				// Это должно быть отловлено семантикой
 				return
 			}
 			nullMacro := "SK_NULL_" + strings.TrimPrefix(cType, "sk_")
@@ -2257,20 +2243,13 @@ func (p *Pipeline) processArrayAdd(add *front.ArrayAdd, irFn *IRFunction) string
 	result := p.newTemp()
 	irFn.Locals = append(irFn.Locals, "sk_arr "+result)
 
-	copyTmp := p.newTemp()
-	irFn.Locals = append(irFn.Locals, "sk_array* "+copyTmp)
-	irFn.Instructions = append(irFn.Instructions, IRInstruction{
-		Op:         "call",
-		Result:     copyTmp,
-		Arg1:       "sk_array_deep_copy",
-		Arg2:       add.Name + ".value",
-		ReturnType: "sk_array*",
-	})
+	// Инлайним sk_array_deep_copy в sk_arr_new,
+	// чтобы GC не освободил промежуточный sk_array*
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:         "call",
 		Result:     result,
 		Arg1:       "sk_arr_new",
-		Arg2:       copyTmp,
+		Arg2:       fmt.Sprintf("sk_array_deep_copy(%s.value)", add.Name),
 		ReturnType: "sk_arr",
 	})
 
@@ -2286,20 +2265,13 @@ func (p *Pipeline) processArrayAddName(name string, elemExpr front.Node, irFn *I
 	result := p.newTemp()
 	irFn.Locals = append(irFn.Locals, "sk_arr "+result)
 
-	copyTmp := p.newTemp()
-	irFn.Locals = append(irFn.Locals, "sk_array* "+copyTmp)
-	irFn.Instructions = append(irFn.Instructions, IRInstruction{
-		Op:         "call",
-		Result:     copyTmp,
-		Arg1:       "sk_array_deep_copy",
-		Arg2:       name + ".value",
-		ReturnType: "sk_array*",
-	})
+	// Инлайним sk_array_deep_copy в sk_arr_new,
+	// чтобы GC не освободил промежуточный sk_array*
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:         "call",
 		Result:     result,
 		Arg1:       "sk_arr_new",
-		Arg2:       copyTmp,
+		Arg2:       fmt.Sprintf("sk_array_deep_copy(%s.value)", name),
 		ReturnType: "sk_arr",
 	})
 
@@ -2693,20 +2665,13 @@ func (p *Pipeline) processToArr(call *front.CallExpr, irFn *IRFunction) string {
 	result := p.newTemp()
 	irFn.Locals = append(irFn.Locals, "sk_arr "+result)
 
-	tmpArr := p.newTemp()
-	irFn.Locals = append(irFn.Locals, "sk_array* "+tmpArr)
-	irFn.Instructions = append(irFn.Instructions, IRInstruction{
-		Op:         "call",
-		Result:     tmpArr,
-		Arg1:       "sk_array_new",
-		Arg2:       "sizeof(sk_any), 5",
-		ReturnType: "sk_array*",
-	})
+	// Инлайним sk_array_new в sk_arr_new,
+	// чтобы GC не освободил промежуточный sk_array*
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:         "call",
 		Result:     result,
 		Arg1:       "sk_arr_new",
-		Arg2:       tmpArr,
+		Arg2:       "sk_array_new(sizeof(sk_any), 5)",
 		ReturnType: "sk_arr",
 	})
 
@@ -3023,9 +2988,6 @@ func (p *Pipeline) processArrayLiteralTyped(lit *front.ArrayLiteral, expectedEle
 	result := p.newTemp()
 	irFn.Locals = append(irFn.Locals, "sk_arr "+result)
 
-	tmpArr := p.newTemp()
-	irFn.Locals = append(irFn.Locals, "sk_array* "+tmpArr)
-
 	var elemType int
 	var elemSize string
 
@@ -3055,18 +3017,13 @@ func (p *Pipeline) processArrayLiteralTyped(lit *front.ArrayLiteral, expectedEle
 		}
 	}
 
-	irFn.Instructions = append(irFn.Instructions, IRInstruction{
-		Op:         "call",
-		Result:     tmpArr,
-		Arg1:       "sk_array_new",
-		Arg2:       fmt.Sprintf("%s, %d", elemSize, elemType),
-		ReturnType: "sk_array*",
-	})
+	// Инлайним sk_array_new в sk_arr_new,
+	// чтобы GC не освободил промежуточный sk_array*
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:         "call",
 		Result:     result,
 		Arg1:       "sk_arr_new",
-		Arg2:       tmpArr,
+		Arg2:       fmt.Sprintf("sk_array_new(%s, %d)", elemSize, elemType),
 		ReturnType: "sk_arr",
 	})
 
@@ -3095,7 +3052,6 @@ func (p *Pipeline) processArrayLiteralTyped(lit *front.ArrayLiteral, expectedEle
 				pushArrayElem(irFn, result, "any", tempVar)
 			}
 		} else {
-			// Явный скалярный тип — null превращаем в SK_NULL_<тип>
 			if p.getExprType(elem, irFn) == "void" {
 				cType := p.typeToC(expectedElemType)
 				nullMacro := "SK_NULL_" + strings.TrimPrefix(cType, "sk_")
@@ -3123,20 +3079,13 @@ func (p *Pipeline) processRange(r *front.RangeExpr, irFn *IRFunction) string {
 	result := p.newTemp()
 	irFn.Locals = append(irFn.Locals, "sk_arr "+result)
 
-	tmpArr := p.newTemp()
-	irFn.Locals = append(irFn.Locals, "sk_array* "+tmpArr)
-	irFn.Instructions = append(irFn.Instructions, IRInstruction{
-		Op:         "call",
-		Result:     tmpArr,
-		Arg1:       "sk_range_new",
-		Arg2:       fmt.Sprintf("%s.value, %s.value", start, end),
-		ReturnType: "sk_array*",
-	})
+	// Инлайним sk_range_new в sk_arr_new,
+	// чтобы GC не освободил промежуточный sk_array*
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:         "call",
 		Result:     result,
 		Arg1:       "sk_arr_new",
-		Arg2:       tmpArr,
+		Arg2:       fmt.Sprintf("sk_range_new(%s.value, %s.value)", start, end),
 		ReturnType: "sk_arr",
 	})
 
@@ -3324,8 +3273,6 @@ func (p *Pipeline) processFormatExpr(fe *front.FormatExpr, irFn *IRFunction) str
 	return expr
 }
 
-// pushArrayElem добавляет элемент в массив через правильную deep-функцию
-// в зависимости от типа элемента.
 func pushArrayElem(irFn *IRFunction, arrVar string, elemType string, elemVal string) {
 	var fnName string
 	var arg string
@@ -3340,9 +3287,30 @@ func pushArrayElem(irFn *IRFunction, arrVar string, elemType string, elemVal str
 		fnName = "sk_array_push_arr"
 		arg = arrVar + ".value, " + elemVal
 	} else {
-		// int/float/double/bool — копия по значению
+		// int/float/double/bool — через временную переменную,
+		// потому что &sk_int_new(1) — не lvalue
+		cType := ""
+		switch elemType {
+		case "int":
+			cType = "sk_int"
+		case "float":
+			cType = "sk_float"
+		case "double":
+			cType = "sk_double"
+		case "bool":
+			cType = "sk_bool"
+		default:
+			cType = "sk_int"
+		}
+		tmp := fmt.Sprintf("_tmp_push_%d", len(irFn.Locals))
+		irFn.Locals = append(irFn.Locals, cType+" "+tmp)
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "=",
+			Result: tmp,
+			Arg1:   elemVal,
+		})
 		fnName = "sk_array_push"
-		arg = arrVar + ".value, &" + elemVal
+		arg = arrVar + ".value, &" + tmp
 	}
 
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{

@@ -20,6 +20,9 @@ var STRINGS_SK string
 //go:embed math.sk
 var MATH_SK string
 
+//go:embed arrays.sk
+var ARRAYS_SK string
+
 var StdLib = map[string]string{
 	"std/io":      IO_SK,
 	"std/os":      OS_SK,
@@ -27,6 +30,7 @@ var StdLib = map[string]string{
 	"std/cfg":     CFG_SK,
 	"std/strings": STRINGS_SK,
 	"std/math":    MATH_SK,
+	"std/arrays":  ARRAYS_SK,
 }
 
 func GetModule(path string) (string, bool) {
