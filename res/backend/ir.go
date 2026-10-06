@@ -14,6 +14,7 @@ type IRInstruction struct {
 	ReturnType string
 	Line       int
 	Column     int
+	File       string
 	Metadata   map[string]interface{}
 }
 

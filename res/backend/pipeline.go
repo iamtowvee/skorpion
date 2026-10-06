@@ -1666,9 +1666,12 @@ func (p *Pipeline) processCall(call *front.CallExpr, irFn *IRFunction) {
 	}
 
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
-		Op:   "call",
-		Arg1: p.cNameForFunc(funcName),
-		Arg2: argsStr,
+		Op:     "call",
+		Arg1:   p.cNameForFunc(funcName),
+		Arg2:   argsStr,
+		Line:   call.GetLine(),
+		Column: call.GetColumn(),
+		File:   irFn.File,
 	})
 }
 
@@ -1770,6 +1773,9 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 		Arg1:       p.cNameForFunc(simpleName),
 		Arg2:       argsJoined,
 		ReturnType: returnType,
+		Line:       call.GetLine(),
+		Column:     call.GetColumn(),
+		File:       irFn.File,
 	})
 
 	return result
@@ -3130,6 +3136,9 @@ func (p *Pipeline) processCallRange(call *front.CallRangeExpr, irFn *IRFunction)
 		Arg1:       p.cNameForFunc(funcName),
 		Arg2:       argsStr,
 		ReturnType: returnType,
+		Line:       call.GetLine(),
+		Column:     call.GetColumn(),
+		File:       irFn.File,
 	})
 
 	return result

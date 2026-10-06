@@ -8,6 +8,30 @@
 #include <math.h>
 #include <limits.h>
 #include <ctype.h>
+// ==== Call stack for panic reporting ====
+typedef struct {
+    const char* file;
+    int line;
+    int col;
+} SkCallFrame;
+
+#define SK_CALL_STACK_MAX 256
+SkCallFrame sk_call_stack[SK_CALL_STACK_MAX];
+int sk_call_stack_top = 0;
+
+static inline void sk_call_push(const char* file, int line, int col) {
+    if (sk_call_stack_top < SK_CALL_STACK_MAX) {
+        sk_call_stack[sk_call_stack_top].file = file;
+        sk_call_stack[sk_call_stack_top].line = line;
+        sk_call_stack[sk_call_stack_top].col = col;
+        sk_call_stack_top++;
+    }
+}
+
+static inline void sk_call_pop(void) {
+    if (sk_call_stack_top > 0) sk_call_stack_top--;
+}
+
 
 // Skorpion type definitions
 
@@ -591,7 +615,13 @@ void sk_error_free(void* err) {
 void sk_throw(void* err, const char* file, int line, int col) {
     if (sk_try_stack == NULL) {
         const char* __type = *(const char**)err;
-        fprintf(stderr, "Panicked with error (%s) at %s:%d:%d\n", __type, file, line, col);
+        if (sk_call_stack_top > 0) {
+            SkCallFrame* top = &sk_call_stack[sk_call_stack_top - 1];
+            fprintf(stderr, "Panicked with error (%s) at %s:%d:%d (thrown from %s:%d:%d)\n",
+                __type, top->file, top->line, top->col, file, line, col);
+        } else {
+            fprintf(stderr, "Panicked with error (%s) at %s:%d:%d\n", __type, file, line, col);
+        }
         exit(1);
     }
     SkTryFrame* frame = sk_try_stack;
@@ -728,60 +758,108 @@ int main(int argc, char** argv) {
     _tmp_push_6 = sk_int_new(5);
     sk_array_push(t1.value, &_tmp_push_6);
     nums = t1;
+    sk_call_push("main.sk", 7, 12);
     t2 = __sk__len(nums);
+    sk_call_pop();
     t3 = any_int(t2);
+    sk_call_push("main.sk", 7, 5);
     __sk__sendln(t3);
+    sk_call_pop();
+    sk_call_push("main.sk", 8, 12);
     t4 = __sk__len(nums);
+    sk_call_pop();
     t5 = any_int(t4);
+    sk_call_push("main.sk", 8, 5);
     __sk__sendln(t5);
+    sk_call_pop();
     t6 = any_int(sk_int_new(3));
+    sk_call_push("main.sk", 10, 12);
     t7 = __sk__find(nums, t6);
+    sk_call_pop();
     t8 = any_int(t7);
+    sk_call_push("main.sk", 10, 5);
     __sk__sendln(t8);
+    sk_call_pop();
     t9 = any_int(sk_int_new(99));
+    sk_call_push("main.sk", 11, 12);
     t10 = __sk__find(nums, t9);
+    sk_call_pop();
     t11 = any_int(t10);
+    sk_call_push("main.sk", 11, 5);
     __sk__sendln(t11);
+    sk_call_pop();
+    sk_call_push("main.sk", 14, 18);
     t12 = __sk__pop(nums);
+    sk_call_pop();
     popped = t12;
+    sk_call_push("main.sk", 15, 18);
     t13 = __sk__erase(nums, sk_int_new(2));
+    sk_call_pop();
     erased = t13;
     t14 = any_int(sk_int_new(6));
+    sk_call_push("main.sk", 16, 18);
     t15 = __sk__add(nums, t14);
+    sk_call_pop();
     added = t15;
     t16 = any_int(sk_int_new(99));
+    sk_call_push("main.sk", 17, 18);
     t17 = __sk__insert(nums, sk_int_new(2), t16);
+    sk_call_pop();
     ins = t17;
     t18 = any_int(sk_int_new(0));
+    sk_call_push("main.sk", 18, 18);
     t19 = __sk__proem(nums, t18);
+    sk_call_pop();
     pr = t19;
+    sk_call_push("main.sk", 19, 18);
     t20 = __sk__cut(nums, sk_int_new(1), sk_int_new(5));
+    sk_call_pop();
     cutd = t20;
     t21 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
     t22 = any_int(sk_int_new(6));
     sk_array_push_any(t21.value, t22);
     t23 = any_int(sk_int_new(7));
     sk_array_push_any(t21.value, t23);
+    sk_call_push("main.sk", 20, 18);
     t24 = __sk__combine(nums, t21);
+    sk_call_pop();
     comb = t24;
+    sk_call_push("main.sk", 21, 19);
     t25 = __sk__slice(nums, sk_int_new(2));
+    sk_call_pop();
     sl = t25;
     t26 = any_arr(popped);
+    sk_call_push("main.sk", 23, 5);
     __sk__sendln(t26);
+    sk_call_pop();
     t27 = any_arr(erased);
+    sk_call_push("main.sk", 24, 5);
     __sk__sendln(t27);
+    sk_call_pop();
     t28 = any_arr(added);
+    sk_call_push("main.sk", 25, 5);
     __sk__sendln(t28);
+    sk_call_pop();
     t29 = any_arr(ins);
+    sk_call_push("main.sk", 26, 5);
     __sk__sendln(t29);
+    sk_call_pop();
     t30 = any_arr(pr);
+    sk_call_push("main.sk", 27, 5);
     __sk__sendln(t30);
+    sk_call_pop();
     t31 = any_arr(cutd);
+    sk_call_push("main.sk", 28, 5);
     __sk__sendln(t31);
+    sk_call_pop();
     t32 = any_arr(comb);
+    sk_call_push("main.sk", 29, 5);
     __sk__sendln(t32);
+    sk_call_pop();
     t33 = any_arr(sl);
+    sk_call_push("main.sk", 30, 5);
     __sk__sendln(t33);
+    sk_call_pop();
     return 0;
 }
 
@@ -814,7 +892,9 @@ void __sk__sendln(sk_any msg) {
     t34 = any_to_string(msg);
     t35 = sk_string_concat(t34, sk_string_new("\n"));
     free(t34.value);
+    sk_call_push("<builtin:std/io>", 34, 5);
     __sk__std_io_send(t35);
+    sk_call_pop();
     free(t35.value);
     return;
 }
@@ -823,7 +903,9 @@ void __sk__sendf(sk_any msg) {
     sk_string t36;
 
     t36 = any_to_string(msg);
+    sk_call_push("<builtin:std/io>", 38, 5);
     __sk__std_io_send(t36);
+    sk_call_pop();
     free(t36.value);
     return;
 }
@@ -831,7 +913,9 @@ void __sk__sendf(sk_any msg) {
 sk_string __sk__input(sk_string prefix) {
     sk_string t37;
 
+    sk_call_push("<builtin:std/io>", 42, 12);
     t37 = __sk__std_io_input(prefix);
+    sk_call_pop();
     return t37;
 }
 

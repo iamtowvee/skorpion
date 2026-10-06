@@ -10,6 +10,7 @@ void main(arr args) {
     sendln(arrays.find(nums, 3))        // 2
     sendln(arrays.find(nums, 99))       // -1
 
+
     arr popped = arrays.pop(nums)       // [1, 2, 3, 4]
     arr erased = arrays.erase(nums, 2)  // [1, 2, 4, 5]
     arr added  = arrays.add(nums, 6)    // [1, 2, 3, 4, 5, 6]

@@ -30,6 +30,31 @@ func (cg *CodeGenerator) Generate() string {
 		cg.writeLine(fmt.Sprintf("#include %s", inc))
 	}
 
+	cg.writeLine("// ==== Call stack for panic reporting ====")
+	cg.writeLine("typedef struct {")
+	cg.writeLine("    const char* file;")
+	cg.writeLine("    int line;")
+	cg.writeLine("    int col;")
+	cg.writeLine("} SkCallFrame;")
+	cg.writeLine("")
+	cg.writeLine("#define SK_CALL_STACK_MAX 256")
+	cg.writeLine("SkCallFrame sk_call_stack[SK_CALL_STACK_MAX];")
+	cg.writeLine("int sk_call_stack_top = 0;")
+	cg.writeLine("")
+	cg.writeLine("static inline void sk_call_push(const char* file, int line, int col) {")
+	cg.writeLine("    if (sk_call_stack_top < SK_CALL_STACK_MAX) {")
+	cg.writeLine("        sk_call_stack[sk_call_stack_top].file = file;")
+	cg.writeLine("        sk_call_stack[sk_call_stack_top].line = line;")
+	cg.writeLine("        sk_call_stack[sk_call_stack_top].col = col;")
+	cg.writeLine("        sk_call_stack_top++;")
+	cg.writeLine("    }")
+	cg.writeLine("}")
+	cg.writeLine("")
+	cg.writeLine("static inline void sk_call_pop(void) {")
+	cg.writeLine("    if (sk_call_stack_top > 0) sk_call_stack_top--;")
+	cg.writeLine("}")
+	cg.writeLine("")
+
 	cg.writeLine("")
 	cg.writeLine("// Skorpion type definitions")
 	cg.writeLine("")
@@ -662,7 +687,13 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("void sk_throw(void* err, const char* file, int line, int col) {")
 	cg.writeLine("    if (sk_try_stack == NULL) {")
 	cg.writeLine("        const char* __type = *(const char**)err;")
-	cg.writeLine("        fprintf(stderr, \"Panicked with error (%s) at %s:%d:%d\\n\", __type, file, line, col);")
+	cg.writeLine("        if (sk_call_stack_top > 0) {")
+	cg.writeLine("            SkCallFrame* top = &sk_call_stack[sk_call_stack_top - 1];")
+	cg.writeLine("            fprintf(stderr, \"Panicked with error (%s) at %s:%d:%d (thrown from %s:%d:%d)\\n\",")
+	cg.writeLine("                __type, top->file, top->line, top->col, file, line, col);")
+	cg.writeLine("        } else {")
+	cg.writeLine("            fprintf(stderr, \"Panicked with error (%s) at %s:%d:%d\\n\", __type, file, line, col);")
+	cg.writeLine("        }")
 	cg.writeLine("        exit(1);")
 	cg.writeLine("    }")
 	cg.writeLine("    SkTryFrame* frame = sk_try_stack;")
@@ -930,12 +961,28 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 		cg.writeLine(fmt.Sprintf("%ssk_array_push(%s.value, &%s);", indent, ins.Result, ins.Arg2))
 
 	case "call":
+		funcName := ins.Arg1
+		needStackFrame := ins.Line > 0 &&
+			funcName != "sk_throw" &&
+			funcName != "sk_try_push" &&
+			funcName != "sk_try_pop" &&
+			funcName != "sk_try_register" &&
+			funcName != "sk_try_cleanup" &&
+			funcName != "sk_error_free"
+
+		if needStackFrame {
+			fileStr := "NULL"
+			if ins.File != "" {
+				fileStr = fmt.Sprintf("%q", ins.File)
+			}
+			cg.writeLine(fmt.Sprintf("%ssk_call_push(%s, %d, %d);", indent, fileStr, ins.Line, ins.Column))
+		}
+
 		if ins.Result != "" {
 			returnType := ins.ReturnType
 			if returnType == "" {
 				returnType = "sk_string"
 			}
-
 			if returnType == "void" {
 				cg.writeLine(fmt.Sprintf("%s%s(%s);", indent, ins.Arg1, ins.Arg2))
 			} else {
@@ -943,6 +990,10 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 			}
 		} else {
 			cg.writeLine(fmt.Sprintf("%s%s(%s);", indent, ins.Arg1, ins.Arg2))
+		}
+
+		if needStackFrame {
+			cg.writeLine(fmt.Sprintf("%ssk_call_pop();", indent))
 		}
 
 	case "if":
