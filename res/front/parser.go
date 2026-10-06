@@ -165,6 +165,15 @@ func (p *Parser) Parse() *Program {
 			break
 		}
 
+		if p.peek.Type == TOKEN_INCLUDE_C {
+			inc := p.parseIncludeC()
+			if inc != nil {
+				prog.GlobalIncludeC = append(prog.GlobalIncludeC, inc.Code)
+				debug.Debug("Global includeC parsed: %d bytes", len(inc.Code))
+			}
+			continue
+		}
+
 		if p.isType(p.peek) {
 			debug.Debug("Found type: '%s', parsing function...", p.peek.Literal)
 			fn := p.parseFunction()

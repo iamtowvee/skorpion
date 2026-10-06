@@ -1,28 +1,20 @@
 use #std/io
+use std/strings
 
-const A{} = new Error
-
-T<int,float,double> powl(T<int,float,double> a, T<int,float,double> b) {
-    return a ** b
-}
-
-void main (arr args) {
-    double a = 3.14^4f      // value=3.14, prec=4
-    double b = a + 1.0      // value=4.14, prec=4 (max(4, -1) = 4)
-    sendln(b)               // "4.1400"
-
-    double c = 3.14^2f + 3.14^4f  // prec = max(2, 4) = 4
-    sendln(c)               // "6.2800"
-
-    double d = 3.14^2f + 1.0      // prec = 2
-    sendln(d)               // "4.14"
-
-    double e = 3.14^2f * 2        // int 2 → double 2.0, prec = 2
-    sendln(e)               // "6.28"
-
-    double f = -3.14^2f     // -(3.14^2f) = -3.14, prec = 2
-    sendln(f)               // "-3.14"
-
-    sendln(powl(4.3, 5))
-    sendln($args.length + $args)
+void main(arr args) {
+    string s = "Привет, мир!"
+    
+    sendln(strings.has(s, "мир"))           // true
+    sendln(strings.has(s, "Мир"))           // false (регистрозависимо)
+    sendln(strings.has(s, "кот"))           // false
+    
+    sendln(strings.startWith(s, "Прив"))    // true
+    sendln(strings.startWith(s, "вет"))     // false
+    
+    sendln(strings.endWith(s, "мир!"))      // true
+    sendln(strings.endWith(s, "!"))         // true
+    sendln(strings.endWith(s, "мир"))       // false
+    
+    // Также работает через точку как метод
+    sendln(s.has("!"))                      // true
 }

@@ -47,6 +47,10 @@ struct sk_array {
     int elem_type;
 };
 
+// Skorpion CLI args
+int __sk__argc = 0;
+char** __sk__argv = NULL;
+
 sk_int sk_int_new(int v) { sk_int r; r.value = v; r.__is_null = 0; return r; }
 sk_float sk_float_new(float v) { sk_float r; r.value = v; r.__is_null = 0; r.prec = -1; return r; }
 sk_double sk_double_new(double v) { sk_double r; r.value = v; r.__is_null = 0; r.prec = -1; return r; }
@@ -499,10 +503,70 @@ typedef struct SkError {
     sk_string msg;
 } SkError;
 
-typedef struct A {
+typedef struct VoidCasingError {
     const char* __type;
     sk_string msg;
-} A;
+} VoidCasingError;
+
+typedef struct VoidMeasurementError {
+    const char* __type;
+    sk_string msg;
+} VoidMeasurementError;
+
+typedef struct VoidLengthMeasurementError {
+    const char* __type;
+    sk_string msg;
+} VoidLengthMeasurementError;
+
+typedef struct VoidBytesMeasurementError {
+    const char* __type;
+    sk_string msg;
+} VoidBytesMeasurementError;
+
+typedef struct VoidActionsError {
+    const char* __type;
+    sk_string msg;
+} VoidActionsError;
+
+typedef struct VoidConcatError {
+    const char* __type;
+    sk_string msg;
+} VoidConcatError;
+
+typedef struct VoidLowerizeError {
+    const char* __type;
+    sk_string msg;
+} VoidLowerizeError;
+
+typedef struct VoidUpperizeError {
+    const char* __type;
+    sk_string msg;
+} VoidUpperizeError;
+
+typedef struct VoidCapitalizeError {
+    const char* __type;
+    sk_string msg;
+} VoidCapitalizeError;
+
+typedef struct VoidSearchError {
+    const char* __type;
+    sk_string msg;
+} VoidSearchError;
+
+typedef struct VoidHasError {
+    const char* __type;
+    sk_string msg;
+} VoidHasError;
+
+typedef struct VoidStartWithError {
+    const char* __type;
+    sk_string msg;
+} VoidStartWithError;
+
+typedef struct VoidEndWithError {
+    const char* __type;
+    sk_string msg;
+} VoidEndWithError;
 
 typedef struct SkCleanup {
     void** ptr;
@@ -595,102 +659,208 @@ int sk_error_type_match(const char* actual, const char* expected) {
     return actual[len] == '\0' || actual[len] == '.';
 }
 
+// Inline C code
+// UTF-8: длина строки в символах
+size_t __sk__utf8__strlen(const char *s) {
+    size_t count = 0;
+    while (*s) {
+        if ((*s & 0xC0) != 0x80) count++;
+        s++;
+    }
+    return count;
+}
+
+// UTF-8: декодирование одного символа
+// Возвращает codepoint, а через *len — длину в байтах
+unsigned int __sk__utf8__decode(const char *s, int *len) {
+    unsigned char c = (unsigned char)s[0];
+    if (c < 0x80) { *len = 1; return c; }
+    if ((c & 0xE0) == 0xC0) {
+        *len = 2;
+        return ((c & 0x1F) << 6) | (s[1] & 0x3F);
+    }
+    if ((c & 0xF0) == 0xE0) {
+        *len = 3;
+        return ((c & 0x0F) << 12) | ((s[1] & 0x3F) << 6) | (s[2] & 0x3F);
+    }
+    if ((c & 0xF8) == 0xF0) {
+        *len = 4;
+        return ((c & 0x07) << 18) | ((s[1] & 0x3F) << 12) | ((s[2] & 0x3F) << 6) | (s[3] & 0x3F);
+    }
+    *len = 1;
+    return c;
+}
+
+// UTF-8: кодирование codepoint в буфер
+// Возвращает длину в байтах
+int __sk__utf8__encode(unsigned int cp, char *out) {
+    if (cp < 0x80) {
+        out[0] = (char)cp;
+        return 1;
+    }
+    if (cp < 0x800) {
+        out[0] = (char)(0xC0 | (cp >> 6));
+        out[1] = (char)(0x80 | (cp & 0x3F));
+        return 2;
+    }
+    if (cp < 0x10000) {
+        out[0] = (char)(0xE0 | (cp >> 12));
+        out[1] = (char)(0x80 | ((cp >> 6) & 0x3F));
+        out[2] = (char)(0x80 | (cp & 0x3F));
+        return 3;
+    }
+    out[0] = (char)(0xF0 | (cp >> 18));
+    out[1] = (char)(0x80 | ((cp >> 12) & 0x3F));
+    out[2] = (char)(0x80 | ((cp >> 6) & 0x3F));
+    out[3] = (char)(0x80 | (cp & 0x3F));
+    return 4;
+}
+
+// Приведение одного codepoint к верхнему регистру
+unsigned int __sk__utf8__to_upper(unsigned int cp) {
+    if (cp < 0x80) return (unsigned int)toupper((int)cp);
+    if (cp >= 0x430 && cp <= 0x44F) return cp - 0x20;
+    if (cp == 0x451) return 0x401;
+    if (cp >= 0xE0 && cp <= 0xFE && cp != 0xF7) return cp - 0x20;
+    if (cp == 0xFF) return 0x178;
+    if (cp >= 0x3B1 && cp <= 0x3C9 && cp != 0x3C2) return cp - 0x20;
+    if (cp == 0x3C2) return 0x3A3;
+    return cp;
+}
+
+// Приведение одного codepoint к нижнему регистру
+unsigned int __sk__utf8__to_lower(unsigned int cp) {
+    if (cp < 0x80) return (unsigned int)tolower((int)cp);
+    if (cp >= 0x410 && cp <= 0x42F) return cp + 0x20;
+    if (cp == 0x401) return 0x451;
+    if (cp >= 0xC0 && cp <= 0xDE && cp != 0xD7) return cp + 0x20;
+    if (cp == 0x178) return 0xFF;
+    if (cp >= 0x391 && cp <= 0x3A9) return cp + 0x20;
+    return cp;
+}
+
+// Общая функция изменения регистра
+char* __sk__utf8__change_case(const char *src, int mode) {
+    size_t src_len = strlen(src);
+    char *out = malloc(src_len * 4 + 1);
+    if (!out) return NULL;
+
+    size_t i = 0, o = 0;
+    int word_start = 1;
+
+    while (src[i]) {
+        int char_len = 0;
+        unsigned int cp = __sk__utf8__decode(&src[i], &char_len);
+
+        unsigned int new_cp = cp;
+        switch (mode) {
+            case 0: new_cp = __sk__utf8__to_lower(cp); break;
+            case 1: new_cp = __sk__utf8__to_upper(cp); break;
+            case 2:
+                if (word_start) new_cp = __sk__utf8__to_upper(cp);
+                else new_cp = __sk__utf8__to_lower(cp);
+                word_start = (cp == ' ' || cp == '\t' || cp == '\n' ||
+                              cp == '\r' || cp == '.' || cp == ',' ||
+                              cp == '!' || cp == '?' || cp == ';' ||
+                              cp == ':' || cp == '-' || cp == '(' ||
+                              cp == ')' || cp == '[' || cp == ']');
+                break;
+        }
+
+        o += __sk__utf8__encode(new_cp, &out[o]);
+        i += char_len;
+    }
+
+    out[o] = '\0';
+    return out;
+}
+
+// Поиск подстроки (байтовый, но для UTF-8 корректный,
+// т.к. границы codepoint в UTF-8 не пересекаются)
+int __sk__str_find(const char *haystack, const char *needle) {
+    const char *p = strstr(haystack, needle);
+    if (!p) return -1;
+    return (int)(p - haystack);
+}
+
+
+
 // Function prototypes
-sk_any __sk__powl(sk_any a, sk_any b);
 void __sk__std_io_send(sk_string line);
 sk_string __sk__std_io_input(sk_string prompt);
 void __sk__sendln(sk_any msg);
 void __sk__sendf(sk_any msg);
 sk_string __sk__input(sk_string prefix);
-
-sk_any __sk__powl(sk_any a, sk_any b) {
-    sk_any t1;
-
-    t1 = sk_any_pow(a, b);
-    return t1;
-}
+sk_int __sk__len(sk_string line);
+sk_int __sk__bytes(sk_string line);
+sk_string __sk__concat(sk_string a, sk_string b);
+sk_string __sk__toLowerCase(sk_string line);
+sk_string __sk__toUpperCase(sk_string line);
+sk_string __sk__toCapitalCase(sk_string line);
+sk_bool __sk__has(sk_string line, sk_string pattern);
+sk_bool __sk__startWith(sk_string line, sk_string pattern);
+sk_bool __sk__endWith(sk_string line, sk_string pattern);
 
 int main(int argc, char** argv) {
+    __sk__argc = argc;
+    __sk__argv = argv;
     (void)argc;
     (void)argv;
     sk_array* args__arr = sk_array_new(sizeof(sk_string), 1);
-    for (int i = 0; i < argc; i++) {
+    for (int i = 1; i < argc; i++) {
         sk_string s = sk_string_new(argv[i]);
         sk_array_push(args__arr, &s);
     }
     sk_arr args = sk_arr_new(args__arr);
 
-    sk_double a;
-    sk_double t2;
-    sk_double b;
-    sk_double t3;
+    sk_string s;
+    sk_bool t1;
+    sk_any t2;
+    sk_bool t3;
     sk_any t4;
-    sk_double c;
-    sk_double t5;
-    sk_double t6;
-    sk_double t7;
+    sk_bool t5;
+    sk_any t6;
+    sk_bool t7;
     sk_any t8;
-    sk_double d;
-    sk_double t9;
-    sk_double t10;
-    sk_any t11;
-    sk_double e;
-    sk_double t12;
-    sk_double t13;
-    sk_double t14;
-    sk_any t15;
-    sk_double f;
-    sk_double t16;
-    sk_any t17;
+    sk_bool t9;
+    sk_any t10;
+    sk_bool t11;
+    sk_any t12;
+    sk_bool t13;
+    sk_any t14;
+    sk_bool t15;
+    sk_any t16;
+    sk_bool t17;
     sk_any t18;
-    sk_any t19;
-    sk_any t20;
-    sk_int t21;
-    sk_string t22;
-    sk_string t23;
-    sk_string t24;
-    sk_any t25;
 
-    t2 = sk_double_with_prec(sk_double_new(3.14), 4);
-    a = t2;
-    t3 = sk_double_add(a, sk_double_new(1.0));
-    b = t3;
-    t4 = any_double(b);
+    s = sk_string_new("Привет, мир!");
+    t1 = __sk__has(s, sk_string_new("мир"));
+    t2 = any_bool(t1);
+    __sk__sendln(t2);
+    t3 = __sk__has(s, sk_string_new("Мир"));
+    t4 = any_bool(t3);
     __sk__sendln(t4);
-    t5 = sk_double_with_prec(sk_double_new(3.14), 2);
-    t6 = sk_double_with_prec(sk_double_new(3.14), 4);
-    t7 = sk_double_add(t5, t6);
-    c = t7;
-    t8 = any_double(c);
+    t5 = __sk__has(s, sk_string_new("кот"));
+    t6 = any_bool(t5);
+    __sk__sendln(t6);
+    t7 = __sk__startWith(s, sk_string_new("Прив"));
+    t8 = any_bool(t7);
     __sk__sendln(t8);
-    t9 = sk_double_with_prec(sk_double_new(3.14), 2);
-    t10 = sk_double_add(t9, sk_double_new(1.0));
-    d = t10;
-    t11 = any_double(d);
-    __sk__sendln(t11);
-    t12 = sk_double_with_prec(sk_double_new(3.14), 2);
-    t13 = sk_double_new((double)sk_int_new(2).value);
-    t14 = sk_double_mul(t12, t13);
-    e = t14;
-    t15 = any_double(e);
-    __sk__sendln(t15);
-    t16 = sk_double_with_prec(sk_double_new(-3.14), 2);
-    f = t16;
-    t17 = any_double(f);
-    __sk__sendln(t17);
-    t18 = any_double(sk_double_new(4.3));
-    t19 = any_int(sk_int_new(5));
-    t20 = __sk__powl(t18, t19);
-    __sk__sendln(t20);
-    t21 = sk_int_new(sk_array_len(args.value));
-    t22 = sk_int_to_string(t21);
-    t23 = sk_arr_to_string(args);
-    t24 = sk_string_concat(t22, t23);
-    free(t23.value);
-    free(t22.value);
-    t25 = any_string(t24);
-    free(t24.value);
-    __sk__sendln(t25);
+    t9 = __sk__startWith(s, sk_string_new("вет"));
+    t10 = any_bool(t9);
+    __sk__sendln(t10);
+    t11 = __sk__endWith(s, sk_string_new("мир!"));
+    t12 = any_bool(t11);
+    __sk__sendln(t12);
+    t13 = __sk__endWith(s, sk_string_new("!"));
+    t14 = any_bool(t13);
+    __sk__sendln(t14);
+    t15 = __sk__endWith(s, sk_string_new("мир"));
+    t16 = any_bool(t15);
+    __sk__sendln(t16);
+    t17 = __sk__has(s, sk_string_new("!"));
+    t18 = any_bool(t17);
+    __sk__sendln(t18);
     return 0;
 }
 
@@ -717,30 +887,136 @@ sk_string __sk__std_io_input(sk_string prompt) {
 }
 
 void __sk__sendln(sk_any msg) {
-    sk_string t26;
-    sk_string t27;
+    sk_string t19;
+    sk_string t20;
 
-    t26 = any_to_string(msg);
-    t27 = sk_string_concat(t26, sk_string_new("\n"));
-    free(t26.value);
-    __sk__std_io_send(t27);
-    free(t27.value);
+    t19 = any_to_string(msg);
+    t20 = sk_string_concat(t19, sk_string_new("\n"));
+    free(t19.value);
+    __sk__std_io_send(t20);
+    free(t20.value);
     return;
 }
 
 void __sk__sendf(sk_any msg) {
-    sk_string t28;
+    sk_string t21;
 
-    t28 = any_to_string(msg);
-    __sk__std_io_send(t28);
-    free(t28.value);
+    t21 = any_to_string(msg);
+    __sk__std_io_send(t21);
+    free(t21.value);
     return;
 }
 
 sk_string __sk__input(sk_string prefix) {
-    sk_string t29;
+    sk_string t22;
 
-    t29 = __sk__std_io_input(prefix);
-    return t29;
+    t22 = __sk__std_io_input(prefix);
+    return t22;
+}
+
+sk_int __sk__len(sk_string line) {
+    if (line.__is_null) {
+            VoidLengthMeasurementError* err = malloc(sizeof(VoidLengthMeasurementError));
+            err->__type = "Error.VoidMeasurementError.VoidLengthMeasurementError";
+            err->msg = sk_string_new("Cannot get length 'null'.");
+            sk_throw(err, "<builtin:std/strings>", 162, 5);
+        }
+        size_t len = __sk__utf8__strlen(line.value);
+        int n = (len > INT_MAX) ? -1 : (int)len;
+        return sk_int_new(n);
+    return sk_int_new(0);
+}
+
+sk_int __sk__bytes(sk_string line) {
+    if (line.__is_null) {
+            VoidBytesMeasurementError* err = malloc(sizeof(VoidBytesMeasurementError));
+            err->__type = "Error.VoidMeasurementError.VoidBytesMeasurementError";
+            err->msg = sk_string_new("Cannot get byte length 'null'.");
+            sk_throw(err, "<builtin:std/strings>", 174, 5);
+        }
+        return sk_int_new((int)strlen(line.value));
+    return sk_int_new(0);
+}
+
+sk_string __sk__concat(sk_string a, sk_string b) {
+    if (a.__is_null || b.__is_null) {
+            VoidConcatError* err = malloc(sizeof(VoidConcatError));
+            err->__type = "Error.VoidActionsError.VoidConcatError";
+            err->msg = sk_string_new("Cannot concatenate 'null' with string or 'null'.");
+            sk_throw(err, "<builtin:std/strings>", 186, 5);
+        }
+        return sk_string_concat(a, b);
+    return sk_string_new("");
+}
+
+sk_string __sk__toLowerCase(sk_string line) {
+    if (line.__is_null) {
+            VoidLowerizeError* err = malloc(sizeof(VoidLowerizeError));
+            err->__type = "Error.VoidCasingError.VoidLowerizeError";
+            err->msg = sk_string_new("Unable to convert 'null' to lower case.");
+            sk_throw(err, "<builtin:std/strings>", 195, 5);
+        }
+        return sk_string_new_take(__sk__utf8__change_case(line.value, 0));
+    return sk_string_new("");
+}
+
+sk_string __sk__toUpperCase(sk_string line) {
+    if (line.__is_null) {
+            VoidUpperizeError* err = malloc(sizeof(VoidUpperizeError));
+            err->__type = "Error.VoidCasingError.VoidUpperizeError";
+            err->msg = sk_string_new("Unable to convert 'null' to UPPER CASE.");
+            sk_throw(err, "<builtin:std/strings>", 205, 5);
+        }
+        return sk_string_new_take(__sk__utf8__change_case(line.value, 1));
+    return sk_string_new("");
+}
+
+sk_string __sk__toCapitalCase(sk_string line) {
+    if (line.__is_null) {
+            VoidCapitalizeError* err = malloc(sizeof(VoidCapitalizeError));
+            err->__type = "Error.VoidCasingError.VoidCapitalizeError";
+            err->msg = sk_string_new("Unable to convert 'null' to Capital Case.");
+            sk_throw(err, "<builtin:std/strings>", 215, 5);
+        }
+        return sk_string_new_take(__sk__utf8__change_case(line.value, 2));
+    return sk_string_new("");
+}
+
+sk_bool __sk__has(sk_string line, sk_string pattern) {
+    if (line.__is_null || pattern.__is_null) {
+            VoidHasError* err = malloc(sizeof(VoidHasError));
+            err->__type = "Error.VoidSearchError.VoidHasError";
+            err->msg = sk_string_new("Cannot search in 'null' string or with 'null' pattern.");
+            sk_throw(err, "<builtin:std/strings>", 230, 5);
+        }
+        return sk_bool_new(__sk__str_find(line.value, pattern.value) >= 0);
+    return sk_bool_new(0);
+}
+
+sk_bool __sk__startWith(sk_string line, sk_string pattern) {
+    if (line.__is_null || pattern.__is_null) {
+            VoidStartWithError* err = malloc(sizeof(VoidStartWithError));
+            err->__type = "Error.VoidSearchError.VoidStartWithError";
+            err->msg = sk_string_new("Cannot check prefix of 'null' string or with 'null' pattern.");
+            sk_throw(err, "<builtin:std/strings>", 245, 5);
+        }
+        size_t plen = strlen(pattern.value);
+        if (plen > strlen(line.value)) return sk_bool_new(0);
+        return sk_bool_new(strncmp(line.value, pattern.value, plen) == 0);
+    return sk_bool_new(0);
+}
+
+sk_bool __sk__endWith(sk_string line, sk_string pattern) {
+    if (line.__is_null || pattern.__is_null) {
+            VoidEndWithError* err = malloc(sizeof(VoidEndWithError));
+            err->__type = "Error.VoidSearchError.VoidEndWithError";
+            err->msg = sk_string_new("Cannot check suffix of 'null' string or with 'null' pattern.");
+            sk_throw(err, "<builtin:std/strings>", 260, 5);
+        }
+        size_t llen = strlen(line.value);
+        size_t plen = strlen(pattern.value);
+        if (plen > llen) return sk_bool_new(0);
+        return sk_bool_new(strcmp(line.value + llen - plen, pattern.value) == 0);
+    return sk_bool_new(0);
 }
 

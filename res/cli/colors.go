@@ -13,11 +13,13 @@ var Colors = &Color{Enabled: true}
 
 // ANSI color codes
 const (
-	RESET  = "\033[0m"
-	BOLD   = "\033[1m"
-	DIM    = "\033[2m"
-	ITALIC = "\033[3m"
-	UNDER  = "\033[4m"
+	RESET      = "\033[0m"
+	BG_DEFAULT = "\033[49m"
+	FG_DEFAULT = "\033[39m"
+	BOLD       = "\033[1m"
+	DIM        = "\033[2m"
+	ITALIC     = "\033[3m"
+	UNDER      = "\033[4m"
 
 	BLACK   = "\033[30m"
 	RED     = "\033[31m"
@@ -45,6 +47,15 @@ const (
 	BG_MAGENTA = "\033[45m"
 	BG_CYAN    = "\033[46m"
 	BG_WHITE   = "\033[47m"
+
+	BG_BRIGHT_BLACK   = "\033[100m"
+	BG_BRIGHT_RED     = "\033[101m"
+	BG_BRIGHT_GREEN   = "\033[102m"
+	BG_BRIGHT_YELLOW  = "\033[103m"
+	BG_BRIGHT_BLUE    = "\033[104m"
+	BG_BRIGHT_MAGENTA = "\033[105m"
+	BG_BRIGHT_CYAN    = "\033[106m"
+	BG_BRIGHT_WHITE   = "\033[107m"
 )
 
 // ColorString возвращает цветной текст, если цвета включены

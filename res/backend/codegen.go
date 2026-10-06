@@ -681,6 +681,13 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("}")
 	cg.writeLine("")
 
+	// ===== Inline C =====
+	if cg.IR.InlineC != "" {
+		cg.writeLine("// Inline C code")
+		cg.writeLine(cg.IR.InlineC)
+		cg.writeLine("")
+	}
+
 	// ===== Function prototypes =====
 	cg.writeLine("// Function prototypes")
 	for _, fn := range cg.IR.Functions {
@@ -699,13 +706,6 @@ func (cg *CodeGenerator) Generate() string {
 		cg.writeLine(fmt.Sprintf("%s %s(%s);", returnType, fn.CName, paramsStr))
 	}
 	cg.writeLine("")
-
-	// ===== Inline C =====
-	if cg.IR.InlineC != "" {
-		cg.writeLine("// Inline C code")
-		cg.writeLine(cg.IR.InlineC)
-		cg.writeLine("")
-	}
 
 	// ===== Globals =====
 	if len(cg.IR.Globals) > 0 {

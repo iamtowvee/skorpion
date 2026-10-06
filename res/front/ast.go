@@ -71,10 +71,11 @@ func (p Position) GetColumn() int { return p.Column }
 
 type Program struct {
 	Position
-	Imports      []*Import
-	Functions    []*Function
-	ErrorDecls   []*ErrorDecl
-	AllFunctions []*Function
+	Imports        []*Import
+	Functions      []*Function
+	ErrorDecls     []*ErrorDecl
+	AllFunctions   []*Function
+	GlobalIncludeC []string
 }
 
 func (p *Program) GetType() NodeType { return NODE_PROGRAM }

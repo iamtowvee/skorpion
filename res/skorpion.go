@@ -265,9 +265,10 @@ func buildProject() {
 	allFunctions = append(allFunctions, allImportedFunctions...)
 
 	mergedProg := &front.Program{
-		Imports:    mainProg.Imports,
-		Functions:  allFunctions,
-		ErrorDecls: mainProg.ErrorDecls,
+		Imports:        mainProg.Imports,
+		Functions:      allFunctions,
+		ErrorDecls:     mainProg.ErrorDecls,
+		GlobalIncludeC: mainProg.GlobalIncludeC,
 	}
 
 	// Оптимизация (можно отключить флагом --no-optimize)

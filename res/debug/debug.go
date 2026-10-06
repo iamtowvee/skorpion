@@ -30,7 +30,7 @@ func Debug(format string, args ...interface{}) {
 		return
 	}
 	msg := fmt.Sprintf(format, args...)
-	colorized := cli.Colors.Colorize(cli.BRIGHT_BLACK, "[DEBUG] "+msg)
+	colorized := cli.Colors.Colorize(cli.BRIGHT_BLACK+cli.BG_BLACK, " DEBUG "+cli.BG_DEFAULT+" "+msg)
 
 	if !strings.HasSuffix(msg, "\n") {
 		colorized += "\n"

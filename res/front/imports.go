@@ -62,6 +62,12 @@ func (im *ImportManager) LoadMain(path string) (*Program, error) {
 			return nil, err
 		}
 
+		// Переносим global includeC из модуля в main
+		mainProg.GlobalIncludeC = append(mainProg.GlobalIncludeC, subProg.GlobalIncludeC...)
+
+		// Переносим ErrorDecls из модуля в main
+		mainProg.ErrorDecls = append(mainProg.ErrorDecls, subProg.ErrorDecls...)
+
 		// Добавляем ТОЛЬКО экспортируемые функции
 		for _, fn := range subProg.Functions {
 			if fn.IsExport {
@@ -125,6 +131,13 @@ func (im *ImportManager) loadModuleInternal(path string, visited map[string]bool
 		if err != nil {
 			return nil, err
 		}
+
+		// Переносим global includeC из вложенных модулей
+		prog.GlobalIncludeC = append(prog.GlobalIncludeC, subProg.GlobalIncludeC...)
+
+		// Переносим ErrorDecls из вложенных модулей
+		prog.ErrorDecls = append(prog.ErrorDecls, subProg.ErrorDecls...)
+
 		prog.Functions = append(prog.Functions, subProg.Functions...)
 	}
 	delete(visited, path)

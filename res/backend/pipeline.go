@@ -28,6 +28,11 @@ func NewPipeline(prog *front.Program) *Pipeline {
 }
 
 func (p *Pipeline) Process() *IRProgram {
+	// Global includeC
+	for _, code := range p.Program.GlobalIncludeC {
+		p.IR.InlineC += code + "\n\n"
+	}
+
 	for _, imp := range p.Program.Imports {
 		p.IR.Imports = append(p.IR.Imports, IRImport{
 			Path:  imp.Path,
@@ -1030,9 +1035,84 @@ func (p *Pipeline) processAssign(assign *front.Assign, irFn *IRFunction) {
 	}
 }
 
+// processNullComparison обрабатывает сравнение с null (void).
+// Генерирует: (x.__is_null == 1) или (x.__is_null == 0).
+func (p *Pipeline) processNullComparison(bin *front.BinaryExpr, leftType, rightType string, irFn *IRFunction) string {
+	// Определяем, какая сторона — null, а какая — значение
+	var valueNode front.Node
+	var valueType string
+	var isLeftNull bool
+
+	if leftType == "void" {
+		valueNode = bin.Right
+		valueType = rightType
+		isLeftNull = true
+	} else {
+		valueNode = bin.Left
+		valueType = leftType
+		isLeftNull = false
+	}
+	_ = isLeftNull
+
+	// Допустимы только == и !=
+	if bin.Op != "==" && bin.Op != "!=" {
+		// Для других операций с null — генерируем null
+		result := p.newTemp()
+		irFn.Locals = append(irFn.Locals, "sk_bool "+result)
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "=",
+			Result: result,
+			Arg1:   "SK_NULL_bool",
+		})
+		return result
+	}
+
+	valueVal := p.processExpression(valueNode, irFn)
+
+	result := p.newTemp()
+	irFn.Locals = append(irFn.Locals, "sk_bool "+result)
+
+	// Для any — используем any-проверку
+	if valueType == "any" || isUnionTypeP(valueType) {
+		// Сравниваем a.type == 6 (null)
+		eqOp := "=="
+		if bin.Op == "!=" {
+			eqOp = "!="
+		}
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "=",
+			Result: result,
+			Arg1:   fmt.Sprintf("sk_bool_new(%s.type %s 6)", valueVal, eqOp),
+		})
+		return result
+	}
+
+	// Для всех остальных типов — проверяем .__is_null
+	var nullCheck string
+	if bin.Op == "==" {
+		nullCheck = fmt.Sprintf("sk_bool_new(%s.__is_null)", valueVal)
+	} else {
+		nullCheck = fmt.Sprintf("sk_bool_new(!%s.__is_null)", valueVal)
+	}
+
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:     "=",
+		Result: result,
+		Arg1:   nullCheck,
+	})
+
+	return result
+}
+
 func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string {
 	leftType := p.getExprType(bin.Left, irFn)
 	rightType := p.getExprType(bin.Right, irFn)
+
+	// === Обработка null (void) в сравнениях ===
+	// string == null, int == null, и т.д. → проверка .__is_null
+	if leftType == "void" || rightType == "void" {
+		return p.processNullComparison(bin, leftType, rightType, irFn)
+	}
 
 	// === Union ===
 	if isUnionTypeP(leftType) || isUnionTypeP(rightType) {
@@ -1097,7 +1177,6 @@ func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string
 	}
 
 	if bin.Op == "+" && isArrayType(leftType) {
-		// Проверяем, что слева идентификатор (имя переменной)
 		if ident, ok := bin.Left.(*front.Ident); ok {
 			return p.processArrayAddName(ident.Name, bin.Right, irFn)
 		}
@@ -1153,7 +1232,6 @@ func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string
 	// Конкатенация строк
 	if bin.Op == "+" && (leftType == "string" || rightType == "string" || leftType == "any" || rightType == "any") {
 		leftVal := left
-		leftStrType := leftType
 		if leftType == "any" {
 			tmp := p.newTemp()
 			irFn.Locals = append(irFn.Locals, "sk_string "+tmp)
@@ -1165,7 +1243,6 @@ func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string
 				ReturnType: "sk_string",
 			})
 			leftVal = tmp
-			leftStrType = "string"
 		} else if leftType != "string" {
 			tmp := p.newTemp()
 			irFn.Locals = append(irFn.Locals, "sk_string "+tmp)
@@ -1189,10 +1266,8 @@ func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string
 					ReturnType: "sk_string",
 				})
 				leftVal = tmp
-				leftStrType = "string"
 			}
 		}
-		_ = leftStrType
 
 		rightVal := right
 		if rightType == "any" {
@@ -1612,9 +1687,21 @@ func (p *Pipeline) processCall(call *front.CallExpr, irFn *IRFunction) {
 }
 
 func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) string {
-	// Если Receiver задан — добавляем его в Args
-	args := call.Args
+	// Определяем, является ли Receiver именем модуля
+	isModuleCall := false
 	if call.Receiver != "" {
+		for _, imp := range p.Program.Imports {
+			moduleName := front.GetModuleName(imp.Path)
+			if moduleName == call.Receiver || imp.Alias == call.Receiver {
+				isModuleCall = true
+				break
+			}
+		}
+	}
+
+	// Если Receiver задан и это НЕ модуль — добавляем его в Args
+	args := call.Args
+	if call.Receiver != "" && !isModuleCall {
 		receiverNode := &front.Ident{
 			Position: front.Position{
 				Line:   call.GetLine(),

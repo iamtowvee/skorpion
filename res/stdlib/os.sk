@@ -48,7 +48,7 @@ string getExePath() {
         }
         return sk_string_new("");
     ~~~
-    return []
+    return ""
 }
 
 arr[string] getArgs() {
