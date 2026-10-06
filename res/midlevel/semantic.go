@@ -256,6 +256,22 @@ func (sa *SemanticAnalyzer) analyzeFunction(fn *front.Function) {
 		sa.CurrentScope = sa.CurrentScope.Parent
 	}()
 
+	// Проверка возвращаемого типа на union
+	if isUnionType(fn.ReturnType) {
+		for _, t := range parseUnionTypes(fn.ReturnType) {
+			if t == "any" {
+				sa.addError("0615",
+					fmt.Sprintf("Cannot use 'any' in return union of function '%s'", fn.Name),
+					fn.GetLine(), fn.GetColumn(), sa.CurrentFile)
+			}
+			if isUnionType(t) {
+				sa.addError("0611",
+					"Cannot nest T<...> inside T<...>",
+					fn.GetLine(), fn.GetColumn(), sa.CurrentFile)
+			}
+		}
+	}
+
 	// Проверка дублирующихся параметров и default перед non-default
 	seenParams := make(map[string]bool)
 	seenDefault := false
@@ -280,6 +296,22 @@ func (sa *SemanticAnalyzer) analyzeFunction(fn *front.Function) {
 	// Регистрируем параметры
 	for _, param := range fn.Params {
 		debug.Debug("Adding parameter: %s %s\n", param.Name, param.Type)
+
+		if isUnionType(param.Type) {
+			for _, t := range parseUnionTypes(param.Type) {
+				if t == "any" {
+					sa.addError("0615",
+						fmt.Sprintf("Cannot use 'any' in union type of parameter '%s'", param.Name),
+						param.GetLine(), param.GetColumn(), sa.CurrentFile)
+				}
+				if isUnionType(t) {
+					sa.addError("0611",
+						"Cannot nest T<...> inside T<...>",
+						param.GetLine(), param.GetColumn(), sa.CurrentFile)
+				}
+			}
+		}
+
 		sa.CurrentScope.Define(param.Name, SYM_VARIABLE, param.Type, false)
 	}
 
@@ -532,11 +564,17 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 	if isUnionType(decl.Type) {
 		types := parseUnionTypes(decl.Type)
 
-		// Запрет вложенных union
+		// Запрет вложенных union и any
 		for _, t := range types {
 			if isUnionType(t) {
 				sa.addError("0611",
 					"Cannot nest T<...> inside T<...>",
+					decl.GetLine(), decl.GetColumn(), sa.CurrentFile)
+				return decl
+			}
+			if t == "any" {
+				sa.addError("0615",
+					"Cannot use 'any' inside T<...> — union must list concrete types",
 					decl.GetLine(), decl.GetColumn(), sa.CurrentFile)
 				return decl
 			}
@@ -1317,6 +1355,9 @@ func (sa *SemanticAnalyzer) isValidType(typ string) bool {
 			}
 			if isUnionType(t) {
 				return false // вложенные запрещены
+			}
+			if t == "any" {
+				return false // any запрещён в union
 			}
 		}
 		return true

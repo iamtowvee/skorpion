@@ -626,6 +626,8 @@ int main(int argc, char** argv) {
     sk_any t18;
     sk_any t19;
     sk_any t20;
+    sk_double t21;
+    sk_any t22;
 
     t2 = sk_double_with_prec(sk_double_new(3.14), 4);
     a = t2;
@@ -658,6 +660,9 @@ int main(int argc, char** argv) {
     t19 = any_int(sk_int_new(5));
     t20 = __sk__powl(t18, t19);
     __sk__sendln(t20);
+    t21 = sk_double_trim(sk_double_new(3.345465), "45");
+    t22 = any_double(t21);
+    __sk__sendln(t22);
     return 0;
 }
 
@@ -684,30 +689,30 @@ sk_string __sk__std_io_input(sk_string prompt) {
 }
 
 void __sk__sendln(sk_any msg) {
-    sk_string t21;
-    sk_string t22;
+    sk_string t23;
+    sk_string t24;
 
-    t21 = any_to_string(msg);
-    t22 = sk_string_concat(t21, sk_string_new("\n"));
-    free(t21.value);
-    __sk__std_io_send(t22);
-    free(t22.value);
+    t23 = any_to_string(msg);
+    t24 = sk_string_concat(t23, sk_string_new("\n"));
+    free(t23.value);
+    __sk__std_io_send(t24);
+    free(t24.value);
     return;
 }
 
 void __sk__sendf(sk_any msg) {
-    sk_string t23;
+    sk_string t25;
 
-    t23 = any_to_string(msg);
-    __sk__std_io_send(t23);
-    free(t23.value);
+    t25 = any_to_string(msg);
+    __sk__std_io_send(t25);
+    free(t25.value);
     return;
 }
 
 sk_string __sk__input(sk_string prefix) {
-    sk_string t24;
+    sk_string t26;
 
-    t24 = __sk__std_io_input(prefix);
-    return t24;
+    t26 = __sk__std_io_input(prefix);
+    return t26;
 }
 

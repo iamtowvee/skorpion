@@ -1,10 +1,12 @@
 use #std/io
 
+const A{} = new Error
+
 T<int,float,double> powl(T<int,float,double> a, T<int,float,double> b) {
     return a ** b
 }
 
-void main(arr args) {
+void main (arr args) {
     double a = 3.14^4f      // value=3.14, prec=4
     double b = a + 1.0      // value=4.14, prec=4 (max(4, -1) = 4)
     sendln(b)               // "4.1400"
@@ -22,4 +24,5 @@ void main(arr args) {
     sendln(f)               // "-3.14"
 
     sendln(powl(4.3, 5))
+    sendln(3.345465^X{4,5})
 }

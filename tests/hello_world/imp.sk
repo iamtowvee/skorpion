@@ -366,7 +366,7 @@ void main(arr args) {
     sendln("")
 
     // Гетерогенный массив без null
-    arr[any] het = [1, "two", 3.5, true]
+    arr[any] het = [1, "two", 3.5^X0, true]
     sendln("heterogeneous = " + $het)
     sendln("")
 

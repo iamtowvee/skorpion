@@ -769,6 +769,13 @@ var ErrorCodes = map[string]ErrorCode{
 		Tip: "Use detruncate(x) to narrow the type before the operation, or " +
 			"extend the union to cover all combinations.",
 	},
+	"0615": {
+		Code:        "0615",
+		Message:     "Cannot use 'any' in union",
+		Description: "The 'any' type is not allowed inside T<...>. A union must list concrete types.",
+		Tip:         "Use T<int, string, ...> with concrete types, or use 'any' without a union.",
+		Example:     "// Wrong:\nT<any, int> x\n\n// Right:\nT<int, string> x",
+	},
 	"0620": {
 		Code:        "0620",
 		Message:     "Expected 'f' after precision",
