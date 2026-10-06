@@ -14,7 +14,7 @@ type CodeGenerator struct {
 func NewCodeGenerator(ir *IRProgram) *CodeGenerator {
 	cg := &CodeGenerator{
 		IR:       ir,
-		Includes: []string{"<stdio.h>", "<stdlib.h>", "<string.h>", "<setjmp.h>", "<math.h>"},
+		Includes: []string{"<stdio.h>", "<stdlib.h>", "<string.h>", "<setjmp.h>", "<math.h>", "<limits.h>", "<ctype.h>"},
 	}
 	return cg
 }
