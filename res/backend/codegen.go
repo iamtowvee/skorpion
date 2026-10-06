@@ -152,6 +152,8 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("sk_bool sk_int_ge(sk_int a, sk_int b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value >= b.value); }")
 	cg.writeLine("sk_bool sk_int_eq(sk_int a, sk_int b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value == b.value); }")
 	cg.writeLine("sk_bool sk_int_ne(sk_int a, sk_int b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value != b.value); }")
+	cg.writeLine("sk_bool sk_string_eq(sk_string a, sk_string b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(strcmp(a.value, b.value) == 0); }")
+	cg.writeLine("sk_bool sk_string_ne(sk_string a, sk_string b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(strcmp(a.value, b.value) != 0); }")
 	cg.writeLine("")
 
 	// ===== Arithmetic float =====

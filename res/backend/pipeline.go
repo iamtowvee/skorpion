@@ -1721,6 +1721,23 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 	case "to_bool":
 		return p.processToBool(&front.CallExpr{Name: "to_bool", Args: args}, irFn)
 	case "to_arr":
+		// Если один аргумент и он any — распаковываем через any_to_arr
+		if len(args) == 1 {
+			argType := p.getExprType(args[0], irFn)
+			if argType == "any" || isUnionTypeP(argType) {
+				arg := p.processExpression(args[0], irFn)
+				result := p.newTemp()
+				irFn.Locals = append(irFn.Locals, "sk_arr "+result)
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op:         "call",
+					Result:     result,
+					Arg1:       "any_to_arr",
+					Arg2:       arg,
+					ReturnType: "sk_arr",
+				})
+				return result
+			}
+		}
 		return p.processToArr(&front.CallExpr{Name: "to_arr", Args: args}, irFn)
 	case "detruncate":
 		return p.processDetruncate(&front.CallExpr{Name: "detruncate", Args: args}, irFn)
@@ -2025,40 +2042,60 @@ func (p *Pipeline) processCase(caseStmt *front.CaseStmt, irFn *IRFunction) {
 	endLabel := p.newLabel()
 
 	for _, branch := range caseStmt.Branches {
-		patternType := p.getExprType(branch.Pattern, irFn)
-		pattern := p.processExpression(branch.Pattern, irFn)
-
-		if patternType == "any" {
-			tempVar := p.newTemp()
-			irFn.Locals = append(irFn.Locals, "sk_int "+tempVar)
-			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:         "call",
-				Result:     tempVar,
-				Arg1:       "any_to_int",
-				Arg2:       pattern,
-				ReturnType: "sk_int",
-			})
-			pattern = tempVar
-		}
-
 		branchLabel := p.newLabel()
 		nextLabel := p.newLabel()
 
-		// Сравнение через функции
-		cmpVar := p.newTemp()
-		irFn.Locals = append(irFn.Locals, "sk_bool "+cmpVar)
-		eqFn := "sk_" + valueType + "_eq"
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:         "call",
-			Result:     cmpVar,
-			Arg1:       eqFn,
-			Arg2:       value + ", " + pattern,
-			ReturnType: "sk_bool",
-		})
+		// Собираем OR всех паттернов
+		var combinedCheck string
+
+		for i, patNode := range branch.Patterns {
+			pattern := p.processExpression(patNode, irFn)
+			patternType := p.getExprType(patNode, irFn)
+
+			if patternType == "any" {
+				tmp := p.newTemp()
+				irFn.Locals = append(irFn.Locals, "sk_int "+tmp)
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op:         "call",
+					Result:     tmp,
+					Arg1:       "any_to_int",
+					Arg2:       pattern,
+					ReturnType: "sk_int",
+				})
+				pattern = tmp
+			}
+
+			cmpVar := p.newTemp()
+			irFn.Locals = append(irFn.Locals, "sk_bool "+cmpVar)
+			eqFn := "sk_" + valueType + "_eq"
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:         "call",
+				Result:     cmpVar,
+				Arg1:       eqFn,
+				Arg2:       value + ", " + pattern,
+				ReturnType: "sk_bool",
+			})
+
+			if i == 0 {
+				combinedCheck = cmpVar
+			} else {
+				// OR с предыдущим
+				orVar := p.newTemp()
+				irFn.Locals = append(irFn.Locals, "sk_bool "+orVar)
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op:         "call",
+					Result:     orVar,
+					Arg1:       "sk_bool_or",
+					Arg2:       combinedCheck + ", " + cmpVar,
+					ReturnType: "sk_bool",
+				})
+				combinedCheck = orVar
+			}
+		}
 
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:     "if",
-			Result: cmpVar,
+			Result: combinedCheck,
 			Arg1:   branchLabel,
 			Arg2:   nextLabel,
 		})

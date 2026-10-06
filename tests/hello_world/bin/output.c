@@ -527,20 +527,135 @@ typedef struct SkError {
     sk_string msg;
 } SkError;
 
-typedef struct ArrayError {
+typedef struct RefactorError {
     const char* __type;
     sk_string msg;
-} ArrayError;
+} RefactorError;
 
-typedef struct ArrayIdNotFoundError {
+typedef struct VoidRefactorError {
     const char* __type;
     sk_string msg;
-} ArrayIdNotFoundError;
+} VoidRefactorError;
 
-typedef struct HeteroArrayRemoveError {
+typedef struct CustomRefactorError {
     const char* __type;
     sk_string msg;
-} HeteroArrayRemoveError;
+} CustomRefactorError;
+
+typedef struct VoidToIntRefactorError {
+    const char* __type;
+    sk_string msg;
+} VoidToIntRefactorError;
+
+typedef struct VoidToBoolRefactorError {
+    const char* __type;
+    sk_string msg;
+} VoidToBoolRefactorError;
+
+typedef struct VoidToFloatRefactorError {
+    const char* __type;
+    sk_string msg;
+} VoidToFloatRefactorError;
+
+typedef struct VoidToDoubleRefactorError {
+    const char* __type;
+    sk_string msg;
+} VoidToDoubleRefactorError;
+
+typedef struct VoidToStringRefactorError {
+    const char* __type;
+    sk_string msg;
+} VoidToStringRefactorError;
+
+typedef struct CustomToIntRefactorError {
+    const char* __type;
+    sk_string msg;
+} CustomToIntRefactorError;
+
+typedef struct CustomToBoolRefactorError {
+    const char* __type;
+    sk_string msg;
+} CustomToBoolRefactorError;
+
+typedef struct CustomToFloatRefactorError {
+    const char* __type;
+    sk_string msg;
+} CustomToFloatRefactorError;
+
+typedef struct CustomToDoubleRefactorError {
+    const char* __type;
+    sk_string msg;
+} CustomToDoubleRefactorError;
+
+typedef struct CustomToStringRefactorError {
+    const char* __type;
+    sk_string msg;
+} CustomToStringRefactorError;
+
+typedef struct VoidCasingError {
+    const char* __type;
+    sk_string msg;
+} VoidCasingError;
+
+typedef struct VoidMeasurementError {
+    const char* __type;
+    sk_string msg;
+} VoidMeasurementError;
+
+typedef struct VoidLengthMeasurementError {
+    const char* __type;
+    sk_string msg;
+} VoidLengthMeasurementError;
+
+typedef struct VoidBytesMeasurementError {
+    const char* __type;
+    sk_string msg;
+} VoidBytesMeasurementError;
+
+typedef struct VoidActionsError {
+    const char* __type;
+    sk_string msg;
+} VoidActionsError;
+
+typedef struct VoidConcatError {
+    const char* __type;
+    sk_string msg;
+} VoidConcatError;
+
+typedef struct VoidLowerizeError {
+    const char* __type;
+    sk_string msg;
+} VoidLowerizeError;
+
+typedef struct VoidUpperizeError {
+    const char* __type;
+    sk_string msg;
+} VoidUpperizeError;
+
+typedef struct VoidCapitalizeError {
+    const char* __type;
+    sk_string msg;
+} VoidCapitalizeError;
+
+typedef struct VoidSearchError {
+    const char* __type;
+    sk_string msg;
+} VoidSearchError;
+
+typedef struct VoidHasError {
+    const char* __type;
+    sk_string msg;
+} VoidHasError;
+
+typedef struct VoidStartWithError {
+    const char* __type;
+    sk_string msg;
+} VoidStartWithError;
+
+typedef struct VoidEndWithError {
+    const char* __type;
+    sk_string msg;
+} VoidEndWithError;
 
 typedef struct SkCleanup {
     void** ptr;
@@ -640,29 +755,127 @@ int sk_error_type_match(const char* actual, const char* expected) {
 }
 
 // Inline C code
-// Копирует sk_array с полным deep-copy элементов.
-// Тип элементов сохраняется (elem_size, elem_type).
-sk_array* __sk__arrays_copy(sk_array* src) {
-    if (!src) return NULL;
-    return sk_array_deep_copy(src);
+// UTF-8: длина строки в символах
+size_t __sk__utf8__strlen(const char *s) {
+    size_t count = 0;
+    while (*s) {
+        if ((*s & 0xC0) != 0x80) count++;
+        s++;
+    }
+    return count;
 }
 
-// Извлекает sk_any из элемента по индексу, независимо от elem_type.
-// Используется для универсальных операций (find, set, insert, proem, add).
-sk_any __sk__arrays_get_any(sk_array* a, int idx) {
-    if (!a || idx < 0 || idx >= a->length) return any_null();
-    void* p = sk_array_get(a, idx);
-    if (!p) return any_null();
-    switch (a->elem_type) {
-        case 0: { sk_int* v = (sk_int*)p; return v->__is_null ? any_null() : any_int(*v); }
-        case 1: { sk_string* v = (sk_string*)p; return v->__is_null ? any_null() : any_string(*v); }
-        case 2: { sk_float* v = (sk_float*)p; return v->__is_null ? any_null() : any_float(*v); }
-        case 3: { sk_double* v = (sk_double*)p; return v->__is_null ? any_null() : any_double(*v); }
-        case 4: { sk_bool* v = (sk_bool*)p; return v->__is_null ? any_null() : any_bool(*v); }
-        case 5: { sk_any* v = (sk_any*)p; return *v; }
-        case 6: { sk_arr* v = (sk_arr*)p; return v->__is_null ? any_null() : any_arr(*v); }
+// UTF-8: декодирование одного символа
+// Возвращает codepoint, а через *len — длину в байтах
+unsigned int __sk__utf8__decode(const char *s, int *len) {
+    unsigned char c = (unsigned char)s[0];
+    if (c < 0x80) { *len = 1; return c; }
+    if ((c & 0xE0) == 0xC0) {
+        *len = 2;
+        return ((c & 0x1F) << 6) | (s[1] & 0x3F);
     }
-    return any_null();
+    if ((c & 0xF0) == 0xE0) {
+        *len = 3;
+        return ((c & 0x0F) << 12) | ((s[1] & 0x3F) << 6) | (s[2] & 0x3F);
+    }
+    if ((c & 0xF8) == 0xF0) {
+        *len = 4;
+        return ((c & 0x07) << 18) | ((s[1] & 0x3F) << 12) | ((s[2] & 0x3F) << 6) | (s[3] & 0x3F);
+    }
+    *len = 1;
+    return c;
+}
+
+// UTF-8: кодирование codepoint в буфер
+// Возвращает длину в байтах
+int __sk__utf8__encode(unsigned int cp, char *out) {
+    if (cp < 0x80) {
+        out[0] = (char)cp;
+        return 1;
+    }
+    if (cp < 0x800) {
+        out[0] = (char)(0xC0 | (cp >> 6));
+        out[1] = (char)(0x80 | (cp & 0x3F));
+        return 2;
+    }
+    if (cp < 0x10000) {
+        out[0] = (char)(0xE0 | (cp >> 12));
+        out[1] = (char)(0x80 | ((cp >> 6) & 0x3F));
+        out[2] = (char)(0x80 | (cp & 0x3F));
+        return 3;
+    }
+    out[0] = (char)(0xF0 | (cp >> 18));
+    out[1] = (char)(0x80 | ((cp >> 12) & 0x3F));
+    out[2] = (char)(0x80 | ((cp >> 6) & 0x3F));
+    out[3] = (char)(0x80 | (cp & 0x3F));
+    return 4;
+}
+
+// Приведение одного codepoint к верхнему регистру
+unsigned int __sk__utf8__to_upper(unsigned int cp) {
+    if (cp < 0x80) return (unsigned int)toupper((int)cp);
+    if (cp >= 0x430 && cp <= 0x44F) return cp - 0x20;
+    if (cp == 0x451) return 0x401;
+    if (cp >= 0xE0 && cp <= 0xFE && cp != 0xF7) return cp - 0x20;
+    if (cp == 0xFF) return 0x178;
+    if (cp >= 0x3B1 && cp <= 0x3C9 && cp != 0x3C2) return cp - 0x20;
+    if (cp == 0x3C2) return 0x3A3;
+    return cp;
+}
+
+// Приведение одного codepoint к нижнему регистру
+unsigned int __sk__utf8__to_lower(unsigned int cp) {
+    if (cp < 0x80) return (unsigned int)tolower((int)cp);
+    if (cp >= 0x410 && cp <= 0x42F) return cp + 0x20;
+    if (cp == 0x401) return 0x451;
+    if (cp >= 0xC0 && cp <= 0xDE && cp != 0xD7) return cp + 0x20;
+    if (cp == 0x178) return 0xFF;
+    if (cp >= 0x391 && cp <= 0x3A9) return cp + 0x20;
+    return cp;
+}
+
+// Общая функция изменения регистра
+char* __sk__utf8__change_case(const char *src, int mode) {
+    size_t src_len = strlen(src);
+    char *out = malloc(src_len * 4 + 1);
+    if (!out) return NULL;
+
+    size_t i = 0, o = 0;
+    int word_start = 1;
+
+    while (src[i]) {
+        int char_len = 0;
+        unsigned int cp = __sk__utf8__decode(&src[i], &char_len);
+
+        unsigned int new_cp = cp;
+        switch (mode) {
+            case 0: new_cp = __sk__utf8__to_lower(cp); break;
+            case 1: new_cp = __sk__utf8__to_upper(cp); break;
+            case 2:
+                if (word_start) new_cp = __sk__utf8__to_upper(cp);
+                else new_cp = __sk__utf8__to_lower(cp);
+                word_start = (cp == ' ' || cp == '\t' || cp == '\n' ||
+                              cp == '\r' || cp == '.' || cp == ',' ||
+                              cp == '!' || cp == '?' || cp == ';' ||
+                              cp == ':' || cp == '-' || cp == '(' ||
+                              cp == ')' || cp == '[' || cp == ']');
+                break;
+        }
+
+        o += __sk__utf8__encode(new_cp, &out[o]);
+        i += char_len;
+    }
+
+    out[o] = '\0';
+    return out;
+}
+
+// Поиск подстроки (байтовый, но для UTF-8 корректный,
+// т.к. границы codepoint в UTF-8 не пересекаются)
+int __sk__str_find(const char *haystack, const char *needle) {
+    const char *p = strstr(haystack, needle);
+    if (!p) return -1;
+    return (int)(p - haystack);
 }
 
 
@@ -673,18 +886,25 @@ sk_string __sk__std_io_input(sk_string prompt);
 void __sk__sendln(sk_any msg);
 void __sk__sendf(sk_any msg);
 sk_string __sk__input(sk_string prefix);
-sk_int __sk__len(sk_arr source);
-sk_int __sk__find(sk_arr source, sk_any pattern);
-sk_arr __sk__add(sk_arr source, sk_any value);
-sk_arr __sk__proem(sk_arr source, sk_any value);
-sk_arr __sk__insert(sk_arr source, sk_int id, sk_any value);
-sk_arr __sk__set(sk_arr source, sk_int id, sk_any value);
-sk_arr __sk__pop(sk_arr source);
-sk_arr __sk__erase(sk_arr source, sk_int id);
-sk_arr __sk__remove(sk_arr source, sk_int id);
-sk_arr __sk__cut(sk_arr source, sk_int start, sk_int end);
-sk_arr __sk__combine(sk_arr first, sk_arr second);
-sk_arr __sk__slice(sk_arr source, sk_int id);
+sk_int __sk__len(sk_string line);
+sk_int __sk__bytes(sk_string line);
+sk_string __sk__concat(sk_string a, sk_string b);
+sk_string __sk__toLowerCase(sk_string line);
+sk_string __sk__toUpperCase(sk_string line);
+sk_string __sk__toCapitalCase(sk_string line);
+sk_bool __sk__has(sk_string line, sk_string pattern);
+sk_bool __sk__startWith(sk_string line, sk_string pattern);
+sk_bool __sk__endWith(sk_string line, sk_string pattern);
+sk_int __sk__toInt(sk_any value);
+sk_bool __sk__toBool(sk_any value);
+sk_float __sk__toFloat(sk_any value);
+sk_double __sk__toDouble(sk_any value);
+sk_string __sk__toString(sk_any value);
+sk_int __sk__toIntStrict(sk_any value);
+sk_bool __sk__toBoolStrict(sk_any value);
+sk_float __sk__toFloatStrict(sk_any value);
+sk_double __sk__toDoubleStrict(sk_any value);
+sk_string __sk__toStringStrict(sk_any value);
 
 int main(int argc, char** argv) {
     __sk__argc = argc;
@@ -698,168 +918,253 @@ int main(int argc, char** argv) {
     }
     sk_arr args = sk_arr_new(args__arr);
 
-    sk_arr nums;
-    sk_arr t1;
-    sk_int _tmp_push_2;
-    sk_int _tmp_push_3;
-    sk_int _tmp_push_4;
-    sk_int _tmp_push_5;
-    sk_int _tmp_push_6;
+    sk_any t1;
     sk_int t2;
     sk_any t3;
-    sk_int t4;
-    sk_any t5;
+    sk_any t4;
+    sk_int t5;
     sk_any t6;
-    sk_int t7;
-    sk_any t8;
+    sk_any t7;
+    sk_int t8;
     sk_any t9;
-    sk_int t10;
-    sk_any t11;
-    sk_arr popped;
-    sk_arr t12;
-    sk_arr erased;
+    sk_any t10;
+    sk_int t11;
+    sk_any t12;
     sk_arr t13;
-    sk_arr added;
     sk_any t14;
-    sk_arr t15;
-    sk_arr ins;
+    sk_any t15;
     sk_any t16;
-    sk_arr t17;
-    sk_arr pr;
-    sk_any t18;
-    sk_arr t19;
-    sk_arr cutd;
-    sk_arr t20;
-    sk_arr comb;
-    sk_arr t21;
+    sk_any t17;
+    sk_int t18;
+    sk_any t19;
+    sk_any t20;
+    sk_bool t21;
     sk_any t22;
     sk_any t23;
-    sk_arr t24;
-    sk_arr sl;
-    sk_arr t25;
+    sk_bool t24;
+    sk_any t25;
     sk_any t26;
-    sk_any t27;
+    sk_bool t27;
     sk_any t28;
-    sk_any t29;
+    sk_arr t29;
     sk_any t30;
     sk_any t31;
     sk_any t32;
-    sk_any t33;
+    sk_bool t33;
+    sk_any t34;
+    sk_any t35;
+    sk_float t36;
+    sk_any t37;
+    sk_any t38;
+    sk_float t39;
+    sk_any t40;
+    sk_any t41;
+    sk_double t42;
+    sk_any t43;
+    sk_any t44;
+    sk_double t45;
+    sk_any t46;
+    sk_any t47;
+    sk_string t48;
+    sk_any t49;
+    sk_any t50;
+    sk_string t51;
+    sk_any t52;
+    sk_arr t53;
+    sk_any t54;
+    sk_any t55;
+    sk_any t56;
+    sk_any t57;
+    sk_string t58;
+    sk_any t59;
+    SkTryFrame t60;
+    void* t61;
+    sk_int t62;
+    sk_any t63;
+    sk_bool t64;
+    VoidToIntRefactorError* e;
+    sk_string t65;
+    sk_any t66;
 
-    t1 = sk_arr_new(sk_array_new(sizeof(sk_int), 0));
-    _tmp_push_2 = sk_int_new(1);
-    sk_array_push(t1.value, &_tmp_push_2);
-    _tmp_push_3 = sk_int_new(2);
-    sk_array_push(t1.value, &_tmp_push_3);
-    _tmp_push_4 = sk_int_new(3);
-    sk_array_push(t1.value, &_tmp_push_4);
-    _tmp_push_5 = sk_int_new(4);
-    sk_array_push(t1.value, &_tmp_push_5);
-    _tmp_push_6 = sk_int_new(5);
-    sk_array_push(t1.value, &_tmp_push_6);
-    nums = t1;
-    sk_call_push("main.sk", 7, 12);
-    t2 = __sk__len(nums);
+    t1 = any_int(sk_int_new(42));
+    sk_call_push("main.sk", 5, 12);
+    t2 = __sk__toInt(t1);
     sk_call_pop();
     t3 = any_int(t2);
-    sk_call_push("main.sk", 7, 5);
+    sk_call_push("main.sk", 5, 5);
     __sk__sendln(t3);
     sk_call_pop();
+    t4 = any_string(sk_string_new("123"));
+    sk_call_push("main.sk", 6, 12);
+    t5 = __sk__toInt(t4);
+    sk_call_pop();
+    t6 = any_int(t5);
+    sk_call_push("main.sk", 6, 5);
+    __sk__sendln(t6);
+    sk_call_pop();
+    t7 = any_double(sk_double_new(3.14));
+    sk_call_push("main.sk", 7, 12);
+    t8 = __sk__toInt(t7);
+    sk_call_pop();
+    t9 = any_int(t8);
+    sk_call_push("main.sk", 7, 5);
+    __sk__sendln(t9);
+    sk_call_pop();
+    t10 = any_bool(sk_bool_new(1));
     sk_call_push("main.sk", 8, 12);
-    t4 = __sk__len(nums);
+    t11 = __sk__toInt(t10);
     sk_call_pop();
-    t5 = any_int(t4);
+    t12 = any_int(t11);
     sk_call_push("main.sk", 8, 5);
-    __sk__sendln(t5);
+    __sk__sendln(t12);
     sk_call_pop();
-    t6 = any_int(sk_int_new(3));
-    sk_call_push("main.sk", 10, 12);
-    t7 = __sk__find(nums, t6);
+    t13 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    t14 = any_int(sk_int_new(1));
+    sk_array_push_any(t13.value, t14);
+    t15 = any_int(sk_int_new(2));
+    sk_array_push_any(t13.value, t15);
+    t16 = any_int(sk_int_new(3));
+    sk_array_push_any(t13.value, t16);
+    t17 = any_arr(t13);
+    sk_call_push("main.sk", 9, 12);
+    t18 = __sk__toInt(t17);
     sk_call_pop();
-    t8 = any_int(t7);
-    sk_call_push("main.sk", 10, 5);
-    __sk__sendln(t8);
+    t19 = any_int(t18);
+    sk_call_push("main.sk", 9, 5);
+    __sk__sendln(t19);
     sk_call_pop();
-    t9 = any_int(sk_int_new(99));
+    t20 = any_int(sk_int_new(1));
     sk_call_push("main.sk", 11, 12);
-    t10 = __sk__find(nums, t9);
+    t21 = __sk__toBool(t20);
     sk_call_pop();
-    t11 = any_int(t10);
+    t22 = any_bool(t21);
     sk_call_push("main.sk", 11, 5);
-    __sk__sendln(t11);
+    __sk__sendln(t22);
     sk_call_pop();
-    sk_call_push("main.sk", 14, 18);
-    t12 = __sk__pop(nums);
+    t23 = any_int(sk_int_new(0));
+    sk_call_push("main.sk", 12, 12);
+    t24 = __sk__toBool(t23);
     sk_call_pop();
-    popped = t12;
-    sk_call_push("main.sk", 15, 18);
-    t13 = __sk__erase(nums, sk_int_new(2));
+    t25 = any_bool(t24);
+    sk_call_push("main.sk", 12, 5);
+    __sk__sendln(t25);
     sk_call_pop();
-    erased = t13;
-    t14 = any_int(sk_int_new(6));
-    sk_call_push("main.sk", 16, 18);
-    t15 = __sk__add(nums, t14);
+    t26 = any_string(sk_string_new("true"));
+    sk_call_push("main.sk", 13, 12);
+    t27 = __sk__toBool(t26);
     sk_call_pop();
-    added = t15;
-    t16 = any_int(sk_int_new(99));
-    sk_call_push("main.sk", 17, 18);
-    t17 = __sk__insert(nums, sk_int_new(2), t16);
-    sk_call_pop();
-    ins = t17;
-    t18 = any_int(sk_int_new(0));
-    sk_call_push("main.sk", 18, 18);
-    t19 = __sk__proem(nums, t18);
-    sk_call_pop();
-    pr = t19;
-    sk_call_push("main.sk", 19, 18);
-    t20 = __sk__cut(nums, sk_int_new(1), sk_int_new(5));
-    sk_call_pop();
-    cutd = t20;
-    t21 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    t22 = any_int(sk_int_new(6));
-    sk_array_push_any(t21.value, t22);
-    t23 = any_int(sk_int_new(7));
-    sk_array_push_any(t21.value, t23);
-    sk_call_push("main.sk", 20, 18);
-    t24 = __sk__combine(nums, t21);
-    sk_call_pop();
-    comb = t24;
-    sk_call_push("main.sk", 21, 19);
-    t25 = __sk__slice(nums, sk_int_new(2));
-    sk_call_pop();
-    sl = t25;
-    t26 = any_arr(popped);
-    sk_call_push("main.sk", 23, 5);
-    __sk__sendln(t26);
-    sk_call_pop();
-    t27 = any_arr(erased);
-    sk_call_push("main.sk", 24, 5);
-    __sk__sendln(t27);
-    sk_call_pop();
-    t28 = any_arr(added);
-    sk_call_push("main.sk", 25, 5);
+    t28 = any_bool(t27);
+    sk_call_push("main.sk", 13, 5);
     __sk__sendln(t28);
     sk_call_pop();
-    t29 = any_arr(ins);
-    sk_call_push("main.sk", 26, 5);
-    __sk__sendln(t29);
+    t29 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    t30 = any_int(sk_int_new(1));
+    sk_array_push_any(t29.value, t30);
+    t31 = any_int(sk_int_new(2));
+    sk_array_push_any(t29.value, t31);
+    t32 = any_arr(t29);
+    sk_call_push("main.sk", 14, 12);
+    t33 = __sk__toBool(t32);
     sk_call_pop();
-    t30 = any_arr(pr);
-    sk_call_push("main.sk", 27, 5);
-    __sk__sendln(t30);
+    t34 = any_bool(t33);
+    sk_call_push("main.sk", 14, 5);
+    __sk__sendln(t34);
     sk_call_pop();
-    t31 = any_arr(cutd);
-    sk_call_push("main.sk", 28, 5);
-    __sk__sendln(t31);
+    t35 = any_double(sk_double_new(3.14));
+    sk_call_push("main.sk", 16, 12);
+    t36 = __sk__toFloat(t35);
     sk_call_pop();
-    t32 = any_arr(comb);
-    sk_call_push("main.sk", 29, 5);
-    __sk__sendln(t32);
+    t37 = any_float(t36);
+    sk_call_push("main.sk", 16, 5);
+    __sk__sendln(t37);
     sk_call_pop();
-    t33 = any_arr(sl);
-    sk_call_push("main.sk", 30, 5);
-    __sk__sendln(t33);
+    t38 = any_string(sk_string_new("2.5"));
+    sk_call_push("main.sk", 17, 12);
+    t39 = __sk__toFloat(t38);
     sk_call_pop();
+    t40 = any_float(t39);
+    sk_call_push("main.sk", 17, 5);
+    __sk__sendln(t40);
+    sk_call_pop();
+    t41 = any_double(sk_double_new(3.14));
+    sk_call_push("main.sk", 19, 12);
+    t42 = __sk__toDouble(t41);
+    sk_call_pop();
+    t43 = any_double(t42);
+    sk_call_push("main.sk", 19, 5);
+    __sk__sendln(t43);
+    sk_call_pop();
+    t44 = any_string(sk_string_new("2.5"));
+    sk_call_push("main.sk", 20, 12);
+    t45 = __sk__toDouble(t44);
+    sk_call_pop();
+    t46 = any_double(t45);
+    sk_call_push("main.sk", 20, 5);
+    __sk__sendln(t46);
+    sk_call_pop();
+    t47 = any_int(sk_int_new(42));
+    sk_call_push("main.sk", 22, 12);
+    t48 = __sk__toString(t47);
+    sk_call_pop();
+    t49 = any_string(t48);
+    sk_call_push("main.sk", 22, 5);
+    __sk__sendln(t49);
+    sk_call_pop();
+    t50 = any_bool(sk_bool_new(1));
+    sk_call_push("main.sk", 23, 12);
+    t51 = __sk__toString(t50);
+    sk_call_pop();
+    t52 = any_string(t51);
+    sk_call_push("main.sk", 23, 5);
+    __sk__sendln(t52);
+    sk_call_pop();
+    t53 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    t54 = any_int(sk_int_new(1));
+    sk_array_push_any(t53.value, t54);
+    t55 = any_int(sk_int_new(2));
+    sk_array_push_any(t53.value, t55);
+    t56 = any_int(sk_int_new(3));
+    sk_array_push_any(t53.value, t56);
+    t57 = any_arr(t53);
+    sk_call_push("main.sk", 24, 12);
+    t58 = __sk__toString(t57);
+    sk_call_pop();
+    t59 = any_string(t58);
+    sk_call_push("main.sk", 24, 5);
+    __sk__sendln(t59);
+    sk_call_pop();
+    sk_try_push(&t60);
+    if (setjmp(sk_try_stack->env) != 0) {
+        goto L2;
+    }
+    t62 = SK_NULL_int;
+    t63 = any_int(t62);
+    sk_call_push("main.sk", 28, 9);
+    __sk__toIntStrict(t63);
+    sk_call_pop();
+    goto L1;
+L2:
+    sk_try_pop(&t60);
+    t61 = t60.error;
+    t64 = sk_bool_new(sk_error_type_match(((SkError*)t61)->__type, "Error.RefactorError.VoidRefactorError.VoidToIntRefactorError"));
+    if (t64.value) {
+        goto L2_body;
+    } else {
+        goto L3;
+    }
+L2_body:
+    e = (VoidToIntRefactorError*)t61;
+t65 = e->msg;
+    t66 = any_string(t65);
+    sk_call_push("main.sk", 30, 9);
+    __sk__sendln(t66);
+    sk_call_pop();
+    sk_error_free(t61);
+    goto L1;
+L3:
+    t61 = t60.error;
+    sk_throw(t61, "main.sk", 27, 5);
+L1:
     return 0;
 }
 
@@ -886,285 +1191,1427 @@ sk_string __sk__std_io_input(sk_string prompt) {
 }
 
 void __sk__sendln(sk_any msg) {
-    sk_string t34;
-    sk_string t35;
+    sk_string t67;
+    sk_string t68;
 
-    t34 = any_to_string(msg);
-    t35 = sk_string_concat(t34, sk_string_new("\n"));
-    free(t34.value);
+    t67 = any_to_string(msg);
+    t68 = sk_string_concat(t67, sk_string_new("\n"));
+    free(t67.value);
     sk_call_push("<builtin:std/io>", 34, 5);
-    __sk__std_io_send(t35);
+    __sk__std_io_send(t68);
     sk_call_pop();
-    free(t35.value);
+    free(t68.value);
     return;
 }
 
 void __sk__sendf(sk_any msg) {
-    sk_string t36;
+    sk_string t69;
 
-    t36 = any_to_string(msg);
+    t69 = any_to_string(msg);
     sk_call_push("<builtin:std/io>", 38, 5);
-    __sk__std_io_send(t36);
+    __sk__std_io_send(t69);
     sk_call_pop();
-    free(t36.value);
+    free(t69.value);
     return;
 }
 
 sk_string __sk__input(sk_string prefix) {
-    sk_string t37;
+    sk_string t70;
 
     sk_call_push("<builtin:std/io>", 42, 12);
-    t37 = __sk__std_io_input(prefix);
+    t70 = __sk__std_io_input(prefix);
     sk_call_pop();
-    return t37;
+    return t70;
 }
 
-sk_int __sk__len(sk_arr source) {
-    if (source.__is_null || !source.value) return sk_int_new(0);
-        return sk_int_new(sk_array_len(source.value));
+sk_int __sk__len(sk_string line) {
+    if (line.__is_null) {
+            VoidLengthMeasurementError* err = malloc(sizeof(VoidLengthMeasurementError));
+            err->__type = "Error.VoidMeasurementError.VoidLengthMeasurementError";
+            err->msg = sk_string_new("Cannot get length 'null'.");
+            sk_throw(err, "<builtin:std/strings>", 162, 5);
+        }
+        size_t len = __sk__utf8__strlen(line.value);
+        int n = (len > INT_MAX) ? -1 : (int)len;
+        return sk_int_new(n);
     return sk_int_new(0);
 }
 
-sk_int __sk__find(sk_arr source, sk_any pattern) {
-    if (source.__is_null || !source.value) return sk_int_new(-1);
-        if (pattern.type == 6) return sk_int_new(-1);
-        int n = source.value->length;
-        for (int i = 0; i < n; i++) {
-            sk_any cur = __sk__arrays_get_any(source.value, i);
-            if (cur.type != pattern.type) continue;
-            switch (pattern.type) {
-                case 0: if (cur.data.i == pattern.data.i) return sk_int_new(i); break;
-                case 1: if (cur.data.s && pattern.data.s && strcmp(cur.data.s, pattern.data.s) == 0) return sk_int_new(i); break;
-                case 2: if (cur.data.f == pattern.data.f) return sk_int_new(i); break;
-                case 3: if (cur.data.d == pattern.data.d) return sk_int_new(i); break;
-                case 4: if (cur.data.b == pattern.data.b) return sk_int_new(i); break;
-                case 5: break;
-            }
+sk_int __sk__bytes(sk_string line) {
+    if (line.__is_null) {
+            VoidBytesMeasurementError* err = malloc(sizeof(VoidBytesMeasurementError));
+            err->__type = "Error.VoidMeasurementError.VoidBytesMeasurementError";
+            err->msg = sk_string_new("Cannot get byte length 'null'.");
+            sk_throw(err, "<builtin:std/strings>", 174, 5);
         }
-        return sk_int_new(-1);
-    return sk_int_new(-1);
+        return sk_int_new((int)strlen(line.value));
+    return sk_int_new(0);
 }
 
-sk_arr __sk__add(sk_arr source, sk_any value) {
-    sk_arr t38;
-
-    // Результат всегда гетерогенный (any), как и все остальные функции.
-        sk_array* out = sk_array_new(sizeof(sk_any), 5);
-        if (!source.__is_null && source.value) {
-            int n = source.value->length;
-            for (int i = 0; i < n; i++) {
-                sk_array_push_any(out, __sk__arrays_get_any(source.value, i));
-            }
+sk_string __sk__concat(sk_string a, sk_string b) {
+    if (a.__is_null || b.__is_null) {
+            VoidConcatError* err = malloc(sizeof(VoidConcatError));
+            err->__type = "Error.VoidActionsError.VoidConcatError";
+            err->msg = sk_string_new("Cannot concatenate 'null' with string or 'null'.");
+            sk_throw(err, "<builtin:std/strings>", 186, 5);
         }
-        sk_array_push_any(out, value);
-        return sk_arr_new(out);
-    t38 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t38;
+        return sk_string_concat(a, b);
+    return sk_string_new("");
 }
 
-sk_arr __sk__proem(sk_arr source, sk_any value) {
-    sk_arr t39;
-
-    sk_array* src = source.__is_null ? NULL : source.value;
-        int n = src ? src->length : 0;
-        sk_array* out = sk_array_new(sizeof(sk_any), 5);
-        sk_array_push_any(out, value);
-        for (int i = 0; i < n; i++) {
-            sk_array_push_any(out, __sk__arrays_get_any(src, i));
+sk_string __sk__toLowerCase(sk_string line) {
+    if (line.__is_null) {
+            VoidLowerizeError* err = malloc(sizeof(VoidLowerizeError));
+            err->__type = "Error.VoidCasingError.VoidLowerizeError";
+            err->msg = sk_string_new("Unable to convert 'null' to lower case.");
+            sk_throw(err, "<builtin:std/strings>", 195, 5);
         }
-        return sk_arr_new(out);
-    t39 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t39;
+        return sk_string_new_take(__sk__utf8__change_case(line.value, 0));
+    return sk_string_new("");
 }
 
-sk_arr __sk__insert(sk_arr source, sk_int id, sk_any value) {
-    sk_arr t40;
-
-    sk_array* src = source.__is_null ? NULL : source.value;
-        int n = src ? src->length : 0;
-        int idx = id.value;
-        if (idx < 0 || idx > n) {
-            ArrayIdNotFoundError* err = malloc(sizeof(ArrayIdNotFoundError));
-            err->__type = "Error.ArrayError.ArrayIdNotFoundError";
-            err->msg = sk_string_new("Array index out of bounds in 'insert'.");
-            sk_throw(err, "<builtin:std/arrays>", 110, 5);
+sk_string __sk__toUpperCase(sk_string line) {
+    if (line.__is_null) {
+            VoidUpperizeError* err = malloc(sizeof(VoidUpperizeError));
+            err->__type = "Error.VoidCasingError.VoidUpperizeError";
+            err->msg = sk_string_new("Unable to convert 'null' to UPPER CASE.");
+            sk_throw(err, "<builtin:std/strings>", 205, 5);
         }
-        sk_array* out = sk_array_new(sizeof(sk_any), 5);
-        for (int i = 0; i < idx; i++) {
-            sk_array_push_any(out, __sk__arrays_get_any(src, i));
-        }
-        sk_array_push_any(out, value);
-        for (int i = idx; i < n; i++) {
-            sk_array_push_any(out, __sk__arrays_get_any(src, i));
-        }
-        return sk_arr_new(out);
-    t40 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t40;
+        return sk_string_new_take(__sk__utf8__change_case(line.value, 1));
+    return sk_string_new("");
 }
 
-sk_arr __sk__set(sk_arr source, sk_int id, sk_any value) {
-    sk_arr t41;
-
-    sk_array* src = source.__is_null ? NULL : source.value;
-        int n = src ? src->length : 0;
-        int idx = id.value;
-        if (idx < 0 || idx >= n) {
-            ArrayIdNotFoundError* err = malloc(sizeof(ArrayIdNotFoundError));
-            err->__type = "Error.ArrayError.ArrayIdNotFoundError";
-            err->msg = sk_string_new("Array index out of bounds in 'set'.");
-            sk_throw(err, "<builtin:std/arrays>", 130, 5);
+sk_string __sk__toCapitalCase(sk_string line) {
+    if (line.__is_null) {
+            VoidCapitalizeError* err = malloc(sizeof(VoidCapitalizeError));
+            err->__type = "Error.VoidCasingError.VoidCapitalizeError";
+            err->msg = sk_string_new("Unable to convert 'null' to Capital Case.");
+            sk_throw(err, "<builtin:std/strings>", 215, 5);
         }
-        sk_array* out = sk_array_new(sizeof(sk_any), 5);
-        for (int i = 0; i < n; i++) {
-            if (i == idx) {
-                sk_array_push_any(out, value);
-            } else {
-                sk_array_push_any(out, __sk__arrays_get_any(src, i));
-            }
-        }
-        return sk_arr_new(out);
-    t41 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t41;
+        return sk_string_new_take(__sk__utf8__change_case(line.value, 2));
+    return sk_string_new("");
 }
 
-sk_arr __sk__pop(sk_arr source) {
-    sk_arr t42;
-
-    sk_array* src = source.__is_null ? NULL : source.value;
-        int n = src ? src->length : 0;
-        sk_array* out = sk_array_new(sizeof(sk_any), 5);
-        for (int i = 0; i < n - 1; i++) {
-            sk_array_push_any(out, __sk__arrays_get_any(src, i));
+sk_bool __sk__has(sk_string line, sk_string pattern) {
+    if (line.__is_null || pattern.__is_null) {
+            VoidHasError* err = malloc(sizeof(VoidHasError));
+            err->__type = "Error.VoidSearchError.VoidHasError";
+            err->msg = sk_string_new("Cannot search in 'null' string or with 'null' pattern.");
+            sk_throw(err, "<builtin:std/strings>", 230, 5);
         }
-        return sk_arr_new(out);
-    t42 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t42;
+        return sk_bool_new(__sk__str_find(line.value, pattern.value) >= 0);
+    return sk_bool_new(0);
 }
 
-sk_arr __sk__erase(sk_arr source, sk_int id) {
-    sk_arr t43;
-
-    sk_array* src = source.__is_null ? NULL : source.value;
-        int n = src ? src->length : 0;
-        int idx = id.value;
-        if (idx < 0 || idx >= n) {
-            ArrayIdNotFoundError* err = malloc(sizeof(ArrayIdNotFoundError));
-            err->__type = "Error.ArrayError.ArrayIdNotFoundError";
-            err->msg = sk_string_new("Array index out of bounds in 'erase'.");
-            sk_throw(err, "<builtin:std/arrays>", 165, 5);
+sk_bool __sk__startWith(sk_string line, sk_string pattern) {
+    if (line.__is_null || pattern.__is_null) {
+            VoidStartWithError* err = malloc(sizeof(VoidStartWithError));
+            err->__type = "Error.VoidSearchError.VoidStartWithError";
+            err->msg = sk_string_new("Cannot check prefix of 'null' string or with 'null' pattern.");
+            sk_throw(err, "<builtin:std/strings>", 245, 5);
         }
-        sk_array* out = sk_array_new(sizeof(sk_any), 5);
-        for (int i = 0; i < n; i++) {
-            if (i == idx) continue;
-            sk_array_push_any(out, __sk__arrays_get_any(src, i));
-        }
-        return sk_arr_new(out);
-    t43 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t43;
+        size_t plen = strlen(pattern.value);
+        if (plen > strlen(line.value)) return sk_bool_new(0);
+        return sk_bool_new(strncmp(line.value, pattern.value, plen) == 0);
+    return sk_bool_new(0);
 }
 
-sk_arr __sk__remove(sk_arr source, sk_int id) {
-    sk_arr t44;
-
-    sk_array* src = source.__is_null ? NULL : source.value;
-        int n = src ? src->length : 0;
-        int idx = id.value;
-        if (idx < 0 || idx >= n) {
-            ArrayIdNotFoundError* err = malloc(sizeof(ArrayIdNotFoundError));
-            err->__type = "Error.ArrayError.ArrayIdNotFoundError";
-            err->msg = sk_string_new("Array index out of bounds in 'remove'.");
-            sk_throw(err, "<builtin:std/arrays>", 185, 5);
+sk_bool __sk__endWith(sk_string line, sk_string pattern) {
+    if (line.__is_null || pattern.__is_null) {
+            VoidEndWithError* err = malloc(sizeof(VoidEndWithError));
+            err->__type = "Error.VoidSearchError.VoidEndWithError";
+            err->msg = sk_string_new("Cannot check suffix of 'null' string or with 'null' pattern.");
+            sk_throw(err, "<builtin:std/strings>", 260, 5);
         }
-        if (src->elem_type == 5) {
-            HeteroArrayRemoveError* err = malloc(sizeof(HeteroArrayRemoveError));
-            err->__type = "Error.ArrayError.HeteroArrayRemoveError";
-            err->msg = sk_string_new("Try use 'remove' for heterogenius array");
-            sk_throw(err, "<builtin:std/arrays>", 192, 5);
-        }
-        sk_array* out = sk_array_deep_copy(src);
-        void* slot = (char*)out->data + idx * out->elem_size;
-        switch (out->elem_type) {
-            case 0: { sk_int nullv = SK_NULL_int; memcpy(slot, &nullv, sizeof(sk_int)); break; }
-            case 1: { sk_string nullv = SK_NULL_string; memcpy(slot, &nullv, sizeof(sk_string)); break; }
-            case 2: { sk_float nullv = SK_NULL_float; memcpy(slot, &nullv, sizeof(sk_float)); break; }
-            case 3: { sk_double nullv = SK_NULL_double; memcpy(slot, &nullv, sizeof(sk_double)); break; }
-            case 4: { sk_bool nullv = SK_NULL_bool; memcpy(slot, &nullv, sizeof(sk_bool)); break; }
-            case 6: { sk_arr nullv = SK_NULL_arr; memcpy(slot, &nullv, sizeof(sk_arr)); break; }
-        }
-        return sk_arr_new(out);
-    t44 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t44;
+        size_t llen = strlen(line.value);
+        size_t plen = strlen(pattern.value);
+        if (plen > llen) return sk_bool_new(0);
+        return sk_bool_new(strcmp(line.value + llen - plen, pattern.value) == 0);
+    return sk_bool_new(0);
 }
 
-sk_arr __sk__cut(sk_arr source, sk_int start, sk_int end) {
-    sk_arr t45;
+sk_int __sk__toInt(sk_any value) {
+    sk_int result;
+    sk_string t71;
+    sk_bool t72;
+    sk_int t73;
+    sk_bool t74;
+    sk_bool t75;
+    sk_bool t76;
+    sk_int t77;
+    sk_bool t78;
+    sk_bool t79;
+    sk_bool t80;
+    sk_bool t81;
+    sk_arr a;
+    sk_arr t82;
+    sk_int t83;
+    sk_bool t84;
+    sk_int t85;
 
-    sk_array* src = source.__is_null ? NULL : source.value;
-        int n = src ? src->length : 0;
-        int s = start.value;
-        int e = end.value;
-        // ВКЛЮЧИТЕЛЬНО: e — индекс последнего элемента
-        if (s < 0 || e < 0 || s > n - 1 || e > n - 1 || s > e) {
-            ArrayIdNotFoundError* err = malloc(sizeof(ArrayIdNotFoundError));
-            err->__type = "Error.ArrayError.ArrayIdNotFoundError";
-            err->msg = sk_string_new("Invalid range in 'cut'.");
-            sk_throw(err, "<builtin:std/arrays>", 225, 5);
-        }
-        sk_array* out = sk_array_new(sizeof(sk_any), 5);
-        for (int i = s; i <= e; i++) {
-            sk_array_push_any(out, __sk__arrays_get_any(src, i));
-        }
-        return sk_arr_new(out);
-    t45 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t45;
+    result = sk_int_new(0);
+    char _buf_t71[32];
+    switch (value.type) {
+        case 0: strcpy(_buf_t71, "int"); break;
+        case 1: strcpy(_buf_t71, "string"); break;
+        case 2: strcpy(_buf_t71, "float"); break;
+        case 3: strcpy(_buf_t71, "double"); break;
+        case 4: strcpy(_buf_t71, "bool"); break;
+        case 5: strcpy(_buf_t71, "arr"); break;
+        case 6: strcpy(_buf_t71, "void"); break;
+        default: strcpy(_buf_t71, "unknown"); break;
+    }
+    t71 = sk_string_new(_buf_t71);
+    t72 = sk_string_eq(t71, sk_string_new("int"));
+    if (t72.value) {
+        goto L5;
+    } else {
+        goto L6;
+    }
+L5:
+    t73 = any_to_int(value);
+    result = t73;
+    goto L4;
+L6:
+    t74 = sk_string_eq(t71, sk_string_new("float"));
+    t75 = sk_string_eq(t71, sk_string_new("double"));
+    t76 = sk_bool_or(t74, t75);
+    if (t76.value) {
+        goto L7;
+    } else {
+        goto L8;
+    }
+L7:
+    t77 = any_to_int(value);
+    result = t77;
+    goto L4;
+L8:
+    t78 = sk_string_eq(t71, sk_string_new("bool"));
+    if (t78.value) {
+        goto L9;
+    } else {
+        goto L10;
+    }
+L9:
+    t79 = any_to_bool(value);
+    if (t79.value) {
+        goto L11;
+    } else {
+        goto L12;
+    }
+L11:
+    result = sk_int_new(1);
+    goto L13;
+L12:
+    result = sk_int_new(0);
+L13:
+    goto L4;
+L10:
+    t80 = sk_string_eq(t71, sk_string_new("void"));
+    if (t80.value) {
+        goto L14;
+    } else {
+        goto L15;
+    }
+L14:
+    result = sk_int_new(0);
+    goto L4;
+L15:
+    t81 = sk_string_eq(t71, sk_string_new("arr"));
+    if (t81.value) {
+        goto L16;
+    } else {
+        goto L17;
+    }
+L16:
+    t82 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    sk_array_push_any(t82.value, value);
+    a = t82;
+    t83 = sk_int_new(sk_array_len(a.value));
+    result = t83;
+    goto L4;
+L17:
+    t84 = sk_string_eq(t71, sk_string_new("string"));
+    if (t84.value) {
+        goto L18;
+    } else {
+        goto L19;
+    }
+L18:
+    t85 = any_to_int(value);
+    result = t85;
+    goto L4;
+L19:
+L20:
+    result = sk_int_new(0);
+L4:
+    return result;
 }
 
-sk_arr __sk__combine(sk_arr first, sk_arr second) {
-    sk_arr t46;
+sk_bool __sk__toBool(sk_any value) {
+    sk_string t86;
+    sk_bool t87;
+    sk_bool t88;
+    sk_bool t89;
+    sk_bool t90;
+    sk_bool t91;
+    sk_double t92;
+    sk_bool t93;
+    sk_bool t94;
+    sk_bool t95;
+    sk_bool t96;
+    sk_bool t97;
+    sk_arr a;
+    sk_arr t98;
+    sk_int t99;
+    sk_bool t100;
+    sk_bool t101;
+    sk_string s;
+    sk_string t102;
+    sk_int t103;
+    sk_bool t104;
+    sk_bool t105;
 
-    sk_array* out = sk_array_new(sizeof(sk_any), 5);
-        if (!first.__is_null && first.value) {
-            for (int i = 0; i < first.value->length; i++) {
-                sk_array_push_any(out, __sk__arrays_get_any(first.value, i));
-            }
-        }
-        if (!second.__is_null && second.value) {
-            for (int i = 0; i < second.value->length; i++) {
-                sk_array_push_any(out, __sk__arrays_get_any(second.value, i));
-            }
-        }
-        return sk_arr_new(out);
-    t46 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t46;
+    char _buf_t86[32];
+    switch (value.type) {
+        case 0: strcpy(_buf_t86, "int"); break;
+        case 1: strcpy(_buf_t86, "string"); break;
+        case 2: strcpy(_buf_t86, "float"); break;
+        case 3: strcpy(_buf_t86, "double"); break;
+        case 4: strcpy(_buf_t86, "bool"); break;
+        case 5: strcpy(_buf_t86, "arr"); break;
+        case 6: strcpy(_buf_t86, "void"); break;
+        default: strcpy(_buf_t86, "unknown"); break;
+    }
+    t86 = sk_string_new(_buf_t86);
+    t87 = sk_string_eq(t86, sk_string_new("int"));
+    t88 = sk_string_eq(t86, sk_string_new("float"));
+    t89 = sk_bool_or(t87, t88);
+    t90 = sk_string_eq(t86, sk_string_new("double"));
+    t91 = sk_bool_or(t89, t90);
+    if (t91.value) {
+        goto L22;
+    } else {
+        goto L23;
+    }
+L22:
+    t92 = any_to_double(value);
+    t93 = sk_double_gt(t92, sk_double_new(0.0));
+    if (t93.value) {
+        goto L24;
+    } else {
+        goto L25;
+    }
+L24:
+    return sk_bool_new(1);
+    goto L26;
+L25:
+    return sk_bool_new(0);
+L26:
+    goto L21;
+L23:
+    t94 = sk_string_eq(t86, sk_string_new("bool"));
+    if (t94.value) {
+        goto L27;
+    } else {
+        goto L28;
+    }
+L27:
+    t95 = any_to_bool(value);
+    return t95;
+    goto L21;
+L28:
+    t96 = sk_string_eq(t86, sk_string_new("void"));
+    if (t96.value) {
+        goto L29;
+    } else {
+        goto L30;
+    }
+L29:
+    return sk_bool_new(0);
+    goto L21;
+L30:
+    t97 = sk_string_eq(t86, sk_string_new("arr"));
+    if (t97.value) {
+        goto L31;
+    } else {
+        goto L32;
+    }
+L31:
+    t98 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    sk_array_push_any(t98.value, value);
+    a = t98;
+    t99 = sk_int_new(sk_array_len(a.value));
+    t100 = sk_int_gt(t99, sk_int_new(0));
+    if (t100.value) {
+        goto L33;
+    } else {
+        goto L34;
+    }
+L33:
+    return sk_bool_new(1);
+    goto L35;
+L34:
+    return sk_bool_new(0);
+L35:
+    goto L21;
+L32:
+    t101 = sk_string_eq(t86, sk_string_new("string"));
+    if (t101.value) {
+        goto L36;
+    } else {
+        goto L37;
+    }
+L36:
+    t102 = any_to_string(value);
+    s = t102;
+    free(t102.value);
+    t103 = sk_int_new(sk_array_len(s.value));
+    t104 = sk_int_gt(t103, sk_int_new(0));
+    if (t104.value) {
+        goto L38;
+    } else {
+        goto L39;
+    }
+L38:
+    t105 = sk_string_eq(s, sk_string_new("true"));
+    if (t105.value) {
+        goto L40;
+    } else {
+        goto L41;
+    }
+L40:
+    return sk_bool_new(1);
+    goto L42;
+L41:
+    return sk_bool_new(0);
+L42:
+    goto L43;
+L39:
+    return sk_bool_new(0);
+L43:
+    goto L21;
+L37:
+L44:
+    return sk_bool_new(0);
+L21:
 }
 
-sk_arr __sk__slice(sk_arr source, sk_int id) {
-    sk_arr t47;
+sk_float __sk__toFloat(sk_any value) {
+    sk_float result;
+    sk_string t106;
+    sk_bool t107;
+    sk_bool t108;
+    sk_bool t109;
+    sk_bool t110;
+    sk_bool t111;
+    sk_float t112;
+    sk_bool t113;
+    sk_bool t114;
+    sk_bool t115;
+    sk_bool t116;
+    sk_arr a;
+    sk_arr t117;
+    sk_int t118;
+    sk_bool t119;
+    sk_float t120;
 
-    sk_array* src = source.__is_null ? NULL : source.value;
-        int n = src ? src->length : 0;
-        int idx = id.value;
-        if (idx < 0 || idx >= n) {
-            ArrayIdNotFoundError* err = malloc(sizeof(ArrayIdNotFoundError));
-            err->__type = "Error.ArrayError.ArrayIdNotFoundError";
-            err->msg = sk_string_new("Array index out of bounds in 'slice'.");
-            sk_throw(err, "<builtin:std/arrays>", 260, 5);
-        }
-        sk_array* left = sk_array_new(sizeof(sk_any), 5);
-        sk_array* right = sk_array_new(sizeof(sk_any), 5);
-        for (int i = 0; i <= idx; i++) {
-            sk_array_push_any(left, __sk__arrays_get_any(src, i));
-        }
-        for (int i = idx + 1; i < n; i++) {
-            sk_array_push_any(right, __sk__arrays_get_any(src, i));
-        }
-        sk_array* out = sk_array_new(sizeof(sk_arr), 6);
-        sk_arr l = sk_arr_new(left);
-        sk_arr r = sk_arr_new(right);
-        sk_array_push_arr(out, l);
-        sk_array_push_arr(out, r);
-        return sk_arr_new(out);
-    t47 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t47;
+    result = sk_float_new(0.0f);
+    char _buf_t106[32];
+    switch (value.type) {
+        case 0: strcpy(_buf_t106, "int"); break;
+        case 1: strcpy(_buf_t106, "string"); break;
+        case 2: strcpy(_buf_t106, "float"); break;
+        case 3: strcpy(_buf_t106, "double"); break;
+        case 4: strcpy(_buf_t106, "bool"); break;
+        case 5: strcpy(_buf_t106, "arr"); break;
+        case 6: strcpy(_buf_t106, "void"); break;
+        default: strcpy(_buf_t106, "unknown"); break;
+    }
+    t106 = sk_string_new(_buf_t106);
+    t107 = sk_string_eq(t106, sk_string_new("int"));
+    t108 = sk_string_eq(t106, sk_string_new("float"));
+    t109 = sk_bool_or(t107, t108);
+    t110 = sk_string_eq(t106, sk_string_new("double"));
+    t111 = sk_bool_or(t109, t110);
+    if (t111.value) {
+        goto L46;
+    } else {
+        goto L47;
+    }
+L46:
+    t112 = any_to_float(value);
+    result = t112;
+    goto L45;
+L47:
+    t113 = sk_string_eq(t106, sk_string_new("bool"));
+    if (t113.value) {
+        goto L48;
+    } else {
+        goto L49;
+    }
+L48:
+    t114 = any_to_bool(value);
+    if (t114.value) {
+        goto L50;
+    } else {
+        goto L51;
+    }
+L50:
+    result = sk_float_new(1.0f);
+    goto L52;
+L51:
+    result = sk_float_new(0.0f);
+L52:
+    goto L45;
+L49:
+    t115 = sk_string_eq(t106, sk_string_new("void"));
+    if (t115.value) {
+        goto L53;
+    } else {
+        goto L54;
+    }
+L53:
+    result = sk_float_new(0.0f);
+    goto L45;
+L54:
+    t116 = sk_string_eq(t106, sk_string_new("arr"));
+    if (t116.value) {
+        goto L55;
+    } else {
+        goto L56;
+    }
+L55:
+    t117 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    sk_array_push_any(t117.value, value);
+    a = t117;
+    t118 = sk_int_new(sk_array_len(a.value));
+    result = t118;
+    sk_call_push("<builtin:std/ref>", 123, 25);
+    __sk__to_float();
+    sk_call_pop();
+    goto L45;
+L56:
+    t119 = sk_string_eq(t106, sk_string_new("string"));
+    if (t119.value) {
+        goto L57;
+    } else {
+        goto L58;
+    }
+L57:
+    t120 = any_to_float(value);
+    result = t120;
+    goto L45;
+L58:
+L59:
+    result = sk_float_new(0.0f);
+L45:
+    return result;
+}
+
+sk_double __sk__toDouble(sk_any value) {
+    sk_double result;
+    sk_string t121;
+    sk_bool t122;
+    sk_bool t123;
+    sk_bool t124;
+    sk_bool t125;
+    sk_bool t126;
+    sk_double t127;
+    sk_bool t128;
+    sk_bool t129;
+    sk_bool t130;
+    sk_bool t131;
+    sk_arr a;
+    sk_arr t132;
+    sk_int t133;
+    sk_bool t134;
+    sk_double t135;
+
+    result = sk_double_new(0.0);
+    char _buf_t121[32];
+    switch (value.type) {
+        case 0: strcpy(_buf_t121, "int"); break;
+        case 1: strcpy(_buf_t121, "string"); break;
+        case 2: strcpy(_buf_t121, "float"); break;
+        case 3: strcpy(_buf_t121, "double"); break;
+        case 4: strcpy(_buf_t121, "bool"); break;
+        case 5: strcpy(_buf_t121, "arr"); break;
+        case 6: strcpy(_buf_t121, "void"); break;
+        default: strcpy(_buf_t121, "unknown"); break;
+    }
+    t121 = sk_string_new(_buf_t121);
+    t122 = sk_string_eq(t121, sk_string_new("int"));
+    t123 = sk_string_eq(t121, sk_string_new("float"));
+    t124 = sk_bool_or(t122, t123);
+    t125 = sk_string_eq(t121, sk_string_new("double"));
+    t126 = sk_bool_or(t124, t125);
+    if (t126.value) {
+        goto L61;
+    } else {
+        goto L62;
+    }
+L61:
+    t127 = any_to_double(value);
+    result = t127;
+    goto L60;
+L62:
+    t128 = sk_string_eq(t121, sk_string_new("bool"));
+    if (t128.value) {
+        goto L63;
+    } else {
+        goto L64;
+    }
+L63:
+    t129 = any_to_bool(value);
+    if (t129.value) {
+        goto L65;
+    } else {
+        goto L66;
+    }
+L65:
+    result = sk_double_new(1.0);
+    goto L67;
+L66:
+    result = sk_double_new(0.0);
+L67:
+    goto L60;
+L64:
+    t130 = sk_string_eq(t121, sk_string_new("void"));
+    if (t130.value) {
+        goto L68;
+    } else {
+        goto L69;
+    }
+L68:
+    result = sk_double_new(0.0);
+    goto L60;
+L69:
+    t131 = sk_string_eq(t121, sk_string_new("arr"));
+    if (t131.value) {
+        goto L70;
+    } else {
+        goto L71;
+    }
+L70:
+    t132 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    sk_array_push_any(t132.value, value);
+    a = t132;
+    t133 = sk_int_new(sk_array_len(a.value));
+    result = t133;
+    sk_call_push("<builtin:std/ref>", 153, 25);
+    __sk__to_double();
+    sk_call_pop();
+    goto L60;
+L71:
+    t134 = sk_string_eq(t121, sk_string_new("string"));
+    if (t134.value) {
+        goto L72;
+    } else {
+        goto L73;
+    }
+L72:
+    t135 = any_to_double(value);
+    result = t135;
+    goto L60;
+L73:
+L74:
+    result = sk_double_new(0.0);
+L60:
+    return result;
+}
+
+sk_string __sk__toString(sk_any value) {
+    sk_string result;
+    sk_string t136;
+    sk_bool t137;
+    sk_bool t138;
+    sk_bool t139;
+    sk_bool t140;
+    sk_bool t141;
+    sk_bool t142;
+    sk_bool t143;
+    sk_string t144;
+    sk_bool t145;
+    sk_bool t146;
+    sk_string t147;
+    sk_bool t148;
+    sk_string t149;
+
+    result = sk_string_new("");
+    char _buf_t136[32];
+    switch (value.type) {
+        case 0: strcpy(_buf_t136, "int"); break;
+        case 1: strcpy(_buf_t136, "string"); break;
+        case 2: strcpy(_buf_t136, "float"); break;
+        case 3: strcpy(_buf_t136, "double"); break;
+        case 4: strcpy(_buf_t136, "bool"); break;
+        case 5: strcpy(_buf_t136, "arr"); break;
+        case 6: strcpy(_buf_t136, "void"); break;
+        default: strcpy(_buf_t136, "unknown"); break;
+    }
+    t136 = sk_string_new(_buf_t136);
+    t137 = sk_string_eq(t136, sk_string_new("int"));
+    t138 = sk_string_eq(t136, sk_string_new("float"));
+    t139 = sk_bool_or(t137, t138);
+    t140 = sk_string_eq(t136, sk_string_new("double"));
+    t141 = sk_bool_or(t139, t140);
+    t142 = sk_string_eq(t136, sk_string_new("bool"));
+    t143 = sk_bool_or(t141, t142);
+    if (t143.value) {
+        goto L76;
+    } else {
+        goto L77;
+    }
+L76:
+    t144 = any_to_string(value);
+    result = t144;
+    free(t144.value);
+    goto L75;
+L77:
+    t145 = sk_string_eq(t136, sk_string_new("void"));
+    if (t145.value) {
+        goto L78;
+    } else {
+        goto L79;
+    }
+L78:
+    result = sk_string_new("null");
+    goto L75;
+L79:
+    t146 = sk_string_eq(t136, sk_string_new("arr"));
+    if (t146.value) {
+        goto L80;
+    } else {
+        goto L81;
+    }
+L80:
+    t147 = any_to_string(value);
+    result = t147;
+    free(t147.value);
+    goto L75;
+L81:
+    t148 = sk_string_eq(t136, sk_string_new("string"));
+    if (t148.value) {
+        goto L82;
+    } else {
+        goto L83;
+    }
+L82:
+    t149 = any_to_string(value);
+    result = t149;
+    free(t149.value);
+    goto L75;
+L83:
+L84:
+    result = sk_string_new("");
+L75:
+    return result;
+}
+
+sk_int __sk__toIntStrict(sk_any value) {
+    sk_int result;
+    sk_string t150;
+    sk_bool t151;
+    sk_int t152;
+    sk_bool t153;
+    sk_bool t154;
+    sk_bool t155;
+    sk_int t156;
+    sk_bool t157;
+    sk_bool t158;
+    sk_bool t159;
+    VoidToIntRefactorError* t160;
+    sk_bool t161;
+    sk_arr a;
+    sk_arr t162;
+    sk_int t163;
+    sk_bool t164;
+    sk_int t165;
+    sk_string line;
+    sk_string t166;
+    sk_string t167;
+    sk_string t168;
+    CustomToIntRefactorError* t169;
+
+    result = sk_int_new(0);
+    char _buf_t150[32];
+    switch (value.type) {
+        case 0: strcpy(_buf_t150, "int"); break;
+        case 1: strcpy(_buf_t150, "string"); break;
+        case 2: strcpy(_buf_t150, "float"); break;
+        case 3: strcpy(_buf_t150, "double"); break;
+        case 4: strcpy(_buf_t150, "bool"); break;
+        case 5: strcpy(_buf_t150, "arr"); break;
+        case 6: strcpy(_buf_t150, "void"); break;
+        default: strcpy(_buf_t150, "unknown"); break;
+    }
+    t150 = sk_string_new(_buf_t150);
+    t151 = sk_string_eq(t150, sk_string_new("int"));
+    if (t151.value) {
+        goto L86;
+    } else {
+        goto L87;
+    }
+L86:
+    t152 = any_to_int(value);
+    result = t152;
+    goto L85;
+L87:
+    t153 = sk_string_eq(t150, sk_string_new("float"));
+    t154 = sk_string_eq(t150, sk_string_new("double"));
+    t155 = sk_bool_or(t153, t154);
+    if (t155.value) {
+        goto L88;
+    } else {
+        goto L89;
+    }
+L88:
+    t156 = any_to_int(value);
+    result = t156;
+    goto L85;
+L89:
+    t157 = sk_string_eq(t150, sk_string_new("bool"));
+    if (t157.value) {
+        goto L90;
+    } else {
+        goto L91;
+    }
+L90:
+    t158 = any_to_bool(value);
+    if (t158.value) {
+        goto L92;
+    } else {
+        goto L93;
+    }
+L92:
+    result = sk_int_new(1);
+    goto L94;
+L93:
+    result = sk_int_new(0);
+L94:
+    goto L85;
+L91:
+    t159 = sk_string_eq(t150, sk_string_new("void"));
+    if (t159.value) {
+        goto L95;
+    } else {
+        goto L96;
+    }
+L95:
+t160 = malloc(sizeof(VoidToIntRefactorError));
+t160->__type = "Error.RefactorError.VoidRefactorError.VoidToIntRefactorError";
+t160->msg = sk_string_new("Cannot convert 'null' to int.");
+    sk_throw(t160, "<builtin:std/ref>", 206, 7);
+    goto L85;
+L96:
+    t161 = sk_string_eq(t150, sk_string_new("arr"));
+    if (t161.value) {
+        goto L97;
+    } else {
+        goto L98;
+    }
+L97:
+    t162 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    sk_array_push_any(t162.value, value);
+    a = t162;
+    t163 = sk_int_new(sk_array_len(a.value));
+    result = t163;
+    goto L85;
+L98:
+    t164 = sk_string_eq(t150, sk_string_new("string"));
+    if (t164.value) {
+        goto L99;
+    } else {
+        goto L100;
+    }
+L99:
+    t165 = any_to_int(value);
+    result = t165;
+    goto L85;
+L100:
+L101:
+    char _buf_t166[32];
+    switch (value.type) {
+        case 0: strcpy(_buf_t166, "int"); break;
+        case 1: strcpy(_buf_t166, "string"); break;
+        case 2: strcpy(_buf_t166, "float"); break;
+        case 3: strcpy(_buf_t166, "double"); break;
+        case 4: strcpy(_buf_t166, "bool"); break;
+        case 5: strcpy(_buf_t166, "arr"); break;
+        case 6: strcpy(_buf_t166, "void"); break;
+        default: strcpy(_buf_t166, "unknown"); break;
+    }
+    t166 = sk_string_new(_buf_t166);
+    t167 = sk_string_concat(sk_string_new("Cannot convert type '"), t166);
+    t168 = sk_string_concat(t167, sk_string_new("' to int."));
+    free(t167.value);
+    line = t168;
+    free(t168.value);
+t169 = malloc(sizeof(CustomToIntRefactorError));
+t169->__type = "Error.RefactorError.CustomRefactorError.CustomToIntRefactorError";
+t169->msg = line;
+    sk_throw(t169, "<builtin:std/ref>", 217, 7);
+L85:
+    return result;
+}
+
+sk_bool __sk__toBoolStrict(sk_any value) {
+    sk_string t170;
+    sk_bool t171;
+    sk_bool t172;
+    sk_bool t173;
+    sk_bool t174;
+    sk_bool t175;
+    sk_double t176;
+    sk_bool t177;
+    sk_bool t178;
+    sk_bool t179;
+    sk_bool t180;
+    VoidToBoolRefactorError* t181;
+    sk_bool t182;
+    sk_arr a;
+    sk_arr t183;
+    sk_int t184;
+    sk_bool t185;
+    sk_bool t186;
+    sk_string s;
+    sk_string t187;
+    sk_int t188;
+    sk_bool t189;
+    sk_bool t190;
+    sk_string line;
+    sk_string t191;
+    sk_string t192;
+    sk_string t193;
+    CustomToBoolRefactorError* t194;
+
+    char _buf_t170[32];
+    switch (value.type) {
+        case 0: strcpy(_buf_t170, "int"); break;
+        case 1: strcpy(_buf_t170, "string"); break;
+        case 2: strcpy(_buf_t170, "float"); break;
+        case 3: strcpy(_buf_t170, "double"); break;
+        case 4: strcpy(_buf_t170, "bool"); break;
+        case 5: strcpy(_buf_t170, "arr"); break;
+        case 6: strcpy(_buf_t170, "void"); break;
+        default: strcpy(_buf_t170, "unknown"); break;
+    }
+    t170 = sk_string_new(_buf_t170);
+    t171 = sk_string_eq(t170, sk_string_new("int"));
+    t172 = sk_string_eq(t170, sk_string_new("float"));
+    t173 = sk_bool_or(t171, t172);
+    t174 = sk_string_eq(t170, sk_string_new("double"));
+    t175 = sk_bool_or(t173, t174);
+    if (t175.value) {
+        goto L103;
+    } else {
+        goto L104;
+    }
+L103:
+    t176 = any_to_double(value);
+    t177 = sk_double_gt(t176, sk_double_new(0.0));
+    if (t177.value) {
+        goto L105;
+    } else {
+        goto L106;
+    }
+L105:
+    return sk_bool_new(1);
+    goto L107;
+L106:
+    return sk_bool_new(0);
+L107:
+    goto L102;
+L104:
+    t178 = sk_string_eq(t170, sk_string_new("bool"));
+    if (t178.value) {
+        goto L108;
+    } else {
+        goto L109;
+    }
+L108:
+    t179 = any_to_bool(value);
+    return t179;
+    goto L102;
+L109:
+    t180 = sk_string_eq(t170, sk_string_new("void"));
+    if (t180.value) {
+        goto L110;
+    } else {
+        goto L111;
+    }
+L110:
+t181 = malloc(sizeof(VoidToBoolRefactorError));
+t181->__type = "Error.RefactorError.VoidRefactorError.VoidToBoolRefactorError";
+t181->msg = sk_string_new("Cannot convert 'null' to bool.");
+    sk_throw(t181, "<builtin:std/ref>", 236, 7);
+    goto L102;
+L111:
+    t182 = sk_string_eq(t170, sk_string_new("arr"));
+    if (t182.value) {
+        goto L112;
+    } else {
+        goto L113;
+    }
+L112:
+    t183 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    sk_array_push_any(t183.value, value);
+    a = t183;
+    t184 = sk_int_new(sk_array_len(a.value));
+    t185 = sk_int_gt(t184, sk_int_new(0));
+    if (t185.value) {
+        goto L114;
+    } else {
+        goto L115;
+    }
+L114:
+    return sk_bool_new(1);
+    goto L116;
+L115:
+    return sk_bool_new(0);
+L116:
+    goto L102;
+L113:
+    t186 = sk_string_eq(t170, sk_string_new("string"));
+    if (t186.value) {
+        goto L117;
+    } else {
+        goto L118;
+    }
+L117:
+    t187 = any_to_string(value);
+    s = t187;
+    free(t187.value);
+    t188 = sk_int_new(sk_array_len(s.value));
+    t189 = sk_int_gt(t188, sk_int_new(0));
+    if (t189.value) {
+        goto L119;
+    } else {
+        goto L120;
+    }
+L119:
+    t190 = sk_string_eq(s, sk_string_new("true"));
+    if (t190.value) {
+        goto L121;
+    } else {
+        goto L122;
+    }
+L121:
+    return sk_bool_new(1);
+    goto L123;
+L122:
+    return sk_bool_new(0);
+L123:
+    goto L124;
+L120:
+    return sk_bool_new(0);
+L124:
+    goto L102;
+L118:
+L125:
+    char _buf_t191[32];
+    switch (value.type) {
+        case 0: strcpy(_buf_t191, "int"); break;
+        case 1: strcpy(_buf_t191, "string"); break;
+        case 2: strcpy(_buf_t191, "float"); break;
+        case 3: strcpy(_buf_t191, "double"); break;
+        case 4: strcpy(_buf_t191, "bool"); break;
+        case 5: strcpy(_buf_t191, "arr"); break;
+        case 6: strcpy(_buf_t191, "void"); break;
+        default: strcpy(_buf_t191, "unknown"); break;
+    }
+    t191 = sk_string_new(_buf_t191);
+    t192 = sk_string_concat(sk_string_new("Cannot convert type '"), t191);
+    t193 = sk_string_concat(t192, sk_string_new("' to bool."));
+    free(t192.value);
+    line = t193;
+    free(t193.value);
+t194 = malloc(sizeof(CustomToBoolRefactorError));
+t194->__type = "Error.RefactorError.CustomRefactorError.CustomToBoolRefactorError";
+t194->msg = line;
+    sk_throw(t194, "<builtin:std/ref>", 260, 7);
+L102:
+}
+
+sk_float __sk__toFloatStrict(sk_any value) {
+    sk_string t195;
+    sk_bool t196;
+    sk_bool t197;
+    sk_bool t198;
+    sk_bool t199;
+    sk_bool t200;
+    sk_float t201;
+    sk_bool t202;
+    sk_bool t203;
+    sk_bool t204;
+    VoidToFloatRefactorError* t205;
+    sk_bool t206;
+    sk_arr a;
+    sk_arr t207;
+    sk_int t208;
+    sk_bool t209;
+    sk_float t210;
+    sk_string line;
+    sk_string t211;
+    sk_string t212;
+    sk_string t213;
+    CustomToFloatRefactorError* t214;
+
+    char _buf_t195[32];
+    switch (value.type) {
+        case 0: strcpy(_buf_t195, "int"); break;
+        case 1: strcpy(_buf_t195, "string"); break;
+        case 2: strcpy(_buf_t195, "float"); break;
+        case 3: strcpy(_buf_t195, "double"); break;
+        case 4: strcpy(_buf_t195, "bool"); break;
+        case 5: strcpy(_buf_t195, "arr"); break;
+        case 6: strcpy(_buf_t195, "void"); break;
+        default: strcpy(_buf_t195, "unknown"); break;
+    }
+    t195 = sk_string_new(_buf_t195);
+    t196 = sk_string_eq(t195, sk_string_new("int"));
+    t197 = sk_string_eq(t195, sk_string_new("float"));
+    t198 = sk_bool_or(t196, t197);
+    t199 = sk_string_eq(t195, sk_string_new("double"));
+    t200 = sk_bool_or(t198, t199);
+    if (t200.value) {
+        goto L127;
+    } else {
+        goto L128;
+    }
+L127:
+    t201 = any_to_float(value);
+    return t201;
+    goto L126;
+L128:
+    t202 = sk_string_eq(t195, sk_string_new("bool"));
+    if (t202.value) {
+        goto L129;
+    } else {
+        goto L130;
+    }
+L129:
+    t203 = any_to_bool(value);
+    if (t203.value) {
+        goto L131;
+    } else {
+        goto L132;
+    }
+L131:
+    return sk_float_new(1.0f);
+    goto L133;
+L132:
+    return sk_float_new(0.0f);
+L133:
+    goto L126;
+L130:
+    t204 = sk_string_eq(t195, sk_string_new("void"));
+    if (t204.value) {
+        goto L134;
+    } else {
+        goto L135;
+    }
+L134:
+t205 = malloc(sizeof(VoidToFloatRefactorError));
+t205->__type = "Error.RefactorError.VoidRefactorError.VoidToFloatRefactorError";
+t205->msg = sk_string_new("Cannot convert 'null' to float.");
+    sk_throw(t205, "<builtin:std/ref>", 278, 7);
+    goto L126;
+L135:
+    t206 = sk_string_eq(t195, sk_string_new("arr"));
+    if (t206.value) {
+        goto L136;
+    } else {
+        goto L137;
+    }
+L136:
+    t207 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    sk_array_push_any(t207.value, value);
+    a = t207;
+    t208 = sk_int_new(sk_array_len(a.value));
+    return t208;
+    goto L126;
+L137:
+    t209 = sk_string_eq(t195, sk_string_new("string"));
+    if (t209.value) {
+        goto L138;
+    } else {
+        goto L139;
+    }
+L138:
+    t210 = any_to_float(value);
+    return t210;
+    goto L126;
+L139:
+L140:
+    char _buf_t211[32];
+    switch (value.type) {
+        case 0: strcpy(_buf_t211, "int"); break;
+        case 1: strcpy(_buf_t211, "string"); break;
+        case 2: strcpy(_buf_t211, "float"); break;
+        case 3: strcpy(_buf_t211, "double"); break;
+        case 4: strcpy(_buf_t211, "bool"); break;
+        case 5: strcpy(_buf_t211, "arr"); break;
+        case 6: strcpy(_buf_t211, "void"); break;
+        default: strcpy(_buf_t211, "unknown"); break;
+    }
+    t211 = sk_string_new(_buf_t211);
+    t212 = sk_string_concat(sk_string_new("Cannot convert type '"), t211);
+    t213 = sk_string_concat(t212, sk_string_new("' to float."));
+    free(t212.value);
+    line = t213;
+    free(t213.value);
+t214 = malloc(sizeof(CustomToFloatRefactorError));
+t214->__type = "Error.RefactorError.CustomRefactorError.CustomToFloatRefactorError";
+t214->msg = line;
+    sk_throw(t214, "<builtin:std/ref>", 289, 7);
+L126:
+}
+
+sk_double __sk__toDoubleStrict(sk_any value) {
+    sk_string t215;
+    sk_bool t216;
+    sk_bool t217;
+    sk_bool t218;
+    sk_bool t219;
+    sk_bool t220;
+    sk_double t221;
+    sk_bool t222;
+    sk_bool t223;
+    sk_bool t224;
+    VoidToDoubleRefactorError* t225;
+    sk_bool t226;
+    sk_arr a;
+    sk_arr t227;
+    sk_int t228;
+    sk_bool t229;
+    sk_double t230;
+    sk_string line;
+    sk_string t231;
+    sk_string t232;
+    sk_string t233;
+    CustomToDoubleRefactorError* t234;
+
+    char _buf_t215[32];
+    switch (value.type) {
+        case 0: strcpy(_buf_t215, "int"); break;
+        case 1: strcpy(_buf_t215, "string"); break;
+        case 2: strcpy(_buf_t215, "float"); break;
+        case 3: strcpy(_buf_t215, "double"); break;
+        case 4: strcpy(_buf_t215, "bool"); break;
+        case 5: strcpy(_buf_t215, "arr"); break;
+        case 6: strcpy(_buf_t215, "void"); break;
+        default: strcpy(_buf_t215, "unknown"); break;
+    }
+    t215 = sk_string_new(_buf_t215);
+    t216 = sk_string_eq(t215, sk_string_new("int"));
+    t217 = sk_string_eq(t215, sk_string_new("float"));
+    t218 = sk_bool_or(t216, t217);
+    t219 = sk_string_eq(t215, sk_string_new("double"));
+    t220 = sk_bool_or(t218, t219);
+    if (t220.value) {
+        goto L142;
+    } else {
+        goto L143;
+    }
+L142:
+    t221 = any_to_double(value);
+    return t221;
+    goto L141;
+L143:
+    t222 = sk_string_eq(t215, sk_string_new("bool"));
+    if (t222.value) {
+        goto L144;
+    } else {
+        goto L145;
+    }
+L144:
+    t223 = any_to_bool(value);
+    if (t223.value) {
+        goto L146;
+    } else {
+        goto L147;
+    }
+L146:
+    return sk_double_new(1.0);
+    goto L148;
+L147:
+    return sk_double_new(0.0);
+L148:
+    goto L141;
+L145:
+    t224 = sk_string_eq(t215, sk_string_new("void"));
+    if (t224.value) {
+        goto L149;
+    } else {
+        goto L150;
+    }
+L149:
+t225 = malloc(sizeof(VoidToDoubleRefactorError));
+t225->__type = "Error.RefactorError.VoidRefactorError.VoidToDoubleRefactorError";
+t225->msg = sk_string_new("Cannot convert 'null' to double.");
+    sk_throw(t225, "<builtin:std/ref>", 307, 7);
+    goto L141;
+L150:
+    t226 = sk_string_eq(t215, sk_string_new("arr"));
+    if (t226.value) {
+        goto L151;
+    } else {
+        goto L152;
+    }
+L151:
+    t227 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    sk_array_push_any(t227.value, value);
+    a = t227;
+    t228 = sk_int_new(sk_array_len(a.value));
+    return t228;
+    goto L141;
+L152:
+    t229 = sk_string_eq(t215, sk_string_new("string"));
+    if (t229.value) {
+        goto L153;
+    } else {
+        goto L154;
+    }
+L153:
+    t230 = any_to_double(value);
+    return t230;
+    goto L141;
+L154:
+L155:
+    char _buf_t231[32];
+    switch (value.type) {
+        case 0: strcpy(_buf_t231, "int"); break;
+        case 1: strcpy(_buf_t231, "string"); break;
+        case 2: strcpy(_buf_t231, "float"); break;
+        case 3: strcpy(_buf_t231, "double"); break;
+        case 4: strcpy(_buf_t231, "bool"); break;
+        case 5: strcpy(_buf_t231, "arr"); break;
+        case 6: strcpy(_buf_t231, "void"); break;
+        default: strcpy(_buf_t231, "unknown"); break;
+    }
+    t231 = sk_string_new(_buf_t231);
+    t232 = sk_string_concat(sk_string_new("Cannot convert type '"), t231);
+    t233 = sk_string_concat(t232, sk_string_new("' to double."));
+    free(t232.value);
+    line = t233;
+    free(t233.value);
+t234 = malloc(sizeof(CustomToDoubleRefactorError));
+t234->__type = "Error.RefactorError.CustomRefactorError.CustomToDoubleRefactorError";
+t234->msg = line;
+    sk_throw(t234, "<builtin:std/ref>", 318, 7);
+L141:
+}
+
+sk_string __sk__toStringStrict(sk_any value) {
+    sk_string t235;
+    sk_bool t236;
+    sk_bool t237;
+    sk_bool t238;
+    sk_bool t239;
+    sk_bool t240;
+    sk_bool t241;
+    sk_bool t242;
+    sk_string t243;
+    sk_bool t244;
+    VoidToStringRefactorError* t245;
+    sk_bool t246;
+    sk_string t247;
+    sk_bool t248;
+    sk_string t249;
+    sk_string line;
+    sk_string t250;
+    sk_string t251;
+    sk_string t252;
+    CustomToStringRefactorError* t253;
+
+    char _buf_t235[32];
+    switch (value.type) {
+        case 0: strcpy(_buf_t235, "int"); break;
+        case 1: strcpy(_buf_t235, "string"); break;
+        case 2: strcpy(_buf_t235, "float"); break;
+        case 3: strcpy(_buf_t235, "double"); break;
+        case 4: strcpy(_buf_t235, "bool"); break;
+        case 5: strcpy(_buf_t235, "arr"); break;
+        case 6: strcpy(_buf_t235, "void"); break;
+        default: strcpy(_buf_t235, "unknown"); break;
+    }
+    t235 = sk_string_new(_buf_t235);
+    t236 = sk_string_eq(t235, sk_string_new("int"));
+    t237 = sk_string_eq(t235, sk_string_new("float"));
+    t238 = sk_bool_or(t236, t237);
+    t239 = sk_string_eq(t235, sk_string_new("double"));
+    t240 = sk_bool_or(t238, t239);
+    t241 = sk_string_eq(t235, sk_string_new("bool"));
+    t242 = sk_bool_or(t240, t241);
+    if (t242.value) {
+        goto L157;
+    } else {
+        goto L158;
+    }
+L157:
+    t243 = any_to_string(value);
+    return t243;
+    goto L156;
+L158:
+    t244 = sk_string_eq(t235, sk_string_new("void"));
+    if (t244.value) {
+        goto L159;
+    } else {
+        goto L160;
+    }
+L159:
+t245 = malloc(sizeof(VoidToStringRefactorError));
+t245->__type = "Error.RefactorError.VoidRefactorError.VoidToStringRefactorError";
+t245->msg = sk_string_new("Cannot convert 'null' to string.");
+    sk_throw(t245, "<builtin:std/ref>", 329, 7);
+    goto L156;
+L160:
+    t246 = sk_string_eq(t235, sk_string_new("arr"));
+    if (t246.value) {
+        goto L161;
+    } else {
+        goto L162;
+    }
+L161:
+    t247 = any_to_string(value);
+    return t247;
+    goto L156;
+L162:
+    t248 = sk_string_eq(t235, sk_string_new("string"));
+    if (t248.value) {
+        goto L163;
+    } else {
+        goto L164;
+    }
+L163:
+    t249 = any_to_string(value);
+    return t249;
+    goto L156;
+L164:
+L165:
+    char _buf_t250[32];
+    switch (value.type) {
+        case 0: strcpy(_buf_t250, "int"); break;
+        case 1: strcpy(_buf_t250, "string"); break;
+        case 2: strcpy(_buf_t250, "float"); break;
+        case 3: strcpy(_buf_t250, "double"); break;
+        case 4: strcpy(_buf_t250, "bool"); break;
+        case 5: strcpy(_buf_t250, "arr"); break;
+        case 6: strcpy(_buf_t250, "void"); break;
+        default: strcpy(_buf_t250, "unknown"); break;
+    }
+    t250 = sk_string_new(_buf_t250);
+    t251 = sk_string_concat(sk_string_new("Cannot convert type '"), t250);
+    t252 = sk_string_concat(t251, sk_string_new("' to string."));
+    free(t251.value);
+    line = t252;
+    free(t252.value);
+t253 = malloc(sizeof(CustomToStringRefactorError));
+t253->__type = "Error.RefactorError.CustomRefactorError.CustomToStringRefactorError";
+t253->msg = line;
+    sk_throw(t253, "<builtin:std/ref>", 339, 7);
+L156:
 }
 

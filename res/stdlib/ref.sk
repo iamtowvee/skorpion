@@ -12,13 +12,19 @@ use #std/strings
 const RefactorError{} = new Error
 
 const VoidRefactorError{} = new RefactorError
-const CustomRefactorError{} = new const
+const CustomRefactorError{} = new RefactorError
 
 const VoidToIntRefactorError{} = new VoidRefactorError
 const VoidToBoolRefactorError{} = new VoidRefactorError
+const VoidToFloatRefactorError{} = new VoidRefactorError
+const VoidToDoubleRefactorError{} = new VoidRefactorError
+const VoidToStringRefactorError{} = new VoidRefactorError
 
 const CustomToIntRefactorError{} = new CustomRefactorError
 const CustomToBoolRefactorError{} = new CustomRefactorError
+const CustomToFloatRefactorError{} = new CustomRefactorError
+const CustomToDoubleRefactorError{} = new CustomRefactorError
+const CustomToStringRefactorError{} = new CustomRefactorError
 
 /* === Basic === */
 
@@ -26,13 +32,13 @@ int toInt(any value) {
   int result = 0
   case (type(value)) {
     "int" {
-      result = value
+      result = value.to_int()
     },
-    "float","double" {
+    ("float","double") {
       result = value.to_int()
     },
     "bool" {
-      if (value) {
+      if (value.to_bool()) {
         result = 1
       } else {
         result = 0
@@ -42,10 +48,10 @@ int toInt(any value) {
       result = 0
     },
     "arr" {
-      result = value.length
+      arr a = value.to_arr()
+      result = a.length
     },
     "string" {
-      // TO-DO
       result = value.to_int()
     },
     _ {
@@ -57,29 +63,31 @@ int toInt(any value) {
 
 bool toBool(any value) {
   case (type(value)) {
-    "int","float","double" {
-      if (value > 0) {
+    ("int","float","double") {
+      if (value.to_double() > 0.0) {
         return true
       } else {
         return false
       }
     },
     "bool" {
-      return value
+      return value.to_bool()
     },
     "void" {
       return false
     },
     "arr" {
-      if (value.length > 0) {
+      arr a = value.to_arr()
+      if (a.length > 0) {
         return true
       } else {
         return false
       }
     },
     "string" {
-      if (value.length > 0) {
-        if (value == "true") {
+      string s = value.to_string()
+      if (s.length > 0) {
+        if (s == "true") {
           return true
         } else {
           return false
@@ -94,19 +102,101 @@ bool toBool(any value) {
   }
 }
 
+float toFloat(any value) {
+  float result = 0.0f
+  case (type(value)) {
+    ("int","float","double") {
+      result = value.to_float()
+    },
+    "bool" {
+      if (value.to_bool()) {
+        result = 1.0f
+      } else {
+        result = 0.0f
+      }
+    },
+    "void" {
+      result = 0.0f
+    },
+    "arr" {
+      arr a = value.to_arr()
+      result = a.length.to_float()
+    },
+    "string" {
+      result = value.to_float()
+    },
+    _ {
+      result = 0.0f
+    },
+  }
+  return result
+}
+
+double toDouble(any value) {
+  double result = 0.0
+  case (type(value)) {
+    ("int","float","double") {
+      result = value.to_double()
+    },
+    "bool" {
+      if (value.to_bool()) {
+        result = 1.0
+      } else {
+        result = 0.0
+      }
+    },
+    "void" {
+      result = 0.0
+    },
+    "arr" {
+      arr a = value.to_arr()
+      result = a.length.to_double()
+    },
+    "string" {
+      result = value.to_double()
+    },
+    _ {
+      result = 0.0
+    },
+  }
+  return result
+}
+
+string toString(any value) {
+  string result = ""
+  case (type(value)) {
+    ("int","float","double","bool") {
+      result = value.to_string()
+    },
+    "void" {
+      result = "null"
+    },
+    "arr" {
+      result = value.to_string()
+    },
+    "string" {
+      result = value.to_string()
+    },
+    _ {
+      result = ""
+    },
+  }
+  return result
+}
+
 /* === Strict === */
 
 int toIntStrict(any value) {
   int result = 0
   case (type(value)) {
     "int" {
-      result = value
+      result = value.to_int()
     },
-    "float","double" {
+    ("float","double") {
       result = value.to_int()
     },
     "bool" {
-      if (value) {
+      if (value.to_bool()) {
         result = 1
       } else {
         result = 0
@@ -116,10 +206,10 @@ int toIntStrict(any value) {
       throw VoidToIntRefactorError{msg: "Cannot convert 'null' to int."}
     },
     "arr" {
-      result = value.length
+      arr a = value.to_arr()
+      result = a.length
     },
     "string" {
-      // TO-DO
       result = value.to_int()
     },
     _ {
@@ -132,29 +222,31 @@ int toIntStrict(any value) {
 
 bool toBoolStrict(any value) {
   case (type(value)) {
-    "int","float","double" {
-      if (value > 0) {
+    ("int","float","double") {
+      if (value.to_double() > 0.0) {
         return true
       } else {
         return false
       }
     },
     "bool" {
-      return value
+      return value.to_bool()
     },
     "void" {
       throw VoidToBoolRefactorError{msg: "Cannot convert 'null' to bool."}
     },
     "arr" {
-      if (value.length > 0) {
+      arr a = value.to_arr()
+      if (a.length > 0) {
         return true
       } else {
         return false
       }
     },
     "string" {
-      if (value.length > 0) {
-        if (value == "true") {
+      string s = value.to_string()
+      if (s.length > 0) {
+        if (s == "true") {
           return true
         } else {
           return false
@@ -172,40 +264,79 @@ bool toBoolStrict(any value) {
 
 float toFloatStrict(any value) {
   case (type(value)) {
-    "int","float","double" {
-      r
+    ("int","float","double") {
+      return value.to_float()
     },
     "bool" {
-      if (value) {
-        return 1.00f
+      if (value.to_bool()) {
+        return 1.0f
       } else {
-        return 0.00f
+        return 0.0f
       }
     },
     "void" {
-      throw VoidToBoolRefactorError{msg: "Cannot convert 'null' to bool."}
+      throw VoidToFloatRefactorError{msg: "Cannot convert 'null' to float."}
     },
     "arr" {
-      if (value.length > 0) {
-        return true
-      } else {
-        return false
-      }
+      arr a = value.to_arr()
+      return a.length.to_float()
     },
     "string" {
-      if (value.length > 0) {
-        if (value == "true") {
-          return true
-        } else {
-          return false
-        }
-      } else {
-        return false
-      }
+      return value.to_float()
     },
     _ {
       string line = "Cannot convert type '" + type(value) + "' to float."
-      throw CustomToBoolRefactorError{msg: line}
+      throw CustomToFloatRefactorError{msg: line}
+    },
+  }
+}
+
+double toDoubleStrict(any value) {
+  case (type(value)) {
+    ("int","float","double") {
+      return value.to_double()
+    },
+    "bool" {
+      if (value.to_bool()) {
+        return 1.0
+      } else {
+        return 0.0
+      }
+    },
+    "void" {
+      throw VoidToDoubleRefactorError{msg: "Cannot convert 'null' to double."}
+    },
+    "arr" {
+      arr a = value.to_arr()
+      return a.length.to_double()
+    },
+    "string" {
+      return value.to_double()
+    },
+    _ {
+      string line = "Cannot convert type '" + type(value) + "' to double."
+      throw CustomToDoubleRefactorError{msg: line}
+    },
+  }
+}
+
+string toStringStrict(any value) {
+  case (type(value)) {
+    ("int","float","double","bool") {
+      return value.to_string()
+    },
+    "void" {
+      throw VoidToStringRefactorError{msg: "Cannot convert 'null' to string."}
+    },
+    "arr" {
+      return value.to_string()
+    },
+    "string" {
+      return value.to_string()
+    },
+    _ {
+      string line = "Cannot convert type '" + type(value) + "' to string."
+      throw CustomToStringRefactorError{msg: line}
     },
   }
 }

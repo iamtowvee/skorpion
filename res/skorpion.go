@@ -572,8 +572,13 @@ func printAST(node front.Node, indent int) {
 	case *front.CaseStmt:
 		fmt.Println(prefix + cli.Colors.Yellow("Case"))
 		for _, branch := range n.Branches {
-			fmt.Printf("%s  Pattern: ", prefix)
-			printAST(branch.Pattern, 0)
+			fmt.Printf("%s  Patterns: ", prefix)
+			for i, pat := range branch.Patterns {
+				if i > 0 {
+					fmt.Print(", ")
+				}
+				printAST(pat, 0)
+			}
 			if branch.Body != nil {
 				printAST(branch.Body, indent+2)
 			}

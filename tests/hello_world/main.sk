@@ -1,31 +1,32 @@
 use #std/io
-use std/arrays
+use std/ref
 
 void main(arr args) {
-    arr[int] nums = [1, 2, 3, 4, 5]
-
-    sendln(arrays.len(nums))            // 5
-    sendln(nums.len())                  // 5 — через точку
-
-    sendln(arrays.find(nums, 3))        // 2
-    sendln(arrays.find(nums, 99))       // -1
-
-
-    arr popped = arrays.pop(nums)       // [1, 2, 3, 4]
-    arr erased = arrays.erase(nums, 2)  // [1, 2, 4, 5]
-    arr added  = arrays.add(nums, 6)    // [1, 2, 3, 4, 5, 6]
-    arr ins    = arrays.insert(nums, 2, 99)  // [1, 2, 99, 3, 4, 5]
-    arr pr     = arrays.proem(nums, 0)  // [0, 1, 2, 3, 4, 5]
-    arr cutd   = arrays.cut(nums, 1, 5) // [2, 3, 4]
-    arr comb   = arrays.combine(nums, [6, 7])  // [1, 2, 3, 4, 5, 6, 7]
-    arr[arr] sl = arrays.slice(nums, 2) // [[1, 2, 3], [4, 5]]
-
-    sendln(popped)
-    sendln(erased)
-    sendln(added)
-    sendln(ins)
-    sendln(pr)
-    sendln(cutd)
-    sendln(comb)
-    sendln(sl)
+    sendln(ref.toInt(42))              // 42
+    sendln(ref.toInt("123"))           // 123
+    sendln(ref.toInt(3.14))            // 3
+    sendln(ref.toInt(true))            // 1
+    sendln(ref.toInt([1, 2, 3]))       // 3 (длина)
+    
+    sendln(ref.toBool(1))              // true
+    sendln(ref.toBool(0))              // false
+    sendln(ref.toBool("true"))         // true
+    sendln(ref.toBool([1, 2]))         // true
+    
+    sendln(ref.toFloat(3.14))          // 3.14
+    sendln(ref.toFloat("2.5"))         // 2.5
+    
+    sendln(ref.toDouble(3.14))         // 3.140000
+    sendln(ref.toDouble("2.5"))        // 2.500000
+    
+    sendln(ref.toString(42))           // "42"
+    sendln(ref.toString(true))         // "true"
+    sendln(ref.toString([1, 2, 3]))    // "[1, 2, 3]"
+    
+    // Strict версии бросают ошибки на null и неизвестные типы:
+    try {
+        ref.toIntStrict(to_int(null))
+    } catch (VoidToIntRefactorError as e) {
+        sendln(e.msg)   // "Cannot convert 'null' to int."
+    }
 }

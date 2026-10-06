@@ -683,7 +683,7 @@ func (p *Parser) parseCase() Node {
 
 		// Default branch: _ { ... }
 		if p.peek.Type == TOKEN_IDENT && p.peek.Literal == "_" {
-			p.advance() // съедаем _
+			p.advance()
 
 			defaultBlock = p.parseBlock()
 			if defaultBlock == nil {
@@ -701,10 +701,40 @@ func (p *Parser) parseCase() Node {
 			break
 		}
 
-		// Обычный паттерн
-		pattern := p.parseExpression()
-		if pattern == nil {
-			return nil
+		// Мультипаттерн: (a, b, c) { ... }
+		patterns := []Node{}
+		if p.peek.Type == TOKEN_LPAREN {
+			p.advance() // (
+
+			for {
+				pat := p.parseExpression()
+				if pat == nil {
+					return nil
+				}
+				patterns = append(patterns, pat)
+
+				if p.peek.Type == TOKEN_COMMA {
+					p.advance()
+					continue
+				}
+				break
+			}
+
+			if p.peek.Type != TOKEN_RPAREN {
+				p.hasErrors = true
+				errors.NewFatalError("0599",
+					fmt.Sprintf("Expected ')' after multi-pattern, got '%s'", p.peek.Literal),
+					p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			p.advance() // )
+		} else {
+			// Обычный паттерн
+			pat := p.parseExpression()
+			if pat == nil {
+				return nil
+			}
+			patterns = append(patterns, pat)
 		}
 
 		body := p.parseBlock()
@@ -714,7 +744,7 @@ func (p *Parser) parseCase() Node {
 
 		branches = append(branches, &CaseBranch{
 			Position: branchPos,
-			Pattern:  pattern,
+			Patterns: patterns,
 			Body:     body,
 		})
 
@@ -1185,6 +1215,12 @@ func (p *Parser) parseUnary() Node {
 		return nil
 	}
 
+	// Постфиксные операции: .field, .method(), [index]
+	expr = p.parsePostfix(expr)
+	if expr == nil {
+		return nil
+	}
+
 	// Постфиксный формат ^Nf или ^X...
 	if p.peek.Type == TOKEN_CARET {
 		return p.parseFormatSuffix(expr)
@@ -1388,50 +1424,6 @@ func (p *Parser) parsePrimary() Node {
 		p.advance()
 		str := &String{Position: pos, Value: val}
 
-		if p.peek.Type == TOKEN_DOT {
-			p.advance()
-			if p.peek.Type != TOKEN_IDENT {
-				p.hasErrors = true
-				errors.NewFatalError("0520",
-					fmt.Sprintf("Expected method name after '.'"),
-					p.peek.Line, p.peek.Column, p.FileName)
-				return nil
-			}
-			funcName := p.peek.Literal
-			funcPos := p.pos()
-			p.advance()
-
-			if p.peek.Type != TOKEN_LPAREN {
-				p.hasErrors = true
-				errors.NewFatalError("0520",
-					fmt.Sprintf("Expected '(' after '%s'", funcName),
-					p.peek.Line, p.peek.Column, p.FileName)
-				return nil
-			}
-			p.advance()
-
-			var callArgs []Node
-			if p.peek.Type != TOKEN_RPAREN {
-				for {
-					arg := p.parseExpression()
-					if arg == nil {
-						return nil
-					}
-					callArgs = append(callArgs, arg)
-					if p.peek.Type == TOKEN_COMMA {
-						p.advance()
-						continue
-					}
-					break
-				}
-			}
-			p.expect(TOKEN_RPAREN)
-
-			allArgs := []Node{str}
-			allArgs = append(allArgs, callArgs...)
-			return &CallExpr{Position: funcPos, Name: funcName, Args: allArgs}
-		}
-
 		return str
 
 	case TOKEN_DOLLAR:
@@ -1447,87 +1439,6 @@ func (p *Parser) parsePrimary() Node {
 		pos := p.pos()
 		name := p.peek.Literal
 		p.advance()
-
-		if p.peek.Type == TOKEN_LBRACKET {
-			p.advance()
-			index := p.parseExpression()
-			if index == nil {
-				return nil
-			}
-			if p.peek.Type != TOKEN_RBRACKET {
-				p.hasErrors = true
-				errors.NewFatalError("0516",
-					fmt.Sprintf("Expected ']', got '%s'", p.peek.Literal),
-					p.peek.Line, p.peek.Column, p.FileName)
-				return nil
-			}
-			p.advance()
-			return &ArrayIndex{Position: pos, Name: name, Index: index}
-		}
-
-		// arr.length, x.func(), e.field
-		if p.peek.Type == TOKEN_DOT {
-			p.advance()
-
-			// length
-			if p.peek.Literal == "length" {
-				p.advance()
-				return &ArrayLength{Position: pos, Name: name}
-			}
-
-			// Поле или метод
-			if p.peek.Type == TOKEN_IDENT {
-				fieldOrFunc := p.peek.Literal
-				p.advance()
-
-				// Метод: x.func(...)
-				if p.peek.Type == TOKEN_LPAREN {
-					p.advance()
-
-					var callArgs []Node
-					if p.peek.Type != TOKEN_RPAREN {
-						for {
-							arg := p.parseExpression()
-							if arg == nil {
-								return nil
-							}
-							callArgs = append(callArgs, arg)
-							if p.peek.Type == TOKEN_COMMA {
-								p.advance()
-								continue
-							}
-							break
-						}
-					}
-					p.expect(TOKEN_RPAREN)
-
-					return &CallExpr{
-						Position: pos,
-						Name:     name + "." + fieldOrFunc,
-						Args:     callArgs,
-						Receiver: name,
-					}
-				}
-
-				// Поле: e.msg
-				return &FieldAccess{
-					Position: pos,
-					Object:   name,
-					Field:    fieldOrFunc,
-				}
-			}
-
-			// Если после точки не ident — ошибка
-			p.hasErrors = true
-			errors.NewFatalError("0520",
-				fmt.Sprintf("Expected field or method name after '.', got '%s'", p.peek.Literal),
-				p.peek.Line, p.peek.Column, p.FileName)
-			return nil
-		}
-
-		if p.peek.Type == TOKEN_LPAREN {
-			return p.parseCall(name, pos)
-		}
 
 		// ErrorInstance: Name{field: value, ...}
 		if p.peek.Type == TOKEN_LBRACE {
@@ -1624,53 +1535,6 @@ func (p *Parser) parsePrimary() Node {
 		p.expect(TOKEN_RPAREN)
 		if p.hasErrors || errors.HasFatal() {
 			return nil
-		}
-
-		if p.peek.Type == TOKEN_DOT {
-			p.advance()
-			if p.peek.Type == TOKEN_IDENT {
-				funcName := p.peek.Literal
-				p.advance()
-
-				if p.peek.Type != TOKEN_LPAREN {
-					p.hasErrors = true
-					errors.NewFatalError("0520",
-						fmt.Sprintf("Expected '(' after '%s'", funcName),
-						p.peek.Line, p.peek.Column, p.FileName)
-					return nil
-				}
-				p.advance()
-
-				var callArgs []Node
-				if p.peek.Type != TOKEN_RPAREN {
-					for {
-						arg := p.parseExpression()
-						if arg == nil {
-							return nil
-						}
-						callArgs = append(callArgs, arg)
-						if p.peek.Type == TOKEN_COMMA {
-							p.advance()
-							continue
-						}
-						break
-					}
-				}
-				p.expect(TOKEN_RPAREN)
-
-				if rangeExpr, ok := first.(*RangeExpr); ok {
-					return &CallRangeExpr{
-						Position: pos,
-						Name:     funcName,
-						Range:    rangeExpr,
-						Extra:    callArgs,
-					}
-				}
-
-				allArgs := []Node{first}
-				allArgs = append(allArgs, callArgs...)
-				return &CallExpr{Position: pos, Name: funcName, Args: allArgs}
-			}
 		}
 
 		return first
@@ -2125,4 +1989,148 @@ func (p *Parser) parseUnionType() string {
 		return types[0]
 	}
 	return "T<" + strings.Join(types, ",") + ">"
+}
+
+// parsePostfix обрабатывает цепочку постфиксных операций:
+//
+//	expr.field
+//	expr.method(args)
+//	expr.length
+//	expr[index]
+//
+// Работает для ЛЮБОГО выражения, а не только для Ident.
+// parsePostfix обрабатывает цепочку постфиксных операций:
+//
+//	expr.field
+//	expr.method(args)
+//	expr.length
+//	expr[index]
+//
+// Работает для ЛЮБОГО выражения, а не только для Ident.
+func (p *Parser) parsePostfix(expr Node) Node {
+	if p.hasErrors || errors.HasFatal() {
+		return expr
+	}
+
+	for {
+		if p.hasErrors || errors.HasFatal() {
+			return nil
+		}
+
+		// [index]
+		if p.peek.Type == TOKEN_LBRACKET {
+			p.advance()
+			ident, ok := expr.(*Ident)
+			if !ok {
+				p.hasErrors = true
+				errors.NewFatalError("0516",
+					"Array indexing is only supported on identifiers",
+					p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			index := p.parseExpression()
+			if index == nil {
+				return nil
+			}
+			if p.peek.Type != TOKEN_RBRACKET {
+				p.hasErrors = true
+				errors.NewFatalError("0516",
+					fmt.Sprintf("Expected ']', got '%s'", p.peek.Literal),
+					p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			p.advance()
+			expr = &ArrayIndex{Position: ident.Position, Name: ident.Name, Index: index}
+			continue
+		}
+
+		if p.peek.Type != TOKEN_DOT {
+			return expr
+		}
+		p.advance()
+
+		// .length
+		if p.peek.Type == TOKEN_IDENT && p.peek.Literal == "length" {
+			p.advance()
+			ident, ok := expr.(*Ident)
+			if !ok {
+				p.hasErrors = true
+				errors.NewFatalError("0520",
+					".length is only supported on identifiers",
+					p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			expr = &ArrayLength{Position: ident.Position, Name: ident.Name}
+			continue
+		}
+
+		if p.peek.Type == TOKEN_IDENT {
+			methodName := p.peek.Literal
+			methodPos := p.pos()
+			p.advance()
+
+			if p.peek.Type == TOKEN_LPAREN {
+				p.advance()
+				callArgs := []Node{}
+				if p.peek.Type != TOKEN_RPAREN {
+					for {
+						arg := p.parseExpression()
+						if arg == nil {
+							return nil
+						}
+						callArgs = append(callArgs, arg)
+						if p.peek.Type == TOKEN_COMMA {
+							p.advance()
+							continue
+						}
+						break
+					}
+				}
+				if p.peek.Type != TOKEN_RPAREN {
+					p.hasErrors = true
+					errors.NewFatalError("0602",
+						fmt.Sprintf("Expected ')' after arguments, got '%s'", p.peek.Literal),
+						p.peek.Line, p.peek.Column, p.FileName)
+					return nil
+				}
+				p.advance()
+
+				var recvName string
+				if id, ok := expr.(*Ident); ok {
+					recvName = id.Name
+				}
+
+				expr = &CallExpr{
+					Position:     methodPos,
+					Name:         methodName,
+					Args:         callArgs,
+					Receiver:     recvName,
+					ReceiverNode: expr,
+				}
+				continue
+			}
+
+			// .field
+			ident, ok := expr.(*Ident)
+			if !ok {
+				p.hasErrors = true
+				errors.NewFatalError("0520",
+					"Field access is only supported on identifiers",
+					p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			expr = &FieldAccess{
+				Position: ident.Position,
+				Object:   ident.Name,
+				Field:    methodName,
+			}
+			continue
+		}
+
+		p.hasErrors = true
+		errors.NewFatalError("0520",
+			fmt.Sprintf("Expected field or method name after '.', got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
+	}
 }

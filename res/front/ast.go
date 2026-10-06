@@ -301,9 +301,10 @@ func (c *CallRangeExpr) GetType() NodeType { return NODE_CALL_RANGE }
 
 type CallExpr struct {
 	Position
-	Name     string
-	Args     []Node
-	Receiver string
+	Name         string
+	Args         []Node
+	Receiver     string
+	ReceiverNode Node
 }
 
 func (c *CallExpr) GetType() NodeType { return NODE_CALL }
@@ -421,8 +422,8 @@ type CaseStmt struct {
 
 type CaseBranch struct {
 	Position
-	Pattern Node
-	Body    *Block
+	Patterns []Node
+	Body     *Block
 }
 
 func (c *CaseStmt) GetType() NodeType   { return NODE_CASE }

@@ -1261,25 +1261,27 @@ func (sa *SemanticAnalyzer) analyzeCase(caseStmt *front.CaseStmt) front.Node {
 
 	seenPatterns := make(map[string]bool)
 	for _, branch := range caseStmt.Branches {
-		patternType := sa.getNodeType(branch.Pattern)
-		debug.Debug("Pattern type: %s\n", patternType)
+		for _, pat := range branch.Patterns {
+			patternType := sa.getNodeType(pat)
+			debug.Debug("Pattern type: %s\n", patternType)
 
-		if patternType != valueType && patternType != "" {
-			sa.addError("1525",
-				fmt.Sprintf("Pattern type mismatch: expected '%s', got '%s'",
-					valueType, patternType),
-				branch.GetLine(), branch.GetColumn(), sa.CurrentFile)
-		}
-
-		// Проверка дубликатов паттернов
-		patKey := sa.getConstantValue(branch.Pattern)
-		if patKey != "" {
-			if seenPatterns[patKey] {
-				sa.addError("1540",
-					fmt.Sprintf("Duplicate case pattern '%s'", patKey),
-					branch.GetLine(), branch.GetColumn(), sa.CurrentFile)
+			if patternType != valueType && patternType != "" {
+				sa.addError("1525",
+					fmt.Sprintf("Pattern type mismatch: expected '%s', got '%s'",
+						valueType, patternType),
+					pat.GetLine(), pat.GetColumn(), sa.CurrentFile)
 			}
-			seenPatterns[patKey] = true
+
+			// Проверка дубликатов паттернов
+			patKey := sa.getConstantValue(pat)
+			if patKey != "" {
+				if seenPatterns[patKey] {
+					sa.addError("1540",
+						fmt.Sprintf("Duplicate case pattern '%s'", patKey),
+						pat.GetLine(), pat.GetColumn(), sa.CurrentFile)
+				}
+				seenPatterns[patKey] = true
+			}
 		}
 
 		if branch.Body != nil {
@@ -1808,8 +1810,8 @@ func (sa *SemanticAnalyzer) collectUsedIdents(node front.Node, used map[string]b
 			sa.collectUsedIdents(n.Value, used)
 		}
 		for _, branch := range n.Branches {
-			if branch.Pattern != nil {
-				sa.collectUsedIdents(branch.Pattern, used)
+			for _, pat := range branch.Patterns {
+				sa.collectUsedIdents(pat, used)
 			}
 			if branch.Body != nil {
 				sa.collectUsedIdents(branch.Body, used)

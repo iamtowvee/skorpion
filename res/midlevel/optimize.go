@@ -254,8 +254,8 @@ func (o *Optimizer) optimizeCase(caseStmt *front.CaseStmt) front.Node {
 	}
 
 	for i, branch := range caseStmt.Branches {
-		if branch.Pattern != nil {
-			caseStmt.Branches[i].Pattern = o.optimizeNode(branch.Pattern)
+		for j, pat := range branch.Patterns {
+			caseStmt.Branches[i].Patterns[j] = o.optimizeNode(pat)
 		}
 		if branch.Body != nil {
 			caseStmt.Branches[i].Body = o.optimizeBlock(branch.Body)
@@ -266,27 +266,30 @@ func (o *Optimizer) optimizeCase(caseStmt *front.CaseStmt) front.Node {
 		caseStmt.Default = o.optimizeBlock(caseStmt.Default)
 	}
 
-	// Если value — константа, можно выбрать одну ветку
-	if _, isNum := caseStmt.Value.(*front.Number); isNum {
-		if _, isStr := caseStmt.Value.(*front.String); isStr {
-			// fallthrough
-		}
-	}
-
 	// Если value — числовая или строковая константа
 	if o.isConstant(caseStmt.Value) {
 		val := o.getConstantValue(caseStmt.Value)
 		if val != "" {
 			for _, branch := range caseStmt.Branches {
-				if o.isConstant(branch.Pattern) {
-					pat := o.getConstantValue(branch.Pattern)
-					if pat == val {
-						o.Changed = true
-						return branch.Body
+				// Все паттерны в ветке должны быть константными
+				allConstant := true
+				matched := false
+				for _, pat := range branch.Patterns {
+					if !o.isConstant(pat) {
+						allConstant = false
+						break
 					}
-				} else {
+					if o.getConstantValue(pat) == val {
+						matched = true
+					}
+				}
+				if !allConstant {
 					// Первый не-константный паттерн — оставляем как есть
 					break
+				}
+				if matched {
+					o.Changed = true
+					return branch.Body
 				}
 			}
 			// Ни один константный паттерн не совпал
@@ -294,6 +297,13 @@ func (o *Optimizer) optimizeCase(caseStmt *front.CaseStmt) front.Node {
 				o.Changed = true
 				return caseStmt.Default
 			}
+		}
+	}
+
+	// Если value — константа, можно выбрать одну ветку
+	if _, isNum := caseStmt.Value.(*front.Number); isNum {
+		if _, isStr := caseStmt.Value.(*front.String); isStr {
+			// fallthrough
 		}
 	}
 
@@ -683,8 +693,8 @@ func (o *Optimizer) collectUsedIdents(node front.Node, used map[string]bool) {
 			o.collectUsedIdents(n.Value, used)
 		}
 		for _, branch := range n.Branches {
-			if branch.Pattern != nil {
-				o.collectUsedIdents(branch.Pattern, used)
+			for _, pat := range branch.Patterns {
+				o.collectUsedIdents(pat, used)
 			}
 			if branch.Body != nil {
 				o.collectUsedIdents(branch.Body, used)
