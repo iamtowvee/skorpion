@@ -11,6 +11,7 @@ string getEnv(string env) {
     char* val = getenv(env.value);
     return sk_string_new(val ? val : "");
   ~~~
+  return ""
 }
 
 void setEnv(string env, string val) {
@@ -38,4 +39,26 @@ void setClearEnv(string env, string val, bool confirm) {
         setenv(env.value, val.value, 1);
     #endif
   ~~~
+}
+
+string getExePath() {
+    includeC ~~~
+        if (__sk__argc > 0 && __sk__argv[0]) {
+            return sk_string_new(__sk__argv[0]);
+        }
+        return sk_string_new("");
+    ~~~
+    return []
+}
+
+arr[string] getArgs() {
+    includeC ~~~
+        sk_array* arr = sk_array_new(sizeof(sk_string), 1);
+        for (int i = 0; i < __sk__argc; i++) {
+            sk_string s = sk_string_new(__sk__argv[i]);
+            sk_array_push(arr, &s);
+        }
+        return sk_arr_new(arr);
+    ~~~
+    return []
 }

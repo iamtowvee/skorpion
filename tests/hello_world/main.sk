@@ -24,5 +24,5 @@ void main (arr args) {
     sendln(f)               // "-3.14"
 
     sendln(powl(4.3, 5))
-    sendln(3.345465^X{4,5})
+    sendln($args.length + $args)
 }

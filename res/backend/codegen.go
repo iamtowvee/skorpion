@@ -76,6 +76,11 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("};")
 	cg.writeLine("")
 
+	cg.writeLine("// Skorpion CLI args")
+	cg.writeLine("int __sk__argc = 0;")
+	cg.writeLine("char** __sk__argv = NULL;")
+	cg.writeLine("")
+
 	// ===== Constructors =====
 	cg.writeLine("sk_int sk_int_new(int v) { sk_int r; r.value = v; r.__is_null = 0; return r; }")
 	cg.writeLine("sk_float sk_float_new(float v) { sk_float r; r.value = v; r.__is_null = 0; r.prec = -1; return r; }")
@@ -750,8 +755,22 @@ func (cg *CodeGenerator) generateFunction(fn *IRFunction) {
 	cg.writeLine(fmt.Sprintf("%s %s(%s) {", returnType, fn.CName, paramsStr))
 
 	if isMain {
+		cg.writeLine("    __sk__argc = argc;")
+		cg.writeLine("    __sk__argv = argv;")
 		cg.writeLine("    (void)argc;")
 		cg.writeLine("    (void)argv;")
+
+		// main(arr NAME) — создать NAME из argv[1..] (без пути к exe)
+		if len(fn.Params) == 1 && isArrayTypeC(fn.Params[0].Type) {
+			argName := fn.Params[0].Name
+			cg.writeLine(fmt.Sprintf("    sk_array* %s__arr = sk_array_new(sizeof(sk_string), 1);", argName))
+			cg.writeLine(fmt.Sprintf("    for (int i = 1; i < argc; i++) {"))
+			cg.writeLine(fmt.Sprintf("        sk_string s = sk_string_new(argv[i]);"))
+			cg.writeLine(fmt.Sprintf("        sk_array_push(%s__arr, &s);", argName))
+			cg.writeLine(fmt.Sprintf("    }"))
+			cg.writeLine(fmt.Sprintf("    sk_arr %s = sk_arr_new(%s__arr);", argName, argName))
+			cg.writeLine("")
+		}
 	}
 
 	if len(fn.Locals) > 0 {

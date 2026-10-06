@@ -6,6 +6,8 @@
 #include <string.h>
 #include <setjmp.h>
 #include <math.h>
+#include <limits.h>
+#include <ctype.h>
 
 // Skorpion type definitions
 
@@ -492,6 +494,16 @@ void sk_array_deep_free(sk_array* a) {
     free(a);
 }
 
+typedef struct SkError {
+    const char* __type;
+    sk_string msg;
+} SkError;
+
+typedef struct A {
+    const char* __type;
+    sk_string msg;
+} A;
+
 typedef struct SkCleanup {
     void** ptr;
     int type;
@@ -601,6 +613,13 @@ sk_any __sk__powl(sk_any a, sk_any b) {
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
+    sk_array* args__arr = sk_array_new(sizeof(sk_string), 1);
+    for (int i = 0; i < argc; i++) {
+        sk_string s = sk_string_new(argv[i]);
+        sk_array_push(args__arr, &s);
+    }
+    sk_arr args = sk_arr_new(args__arr);
+
     sk_double a;
     sk_double t2;
     sk_double b;
@@ -626,8 +645,11 @@ int main(int argc, char** argv) {
     sk_any t18;
     sk_any t19;
     sk_any t20;
-    sk_double t21;
-    sk_any t22;
+    sk_int t21;
+    sk_string t22;
+    sk_string t23;
+    sk_string t24;
+    sk_any t25;
 
     t2 = sk_double_with_prec(sk_double_new(3.14), 4);
     a = t2;
@@ -660,9 +682,15 @@ int main(int argc, char** argv) {
     t19 = any_int(sk_int_new(5));
     t20 = __sk__powl(t18, t19);
     __sk__sendln(t20);
-    t21 = sk_double_trim(sk_double_new(3.345465), "45");
-    t22 = any_double(t21);
-    __sk__sendln(t22);
+    t21 = sk_int_new(sk_array_len(args.value));
+    t22 = sk_int_to_string(t21);
+    t23 = sk_arr_to_string(args);
+    t24 = sk_string_concat(t22, t23);
+    free(t23.value);
+    free(t22.value);
+    t25 = any_string(t24);
+    free(t24.value);
+    __sk__sendln(t25);
     return 0;
 }
 
@@ -689,30 +717,30 @@ sk_string __sk__std_io_input(sk_string prompt) {
 }
 
 void __sk__sendln(sk_any msg) {
-    sk_string t23;
-    sk_string t24;
+    sk_string t26;
+    sk_string t27;
 
-    t23 = any_to_string(msg);
-    t24 = sk_string_concat(t23, sk_string_new("\n"));
-    free(t23.value);
-    __sk__std_io_send(t24);
-    free(t24.value);
+    t26 = any_to_string(msg);
+    t27 = sk_string_concat(t26, sk_string_new("\n"));
+    free(t26.value);
+    __sk__std_io_send(t27);
+    free(t27.value);
     return;
 }
 
 void __sk__sendf(sk_any msg) {
-    sk_string t25;
+    sk_string t28;
 
-    t25 = any_to_string(msg);
-    __sk__std_io_send(t25);
-    free(t25.value);
+    t28 = any_to_string(msg);
+    __sk__std_io_send(t28);
+    free(t28.value);
     return;
 }
 
 sk_string __sk__input(sk_string prefix) {
-    sk_string t26;
+    sk_string t29;
 
-    t26 = __sk__std_io_input(prefix);
-    return t26;
+    t29 = __sk__std_io_input(prefix);
+    return t29;
 }
 
