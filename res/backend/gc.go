@@ -159,6 +159,10 @@ func (gc *GCAnalyzer) findOwners(fn *IRFunction, variables []string) map[string]
 			// ins.Arg1 передал владение в ins.Result
 			moved[ins.Arg1] = true
 		}
+		// field_set: obj.field = value → value передал владение в поле obj
+		if ins.Op == "field_set" && ins.Arg2 != "" {
+			moved[ins.Arg2] = true
+		}
 	}
 
 	// Формируем итоговый набор владельцев

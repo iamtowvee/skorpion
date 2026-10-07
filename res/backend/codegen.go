@@ -363,12 +363,12 @@ func (cg *CodeGenerator) Generate() string {
 
 	// ===== any constructors =====
 	cg.writeLine("sk_any any_null(void) { sk_any a; a.type = 6; a.prec = -1; a.data.p = NULL; return a; }")
-	cg.writeLine("sk_any any_int(sk_int v) { sk_any a; a.type = 0; a.prec = -1; a.data.i = v.value; return a; }")
-	cg.writeLine("sk_any any_string(sk_string v) { sk_any a; a.type = 1; a.prec = -1; a.data.s = v.value ? strdup(v.value) : NULL; return a; }")
-	cg.writeLine("sk_any any_float(sk_float v) { sk_any a; a.type = 2; a.prec = v.prec; a.data.f = v.value; return a; }")
-	cg.writeLine("sk_any any_double(sk_double v) { sk_any a; a.type = 3; a.prec = v.prec; a.data.d = v.value; return a; }")
-	cg.writeLine("sk_any any_bool(sk_bool v) { sk_any a; a.type = 4; a.prec = -1; a.data.b = v.value; return a; }")
-	cg.writeLine("sk_any any_arr(sk_arr v) { sk_any a; a.type = 5; a.prec = -1; a.data.p = v.value ? sk_array_deep_copy(v.value) : NULL; return a; }")
+	cg.writeLine("sk_any any_int(sk_int v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.data.p = NULL; return a; } a.type = 0; a.prec = -1; a.data.i = v.value; return a; }")
+	cg.writeLine("sk_any any_string(sk_string v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.data.p = NULL; return a; } a.type = 1; a.prec = -1; a.data.s = v.value ? strdup(v.value) : NULL; return a; }")
+	cg.writeLine("sk_any any_float(sk_float v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.data.p = NULL; return a; } a.type = 2; a.prec = v.prec; a.data.f = v.value; return a; }")
+	cg.writeLine("sk_any any_double(sk_double v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.data.p = NULL; return a; } a.type = 3; a.prec = v.prec; a.data.d = v.value; return a; }")
+	cg.writeLine("sk_any any_bool(sk_bool v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.data.p = NULL; return a; } a.type = 4; a.prec = -1; a.data.b = v.value; return a; }")
+	cg.writeLine("sk_any any_arr(sk_arr v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.data.p = NULL; return a; } a.type = 5; a.prec = -1; a.data.p = v.value ? sk_array_deep_copy(v.value) : NULL; return a; }")
 	cg.writeLine("")
 
 	// Forward declarations (нужны до определений, которые их используют)
@@ -689,6 +689,9 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("}")
 	cg.writeLine("")
 	cg.writeLine("void sk_error_free(void* err) {")
+	cg.writeLine("    if (!err) return;")
+	cg.writeLine("    SkError* e = (SkError*)err;")
+	cg.writeLine("    if (e->msg.value) { free(e->msg.value); e->msg.value = NULL; }")
 	cg.writeLine("    free(err);")
 	cg.writeLine("}")
 	cg.writeLine("")
