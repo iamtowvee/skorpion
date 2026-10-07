@@ -24,16 +24,6 @@ const VoidStartWithError{} = new VoidSearchError
 const VoidEndWithError{} = new VoidSearchError
 
 includeC ~~~
-// UTF-8: длина строки в символах
-size_t __sk__utf8__strlen(const char *s) {
-    size_t count = 0;
-    while (*s) {
-        if ((*s & 0xC0) != 0x80) count++;
-        s++;
-    }
-    return count;
-}
-
 // UTF-8: декодирование одного символа
 // Возвращает codepoint, а через *len — длину в байтах
 unsigned int __sk__utf8__decode(const char *s, int *len) {

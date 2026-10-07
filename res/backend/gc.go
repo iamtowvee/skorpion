@@ -41,13 +41,13 @@ func (gc *GCAnalyzer) analyzeFunction(fn *IRFunction) {
 		return
 	}
 
-	// 2. Определяем, какие переменные выделены через malloc/strdup
-	allocated := gc.findAllocatedVariables(fn)
+	// 2. Определяем владельцев памяти (кто реально должен освобождать)
+	owners := gc.findOwners(fn, variables)
 
-	// Фильтруем — оставляем только те, что реально аллоцируются
+	// Фильтруем — оставляем только реальных владельцев
 	refVars := []string{}
 	for _, v := range variables {
-		if allocated[v] {
+		if owners[v] {
 			refVars = append(refVars, v)
 		}
 	}
@@ -76,14 +76,16 @@ func (gc *GCAnalyzer) collectVariables(fn *IRFunction) []string {
 	variables := []string{}
 
 	for _, local := range fn.Locals {
-		// sk_string* — всегда malloc (strdup)
-		// void* — может быть malloc (arr, dict)
+		// sk_string — содержит char* value (нужно освобождать .value)
+		// sk_array* — прямой указатель (нужно free)
+		// sk_arr — содержит sk_array* value (нужно освобождать .value)
+		// void* — может быть malloc
 		if strings.Contains(local, "sk_string") ||
 			strings.Contains(local, "sk_array*") ||
+			strings.Contains(local, "sk_arr") ||
 			strings.Contains(local, "void*") {
 			parts := strings.Fields(local)
 			if len(parts) >= 2 {
-				// parts[len-1] — имя переменной (может быть указателем)
 				variables = append(variables, parts[len(parts)-1])
 			}
 		}
@@ -93,25 +95,37 @@ func (gc *GCAnalyzer) collectVariables(fn *IRFunction) []string {
 }
 
 // ============================================================================
-// 2. Определение аллоцированных переменных
+// 2. Определение владельцев памяти (умная логика)
 // ============================================================================
+//
+// Идея: владелец памяти — тот, кто получил её из аллокатора И не передал
+// дальше. Если tY = tX, то tY больше не владеет (передал tX).
+// Если var = tX, где var — не temp, то tX передал владение в var.
+//
+// Алгоритм:
+//   1) Первый проход: пометить явных аллокаторов (malloc/strdup/alloc-функции).
+//   2) Второй проход: распространить владение вверх по цепочке присваиваний
+//      (tX = tY → tY передаёт tX; var = tX → tX передаёт var).
+//   3) Третий проход: снять флаг владения с тех, кто передал дальше.
+//
+// В итоге owners[v] == true только для тех, кто получил память и НЕ передал
+// её никому. Именно они должны освобождать.
 
-func (gc *GCAnalyzer) findAllocatedVariables(fn *IRFunction) map[string]bool {
+func (gc *GCAnalyzer) findOwners(fn *IRFunction, variables []string) map[string]bool {
+	// --- Шаг 1: явные аллокации ---
 	allocated := make(map[string]bool)
-
 	for _, ins := range fn.Instructions {
 		// Прямое присваивание strdup/malloc
-		if ins.Op == "=" {
-			if gc.exprAllocates(ins.Arg1) {
-				allocated[ins.Result] = true
-			}
-			// Литерал — не аллокация
-			if strings.HasPrefix(ins.Arg1, "\"") && strings.HasSuffix(ins.Arg1, "\"") {
-				allocated[ins.Result] = false
-			}
+		if ins.Op == "=" && gc.exprAllocates(ins.Arg1) {
+			allocated[ins.Result] = true
 		}
-
-		// Функция возвращает strdup/malloc/input
+		// Литерал (строка) — не аллокация
+		if ins.Op == "=" &&
+			strings.HasPrefix(ins.Arg1, "\"") &&
+			strings.HasSuffix(ins.Arg1, "\"") {
+			allocated[ins.Result] = false
+		}
+		// Функция-аллокатор: tX = call f(...)
 		if ins.Op == "call" && ins.Result != "" {
 			if gc.callAllocates(ins.Arg1) {
 				allocated[ins.Result] = true
@@ -119,7 +133,43 @@ func (gc *GCAnalyzer) findAllocatedVariables(fn *IRFunction) map[string]bool {
 		}
 	}
 
-	return allocated
+	// --- Шаг 2: распространение владения ---
+	// Если allocated[tY] == true и есть tX = tY, то allocated[tX] = true.
+	// Делаем fixpoint, чтобы обработать цепочки t1 → t2 → t3 → var.
+	changed := true
+	for changed {
+		changed = false
+		for _, ins := range fn.Instructions {
+			if ins.Op != "=" || ins.Arg1 == "" || ins.Result == "" {
+				continue
+			}
+			if allocated[ins.Arg1] && !allocated[ins.Result] {
+				allocated[ins.Result] = true
+				changed = true
+			}
+		}
+	}
+
+	// --- Шаг 3: снять владение с тех, кто передал дальше ---
+	// Если tY присваивается куда-то (tX = tY), tY больше не владеет.
+	// Если var = tX (var — не temp), tX тоже передал владение.
+	moved := make(map[string]bool) // какие переменные передали владение
+	for _, ins := range fn.Instructions {
+		if ins.Op == "=" && ins.Arg1 != "" && ins.Result != "" && ins.Result != ins.Arg1 {
+			// ins.Arg1 передал владение в ins.Result
+			moved[ins.Arg1] = true
+		}
+	}
+
+	// Формируем итоговый набор владельцев
+	owners := make(map[string]bool)
+	for _, v := range variables {
+		if allocated[v] && !moved[v] {
+			owners[v] = true
+		}
+	}
+
+	return owners
 }
 
 func (gc *GCAnalyzer) exprAllocates(expr string) bool {
@@ -149,7 +199,28 @@ func (gc *GCAnalyzer) callAllocates(funcName string) bool {
 		"substr",        // io.substr() → malloc
 		"sk_array_new",  // массив → malloc
 		"sk_array_copy", // копия → malloc
-		"any_to_string", // → strdup
+		"sk_array_deep_copy",
+		"any_to_string",    // → strdup
+		"any_to_arr",       // → deep copy
+		"sk_int_to_string", // → strdup
+		"sk_float_to_string",
+		"sk_double_to_string",
+		"sk_bool_to_string",
+		"sk_string_to_string",
+		"sk_arr_to_string",
+		"sk_array_to_string",
+		"sk_string_concat",
+		"sk_string_new",
+		"sk_range_new",
+		"__sk__utf8__change_case",
+		"__sk__std_io_input",
+		"__sk__input",
+		"__sk__concat",
+		"__sk__toLowerCase",
+		"__sk__toUpperCase",
+		"__sk__toCapitalCase",
+		"__sk__toString",
+		"__sk__toStringStrict",
 	}
 	for _, a := range allocators {
 		if strings.Contains(funcName, a) {
@@ -186,7 +257,6 @@ func (gc *GCAnalyzer) buildCFG(fn *IRFunction) *CFG {
 	}
 
 	// 1. Разбиваем инструкции на basic blocks
-	//    Границы: labels, if/goto (начало нового блока), ret
 	leaders := make(map[int]bool)
 	leaders[0] = true
 
@@ -194,13 +264,11 @@ func (gc *GCAnalyzer) buildCFG(fn *IRFunction) *CFG {
 		switch ins.Op {
 		case "label":
 			leaders[i] = true
-			cfg.LabelToBlk[ins.Result] = -1 // заполним позже
+			cfg.LabelToBlk[ins.Result] = -1
 		case "if":
-			// Следующая инструкция — leader
 			if i+1 < len(fn.Instructions) {
 				leaders[i+1] = true
 			}
-			// Целевые labels — leaders
 			leaders[gc.findLabel(fn, ins.Arg1)] = true
 			leaders[gc.findLabel(fn, ins.Arg2)] = true
 		case "goto":
@@ -235,14 +303,12 @@ func (gc *GCAnalyzer) buildCFG(fn *IRFunction) *CFG {
 			End:   end,
 		}
 
-		// Если заканчивается на ret — это return block
 		if end >= start && fn.Instructions[end].Op == "ret" {
 			blk.IsReturn = true
 		}
 
 		cfg.Blocks = append(cfg.Blocks, blk)
 
-		// Если блок начинается с label — запоминаем
 		if start < len(fn.Instructions) && fn.Instructions[start].Op == "label" {
 			label := fn.Instructions[start].Result
 			cfg.LabelToBlk[label] = i
@@ -258,12 +324,10 @@ func (gc *GCAnalyzer) buildCFG(fn *IRFunction) *CFG {
 		case "ret":
 			// Нет successors
 		case "goto":
-			// Безусловный переход
 			if target, ok := cfg.LabelToBlk[lastIns.Result]; ok {
 				cfg.addEdge(i, target)
 			}
 		case "if":
-			// Условный переход: then + else
 			if target, ok := cfg.LabelToBlk[lastIns.Arg1]; ok {
 				cfg.addEdge(i, target)
 			}
@@ -271,7 +335,6 @@ func (gc *GCAnalyzer) buildCFG(fn *IRFunction) *CFG {
 				cfg.addEdge(i, target)
 			}
 		default:
-			// Падение на следующий блок
 			if i+1 < len(cfg.Blocks) {
 				cfg.addEdge(i, i+1)
 			}
@@ -298,7 +361,6 @@ func (cfg *CFG) addEdge(from, to int) {
 		return
 	}
 
-	// Проверяем, нет ли уже такого ребра
 	for _, s := range cfg.Blocks[from].Successors {
 		if s == to {
 			return
@@ -329,7 +391,6 @@ type gcInsertion struct {
 }
 
 func (gc *GCAnalyzer) analyzeLifetimes(fn *IRFunction, cfg *CFG, vars []string) map[string]*Lifetime {
-	// Инициализация
 	lifetimes := make(map[string]*Lifetime)
 	for _, v := range vars {
 		lifetimes[v] = &Lifetime{
@@ -339,7 +400,6 @@ func (gc *GCAnalyzer) analyzeLifetimes(fn *IRFunction, cfg *CFG, vars []string) 
 		}
 	}
 
-	// 1. Для каждой инструкции — какие переменные используются
 	for i, ins := range fn.Instructions {
 		for _, v := range vars {
 			if gc.usesVariable(&ins, v) {
@@ -353,25 +413,21 @@ func (gc *GCAnalyzer) analyzeLifetimes(fn *IRFunction, cfg *CFG, vars []string) 
 		}
 	}
 
-	// 2. Помечаем использование в циклах и ветках
 	for _, v := range vars {
 		lt := lifetimes[v]
 		if lt.LastBlock < 0 {
 			continue
 		}
 
-		// Проверяем, есть ли путь от последнего блока назад к нему самому (цикл)
 		if gc.isInLoop(cfg, lt.LastBlock) {
 			lt.InLoop = true
 		}
 
-		// Проверяем, есть ли у последнего блока >1 предшественника (ветвление)
 		if len(cfg.Blocks[lt.LastBlock].Predecessors) > 1 {
 			lt.InBranch = true
 		}
 	}
 
-	// 3. Помечаем переменные, которые возвращаются
 	for _, ins := range fn.Instructions {
 		if ins.Op == "ret" && ins.Arg1 != "" {
 			for _, v := range vars {
@@ -394,7 +450,6 @@ func (gc *GCAnalyzer) findBlockForInst(cfg *CFG, instIdx int) int {
 	return -1
 }
 
-// isInLoop — есть ли путь от блока назад к нему самому
 func (gc *GCAnalyzer) isInLoop(cfg *CFG, blockID int) bool {
 	visited := make(map[int]bool)
 	return gc.dfs(cfg, blockID, blockID, visited, false)
@@ -430,7 +485,6 @@ func (gc *GCAnalyzer) usesVariable(ins *IRInstruction, varName string) bool {
 	if ins.Arg2 == varName {
 		return true
 	}
-	// Проверяем вхождения как отдельные токены
 	if gc.containsToken(ins.Arg1, varName) {
 		return true
 	}
@@ -444,11 +498,9 @@ func (gc *GCAnalyzer) containsToken(s, token string) bool {
 	if s == "" || token == "" {
 		return false
 	}
-	// Простая проверка — либо целиком, либо с границами токенов
 	if s == token {
 		return true
 	}
-	// Проверяем как подстроку с границами
 	idx := 0
 	for {
 		i := strings.Index(s[idx:], token)
@@ -456,7 +508,6 @@ func (gc *GCAnalyzer) containsToken(s, token string) bool {
 			return false
 		}
 		i += idx
-		// Проверяем границы: до и после — не буквы/цифры/подчёркивания
 		leftOK := i == 0 || !isIdentChar(s[i-1])
 		rightOK := i+len(token) >= len(s) || !isIdentChar(s[i+len(token)])
 		if leftOK && rightOK {
@@ -478,11 +529,10 @@ func isIdentChar(c byte) bool {
 // ============================================================================
 
 type Cycle struct {
-	Vars []string // переменные, участвующие в цикле
+	Vars []string
 }
 
 func (gc *GCAnalyzer) detectCycles(fn *IRFunction, vars []string) []*Cycle {
-	// Строим граф: A → B, если A присваивается из B (или содержит B)
 	graph := make(map[string]map[string]bool)
 	for _, v := range vars {
 		graph[v] = make(map[string]bool)
@@ -490,7 +540,6 @@ func (gc *GCAnalyzer) detectCycles(fn *IRFunction, vars []string) []*Cycle {
 
 	for _, ins := range fn.Instructions {
 		if ins.Op == "=" && ins.Result != "" {
-			// A = B — A ссылается на B
 			for _, v := range vars {
 				if v == ins.Result {
 					continue
@@ -505,7 +554,6 @@ func (gc *GCAnalyzer) detectCycles(fn *IRFunction, vars []string) []*Cycle {
 		}
 	}
 
-	// Ищем SCC (Tarjan или простой DFS)
 	cycles := []*Cycle{}
 	visited := make(map[string]bool)
 	stack := make(map[string]bool)
@@ -514,7 +562,6 @@ func (gc *GCAnalyzer) detectCycles(fn *IRFunction, vars []string) []*Cycle {
 	var dfs func(v string)
 	dfs = func(v string) {
 		if stack[v] {
-			// Нашли цикл — извлекаем из стека
 			cycleStart := -1
 			for i, p := range path {
 				if p == v {
@@ -608,20 +655,15 @@ func (gc *GCAnalyzer) insertFrees(fn *IRFunction, cfg *CFG, lifetimes map[string
 	gc.applyInsertions(fn, insertions, cyclicVars)
 }
 
-// findLoopExit — находим инструкцию после выхода из цикла
 func (gc *GCAnalyzer) findLoopExit(fn *IRFunction, cfg *CFG, blockID int) int {
-	// Простая эвристика: ищем следующий goto, который выходит из цикла
-	// или конец функции
 	for i := cfg.Blocks[blockID].End + 1; i < len(fn.Instructions); i++ {
 		if fn.Instructions[i].Op == "goto" {
-			// Проверяем, что это переход назад (выход из цикла)
 			target := gc.findLabel(fn, fn.Instructions[i].Result)
 			if target < cfg.Blocks[blockID].Start {
 				return i - 1
 			}
 		}
 	}
-	// Fallback — после последнего использования
 	return lifetimesFallback(cfg, blockID, fn)
 }
 
@@ -632,20 +674,15 @@ func lifetimesFallback(cfg *CFG, blockID int, fn *IRFunction) int {
 	return len(fn.Instructions) - 1
 }
 
-// findJoinPoint — находим точку слияния веток
 func (gc *GCAnalyzer) findJoinPoint(fn *IRFunction, cfg *CFG, blockID int) int {
-	// Ищем блок, который достижим из всех веток
-	// Простая эвристика: ищем следующий label после последнего использования
 	for i := cfg.Blocks[blockID].End + 1; i < len(fn.Instructions); i++ {
 		if fn.Instructions[i].Op == "label" {
-			// Проверяем, является ли этот label точкой слияния
 			blkID := cfg.LabelToBlk[fn.Instructions[i].Result]
 			if blkID >= 0 && len(cfg.Blocks[blkID].Predecessors) > 1 {
 				return i - 1
 			}
 		}
 	}
-	// Fallback
 	return lifetimesFallback(cfg, blockID, fn)
 }
 
@@ -678,6 +715,8 @@ func (gc *GCAnalyzer) applyInsertions(fn *IRFunction, insertions []gcInsertion, 
 					op = "free_str"
 				case "sk_array*":
 					op = "free_arr"
+				case "sk_arr":
+					op = "free_arr_field" // освободить .value
 				default:
 					op = "free"
 				}
@@ -712,8 +751,11 @@ func (gc *GCAnalyzer) findVarCType(fn *IRFunction, name string) string {
 
 func (gc *GCAnalyzer) hasFreeAfter(fn *IRFunction, idx int, varName string) bool {
 	for j := idx + 1; j < len(fn.Instructions); j++ {
-		if fn.Instructions[j].Op == "free" && fn.Instructions[j].Arg1 == varName {
-			return true
+		if fn.Instructions[j].Arg1 == varName {
+			switch fn.Instructions[j].Op {
+			case "free", "free_str", "free_arr", "free_arr_field":
+				return true
+			}
 		}
 	}
 	return false

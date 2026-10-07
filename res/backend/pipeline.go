@@ -1688,17 +1688,21 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 		}
 	}
 
-	// Если Receiver задан и это НЕ модуль — добавляем его в Args
+	// Аргументы. Если Receiver — не модуль, добавляем receiver первым аргументом.
 	args := call.Args
-	if call.Receiver != "" && !isModuleCall {
-		receiverNode := &front.Ident{
-			Position: front.Position{
-				Line:   call.GetLine(),
-				Column: call.GetColumn(),
-			},
-			Name: call.Receiver,
+	if !isModuleCall {
+		if call.ReceiverNode != nil {
+			args = append([]front.Node{call.ReceiverNode}, args...)
+		} else if call.Receiver != "" {
+			receiverNode := &front.Ident{
+				Position: front.Position{
+					Line:   call.GetLine(),
+					Column: call.GetColumn(),
+				},
+				Name: call.Receiver,
+			}
+			args = append([]front.Node{receiverNode}, args...)
 		}
-		args = append([]front.Node{receiverNode}, args...)
 	}
 
 	// Нормализуем "s.to_int" → "to_int", "io.sendln" → "sendln"
@@ -2268,14 +2272,43 @@ func (p *Pipeline) processArrayIndex(idx *front.ArrayIndex, irFn *IRFunction) st
 }
 
 func (p *Pipeline) processArrayLength(length *front.ArrayLength, irFn *IRFunction) string {
+	varType := ""
+	for _, local := range irFn.Locals {
+		parts := strings.Fields(local)
+		if len(parts) >= 2 && parts[len(parts)-1] == length.Name {
+			varType = parts[0]
+			break
+		}
+	}
+	if varType == "" {
+		for _, param := range irFn.Params {
+			if param.Name == length.Name {
+				varType = p.typeToC(param.Type)
+				break
+			}
+		}
+	}
+
 	result := p.newTemp()
 	irFn.Locals = append(irFn.Locals, "sk_int "+result)
-	irFn.Instructions = append(irFn.Instructions, IRInstruction{
-		Op:         "array_len",
-		Result:     result,
-		Arg1:       length.Name,
-		ReturnType: "sk_int",
-	})
+
+	if varType == "sk_string" {
+		// Для строки — длина в UTF-8 символах
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "call",
+			Result:     result,
+			Arg1:       "sk_int_new",
+			Arg2:       fmt.Sprintf("(int)__sk__utf8__strlen(%s.value)", length.Name),
+			ReturnType: "sk_int",
+		})
+	} else {
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "array_len",
+			Result:     result,
+			Arg1:       length.Name,
+			ReturnType: "sk_int",
+		})
+	}
 	return result
 }
 

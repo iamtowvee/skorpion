@@ -1027,9 +1027,11 @@ func (sa *SemanticAnalyzer) analyzeReturn(ret *front.ReturnStmt) front.Node {
 func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
 	debug.Debug("analyzeCall: %s\n", call.Name)
 
-	// Если Receiver задан — это метод на переменной, добавляем его в Args
+	// Если Receiver задан — добавляем его в Args (как первый аргумент).
 	args := call.Args
-	if call.Receiver != "" {
+	if call.ReceiverNode != nil {
+		args = append([]front.Node{call.ReceiverNode}, args...)
+	} else if call.Receiver != "" {
 		receiverNode := &front.Ident{
 			Position: front.Position{
 				Line:   call.GetLine(),

@@ -208,6 +208,12 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("sk_string sk_double_to_string(sk_double a) { if (a.__is_null) return sk_string_new(\"null\"); char buf[32]; if (a.prec >= 0) snprintf(buf, 32, \"%.*f\", a.prec, a.value); else snprintf(buf, 32, \"%f\", a.value); return sk_string_new(buf); }")
 	cg.writeLine("sk_string sk_bool_to_string(sk_bool a) { if (a.__is_null) return sk_string_new(\"null\"); return sk_string_new(a.value ? \"true\" : \"false\"); }")
 	cg.writeLine("sk_string sk_string_to_string(sk_string a) { if (a.__is_null) return sk_string_new(\"null\"); return sk_string_new(a.value); }")
+	cg.writeLine("size_t __sk__utf8__strlen(const char* s) {")
+	cg.writeLine("    if (!s) return 0;")
+	cg.writeLine("    size_t count = 0;")
+	cg.writeLine("    while (*s) { if ((*s & 0xC0) != 0x80) count++; s++; }")
+	cg.writeLine("    return count;")
+	cg.writeLine("}")
 	cg.writeLine("")
 	cg.writeLine("sk_int sk_string_to_int(sk_string a) { if (a.__is_null) return SK_NULL_int; return sk_int_new(atoi(a.value)); }")
 	cg.writeLine("sk_float sk_string_to_float(sk_string a) { if (a.__is_null) return SK_NULL_float; return sk_float_new((float)atof(a.value)); }")
@@ -845,6 +851,8 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 		cg.writeLine(fmt.Sprintf("%sfree(%s.value);", indent, ins.Arg1))
 	case "free_arr":
 		cg.writeLine(fmt.Sprintf("%ssk_array_deep_free(%s);", indent, ins.Arg1))
+	case "free_arr_field":
+		cg.writeLine(fmt.Sprintf("%ssk_array_deep_free(%s.value);", indent, ins.Arg1))
 
 	case "inline_c":
 		lines := strings.Split(ins.Arg1, "\n")

@@ -1422,9 +1422,7 @@ func (p *Parser) parsePrimary() Node {
 		pos := p.pos()
 		val := p.peek.Literal
 		p.advance()
-		str := &String{Position: pos, Value: val}
-
-		return str
+		return &String{Position: pos, Value: val}
 
 	case TOKEN_DOLLAR:
 		pos := p.pos()
@@ -1443,6 +1441,11 @@ func (p *Parser) parsePrimary() Node {
 		// ErrorInstance: Name{field: value, ...}
 		if p.peek.Type == TOKEN_LBRACE {
 			return p.parseErrorInstance(name, pos)
+		}
+
+		// Простой вызов функции: name(args)
+		if p.peek.Type == TOKEN_LPAREN {
+			return p.parseCall(name, pos)
 		}
 
 		return &Ident{Position: pos, Name: name}
@@ -1493,42 +1496,9 @@ func (p *Parser) parsePrimary() Node {
 				items = append(items, item)
 			}
 			p.expect(TOKEN_RPAREN)
-
-			if p.peek.Type == TOKEN_DOT {
-				p.advance()
-				if p.peek.Type != TOKEN_IDENT {
-					p.hasErrors = true
-					errors.NewFatalError("0520",
-						fmt.Sprintf("Expected method name after '.'"),
-						p.peek.Line, p.peek.Column, p.FileName)
-					return nil
-				}
-				funcName := p.peek.Literal
-				p.advance()
-				p.expect(TOKEN_LPAREN)
-
-				var callArgs []Node
-				if p.peek.Type != TOKEN_RPAREN {
-					for {
-						arg := p.parseExpression()
-						if arg == nil {
-							return nil
-						}
-						callArgs = append(callArgs, arg)
-						if p.peek.Type == TOKEN_COMMA {
-							p.advance()
-							continue
-						}
-						break
-					}
-				}
-				p.expect(TOKEN_RPAREN)
-
-				allArgs := items
-				allArgs = append(allArgs, callArgs...)
-				return &CallExpr{Position: pos, Name: funcName, Args: allArgs}
+			if p.hasErrors || errors.HasFatal() {
+				return nil
 			}
-
 			return &ArrayLiteral{Position: pos, Elements: items}
 		}
 
@@ -1537,6 +1507,8 @@ func (p *Parser) parsePrimary() Node {
 			return nil
 		}
 
+		// Возвращаем выражение в скобках как есть.
+		// Постфикс (.method, [index]) обработает parsePostfix.
 		return first
 
 	case TOKEN_LBRACKET:
@@ -1999,14 +1971,6 @@ func (p *Parser) parseUnionType() string {
 //	expr[index]
 //
 // Работает для ЛЮБОГО выражения, а не только для Ident.
-// parsePostfix обрабатывает цепочку постфиксных операций:
-//
-//	expr.field
-//	expr.method(args)
-//	expr.length
-//	expr[index]
-//
-// Работает для ЛЮБОГО выражения, а не только для Ident.
 func (p *Parser) parsePostfix(expr Node) Node {
 	if p.hasErrors || errors.HasFatal() {
 		return expr
@@ -2020,14 +1984,7 @@ func (p *Parser) parsePostfix(expr Node) Node {
 		// [index]
 		if p.peek.Type == TOKEN_LBRACKET {
 			p.advance()
-			ident, ok := expr.(*Ident)
-			if !ok {
-				p.hasErrors = true
-				errors.NewFatalError("0516",
-					"Array indexing is only supported on identifiers",
-					p.peek.Line, p.peek.Column, p.FileName)
-				return nil
-			}
+			indexPos := p.pos()
 			index := p.parseExpression()
 			if index == nil {
 				return nil
@@ -2040,7 +1997,20 @@ func (p *Parser) parsePostfix(expr Node) Node {
 				return nil
 			}
 			p.advance()
-			expr = &ArrayIndex{Position: ident.Position, Name: ident.Name, Index: index}
+
+			if ident, ok := expr.(*Ident); ok {
+				expr = &ArrayIndex{
+					Position: ident.Position,
+					Name:     ident.Name,
+					Index:    index,
+				}
+			} else {
+				p.hasErrors = true
+				errors.NewFatalError("0516",
+					"Array indexing is only supported on identifiers",
+					indexPos.Line, indexPos.Column, p.FileName)
+				return nil
+			}
 			continue
 		}
 
@@ -2052,25 +2022,32 @@ func (p *Parser) parsePostfix(expr Node) Node {
 		// .length
 		if p.peek.Type == TOKEN_IDENT && p.peek.Literal == "length" {
 			p.advance()
-			ident, ok := expr.(*Ident)
-			if !ok {
+			lenPos := p.pos()
+			if ident, ok := expr.(*Ident); ok {
+				expr = &ArrayLength{
+					Position: ident.Position,
+					Name:     ident.Name,
+				}
+			} else {
 				p.hasErrors = true
 				errors.NewFatalError("0520",
 					".length is only supported on identifiers",
-					p.peek.Line, p.peek.Column, p.FileName)
+					lenPos.Line, lenPos.Column, p.FileName)
 				return nil
 			}
-			expr = &ArrayLength{Position: ident.Position, Name: ident.Name}
 			continue
 		}
 
+		// .field или .method(args)
 		if p.peek.Type == TOKEN_IDENT {
 			methodName := p.peek.Literal
 			methodPos := p.pos()
 			p.advance()
 
 			if p.peek.Type == TOKEN_LPAREN {
+				// Метод с аргументами: expr.method(args)
 				p.advance()
+
 				callArgs := []Node{}
 				if p.peek.Type != TOKEN_RPAREN {
 					for {
@@ -2095,6 +2072,7 @@ func (p *Parser) parsePostfix(expr Node) Node {
 				}
 				p.advance()
 
+				// Имя receiver'а (если это простой Ident) — для обратной совместимости.
 				var recvName string
 				if id, ok := expr.(*Ident); ok {
 					recvName = id.Name
@@ -2111,18 +2089,18 @@ func (p *Parser) parsePostfix(expr Node) Node {
 			}
 
 			// .field
-			ident, ok := expr.(*Ident)
-			if !ok {
+			if ident, ok := expr.(*Ident); ok {
+				expr = &FieldAccess{
+					Position: ident.Position,
+					Object:   ident.Name,
+					Field:    methodName,
+				}
+			} else {
 				p.hasErrors = true
 				errors.NewFatalError("0520",
 					"Field access is only supported on identifiers",
-					p.peek.Line, p.peek.Column, p.FileName)
+					methodPos.Line, methodPos.Column, p.FileName)
 				return nil
-			}
-			expr = &FieldAccess{
-				Position: ident.Position,
-				Object:   ident.Name,
-				Field:    methodName,
 			}
 			continue
 		}
