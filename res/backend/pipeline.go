@@ -914,6 +914,12 @@ func (p *Pipeline) processAssign(assign *front.Assign, irFn *IRFunction) {
 		return
 	}
 
+	// x[index] = value
+	if assign.Index != nil {
+		p.processArrayAssign(assign, irFn)
+		return
+	}
+
 	// === Union T<...> ===
 	if irFn.VarTypes != nil {
 		if varType, ok := irFn.VarTypes[assign.Name]; ok && isUnionTypeP(varType) {
@@ -1019,6 +1025,59 @@ func (p *Pipeline) processAssign(assign *front.Assign, irFn *IRFunction) {
 			Arg1:   exprResult,
 		})
 	}
+}
+
+// processArrayAssign — x[index] = value
+func (p *Pipeline) processArrayAssign(assign *front.Assign, irFn *IRFunction) {
+	elemType := ""
+	if irFn.ArrayElemTypes != nil {
+		elemType = irFn.ArrayElemTypes[assign.Name]
+	}
+	if elemType == "" {
+		elemType = "any"
+	}
+
+	// Индекс
+	index := p.processExpression(assign.Index, irFn)
+
+	// Значение
+	valueType := p.getExprType(assign.Expr, irFn)
+	value := p.processExpression(assign.Expr, irFn)
+
+	// Приводим к elemType
+	if elemType == "any" {
+		if valueType != "any" {
+			wrapper := p.getAnyWrapperByType(valueType)
+			tmp := p.newTemp()
+			irFn.Locals = append(irFn.Locals, "sk_any "+tmp)
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:         "call",
+				Result:     tmp,
+				Arg1:       wrapper,
+				Arg2:       value,
+				ReturnType: "sk_any",
+			})
+			value = tmp
+		}
+	}
+
+	// Определяем C-тип слота
+	var cType string
+	if elemType == "any" {
+		cType = "sk_any"
+	} else if isArrayType(elemType) {
+		cType = "sk_arr"
+	} else {
+		cType = p.typeToC(elemType)
+	}
+
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:         "array_set",
+		Result:     assign.Name,
+		Arg1:       index,
+		Arg2:       value,
+		ReturnType: cType,
+	})
 }
 
 // processNullComparison обрабатывает сравнение с null (void).

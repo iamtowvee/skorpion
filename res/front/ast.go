@@ -233,8 +233,9 @@ func (v *VarDecl) GetTypeString() string { return v.Type }
 
 type Assign struct {
 	Position
-	Name string
-	Expr Node
+	Name  string
+	Index Node
+	Expr  Node
 }
 
 func (a *Assign) GetType() NodeType { return NODE_ASSIGN }

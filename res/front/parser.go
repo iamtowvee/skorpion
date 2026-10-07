@@ -400,6 +400,9 @@ func (p *Parser) parseBlock() *Block {
 			break
 		}
 		stmt := p.parseStatement()
+		if p.hasErrors || errors.HasFatal() {
+			break
+		}
 		if stmt != nil {
 			block.Statements = append(block.Statements, stmt)
 		}
@@ -448,16 +451,31 @@ func (p *Parser) parseStatement() Node {
 		case "int", "string", "float", "double", "bool", "char", "arr", "dict", "any", "T":
 			return p.parseVarDecl()
 		}
+		p.hasErrors = true
+		errors.NewFatalError("0597",
+			fmt.Sprintf("Unexpected keyword in statement position: '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
+
 	case TOKEN_INCLUDE_C:
 		return p.parseIncludeC()
+
 	case TOKEN_IDENT:
 		return p.parseAssignmentOrCall()
+
 	case TOKEN_STRING, TOKEN_NUMBER, TOKEN_LPAREN:
 		return p.parseExpression()
-	}
 
-	p.advance()
-	return nil
+	case TOKEN_EOF:
+		return nil
+
+	default:
+		p.hasErrors = true
+		errors.NewFatalError("0598",
+			fmt.Sprintf("Expected statement, got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
+	}
 }
 
 func (p *Parser) parseTry() Node {
@@ -1002,6 +1020,7 @@ func (p *Parser) parseAssignmentOrCall() Node {
 	name := p.peek.Literal
 	p.advance()
 
+	// module.func(args)
 	if p.peek.Type == TOKEN_DOT {
 		p.advance()
 		if p.peek.Type == TOKEN_IDENT {
@@ -1020,26 +1039,82 @@ func (p *Parser) parseAssignmentOrCall() Node {
 				p.peek.Line, p.peek.Column, p.FileName)
 			return nil
 		}
+		p.hasErrors = true
+		errors.NewFatalError("0520",
+			fmt.Sprintf("Expected identifier after '.', got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
 	}
 
+	// func(args)
 	if p.peek.Type == TOKEN_LPAREN {
 		return p.parseCall(name, pos)
 	}
 
-	var expr Node
-	if p.peek.Type == TOKEN_EQUALS {
+	// x[index] = value
+	if p.peek.Type == TOKEN_LBRACKET {
 		p.advance()
-		expr = p.parseExpression()
-		if expr == nil {
+		index := p.parseExpression()
+		if index == nil {
 			return nil
+		}
+		if p.peek.Type != TOKEN_RBRACKET {
+			p.hasErrors = true
+			errors.NewFatalError("0516",
+				fmt.Sprintf("Expected ']', got '%s'", p.peek.Literal),
+				p.peek.Line, p.peek.Column, p.FileName)
+			return nil
+		}
+		p.advance()
+
+		if p.peek.Type != TOKEN_EQUALS {
+			p.hasErrors = true
+			errors.NewFatalError("0516",
+				fmt.Sprintf("Expected '=' after array index, got '%s'", p.peek.Literal),
+				p.peek.Line, p.peek.Column, p.FileName)
+			return nil
+		}
+		p.advance()
+
+		value := p.parseExpression()
+		if value == nil {
+			return nil
+		}
+		if p.peek.Type == TOKEN_SEMICOLON {
+			p.advance()
+		}
+		return &Assign{
+			Position: pos,
+			Name:     name,
+			Index:    index,
+			Expr:     value,
 		}
 	}
 
-	if p.peek.Type == TOKEN_SEMICOLON {
+	// x = value
+	if p.peek.Type == TOKEN_EQUALS {
 		p.advance()
+		expr := p.parseExpression()
+		if expr == nil {
+			return nil
+		}
+		if p.peek.Type == TOKEN_SEMICOLON {
+			p.advance()
+		}
+		return &Assign{Position: pos, Name: name, Expr: expr}
 	}
 
-	return &Assign{Position: pos, Name: name, Expr: expr}
+	// x;
+	if p.peek.Type == TOKEN_SEMICOLON {
+		p.advance()
+		return &Ident{Position: pos, Name: name}
+	}
+
+	p.hasErrors = true
+	errors.NewFatalError("0597",
+		fmt.Sprintf("Unexpected token after identifier '%s': '%s'", name, p.peek.Literal),
+		p.peek.Line, p.peek.Column, p.FileName)
+	return nil
 }
 
 func (p *Parser) parseCall(name string, pos Position) Node {

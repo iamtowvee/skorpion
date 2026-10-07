@@ -972,6 +972,13 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 	case "array_add":
 		cg.writeLine(fmt.Sprintf("%ssk_arr %s = sk_arr_new(sk_array_deep_copy(%s.value));", indent, ins.Result, ins.Arg1))
 		cg.writeLine(fmt.Sprintf("%ssk_array_push(%s.value, &%s);", indent, ins.Result, ins.Arg2))
+	case "array_set":
+		cType := ins.ReturnType
+		if cType == "" {
+			cType = "sk_any"
+		}
+		cg.writeLine(fmt.Sprintf("%s*((%s*)sk_array_get(%s.value, %s.value)) = %s;",
+			indent, cType, ins.Result, ins.Arg1, ins.Arg2))
 
 	case "call":
 		funcName := ins.Arg1

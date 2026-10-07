@@ -728,6 +728,48 @@ func (sa *SemanticAnalyzer) analyzeAssign(assign *front.Assign) front.Node {
 	}
 	debug.Debug("Variable %s found, type=%s\n", assign.Name, sym.Type)
 
+	// x[index] = value
+	if assign.Index != nil {
+		// x должен быть массивом
+		if !isArrayTypeSemantic(sym.Type) {
+			sa.addError("1539",
+				fmt.Sprintf("Cannot index non-array variable '%s' (type '%s')",
+					assign.Name, sym.Type),
+				assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
+			return assign
+		}
+
+		// Индекс — int
+		indexType := sa.getNodeType(assign.Index)
+		if indexType != "int" && indexType != "" {
+			sa.addError("1520",
+				fmt.Sprintf("Array index must be int, got '%s'", indexType),
+				assign.Index.GetLine(), assign.Index.GetColumn(), sa.CurrentFile)
+		}
+
+		// Значение — совместимо с elemType
+		valueType := sa.getNodeType(assign.Expr)
+		elemType := parseArrayElemTypeSemantic(sym.Type)
+		if elemType == "" {
+			elemType = "any"
+		}
+
+		if valueType == "void" {
+			// null — допустимо для any, int[], string[] и т.д.
+			// Но не для arr[void]
+		} else if elemType != "any" && valueType != elemType && valueType != "" {
+			sa.addError("1510",
+				fmt.Sprintf("Type mismatch: cannot assign '%s' to '%s' element",
+					valueType, elemType),
+				assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
+		}
+
+		sa.analyzeNode(assign.Index)
+		sa.analyzeNode(assign.Expr)
+
+		return assign
+	}
+
 	if sym.IsConst {
 		debug.Debug("Variable %s is const\n", assign.Name)
 		sa.addError("1509", fmt.Sprintf("Cannot assign to constant '%s'", assign.Name),

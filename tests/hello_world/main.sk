@@ -2,31 +2,7 @@ use #std/io
 use std/ref
 
 void main(arr args) {
-    sendln(ref.toInt(42))              // 42
-    sendln(ref.toInt("123"))           // 123
-    sendln(ref.toInt(3.14))            // 3
-    sendln(ref.toInt(true))            // 1
-    sendln(ref.toInt([1, 2, 3]))       // 3 (длина)
-    
-    sendln(ref.toBool(1))              // true
-    sendln(ref.toBool(0))              // false
-    sendln(ref.toBool("true"))         // true
-    sendln(ref.toBool([1, 2]))         // true
-    
-    sendln(ref.toFloat(3.14))          // 3.14
-    sendln(ref.toFloat("2.5"))         // 2.5
-    
-    sendln(ref.toDouble(3.14))         // 3.140000
-    sendln(ref.toDouble("2.5"))        // 2.500000
-    
-    sendln(ref.toString(42))           // "42"
-    sendln(ref.toString(true))         // "true"
-    sendln(ref.toString([1, 2, 3]))    // "[1, 2, 3]"
-    
-    // Strict версии бросают ошибки на null и неизвестные типы:
-    try {
-        ref.toIntStrict(to_int(null))
-    } catch (VoidToIntRefactorError as e) {
-        sendln(e.msg)   // "Cannot convert 'null' to int."
-    }
+    arr x = [1, 2, 3]
+    x[1] = 3
+    sendln(x)
 }

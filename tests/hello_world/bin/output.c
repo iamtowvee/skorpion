@@ -919,256 +919,28 @@ int main(int argc, char** argv) {
     }
     sk_arr args = sk_arr_new(args__arr);
 
-    sk_any t1;
-    sk_int t2;
+    sk_arr x;
+    sk_arr t1;
+    sk_any t2;
     sk_any t3;
     sk_any t4;
-    sk_int t5;
+    sk_any t5;
     sk_any t6;
-    sk_any t7;
-    sk_int t8;
-    sk_any t9;
-    sk_any t10;
-    sk_int t11;
-    sk_any t12;
-    sk_arr t13;
-    sk_any t14;
-    sk_any t15;
-    sk_any t16;
-    sk_any t17;
-    sk_int t18;
-    sk_any t19;
-    sk_any t20;
-    sk_bool t21;
-    sk_any t22;
-    sk_any t23;
-    sk_bool t24;
-    sk_any t25;
-    sk_any t26;
-    sk_bool t27;
-    sk_any t28;
-    sk_arr t29;
-    sk_any t30;
-    sk_any t31;
-    sk_any t32;
-    sk_bool t33;
-    sk_any t34;
-    sk_any t35;
-    sk_float t36;
-    sk_any t37;
-    sk_any t38;
-    sk_float t39;
-    sk_any t40;
-    sk_any t41;
-    sk_double t42;
-    sk_any t43;
-    sk_any t44;
-    sk_double t45;
-    sk_any t46;
-    sk_any t47;
-    sk_string t48;
-    sk_any t49;
-    sk_any t50;
-    sk_string t51;
-    sk_any t52;
-    sk_arr t53;
-    sk_any t54;
-    sk_any t55;
-    sk_any t56;
-    sk_any t57;
-    sk_string t58;
-    sk_any t59;
-    SkTryFrame t60;
-    void* t61;
-    sk_int t62;
-    sk_any t63;
-    sk_bool t64;
-    VoidToIntRefactorError* e;
-    sk_string t65;
-    sk_any t66;
 
-    t1 = any_int(sk_int_new(42));
-    sk_call_push("main.sk", 5, 16);
-    t2 = __sk__toInt(t1);
-    sk_call_pop();
-    t3 = any_int(t2);
-    sk_call_push("main.sk", 5, 5);
-    __sk__sendln(t3);
-    sk_call_pop();
-    t4 = any_string(sk_string_new("123"));
-    sk_call_push("main.sk", 6, 16);
-    t5 = __sk__toInt(t4);
-    sk_call_pop();
-    t6 = any_int(t5);
-    sk_call_push("main.sk", 6, 5);
+    t1 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    t2 = any_int(sk_int_new(1));
+    sk_array_push_any(t1.value, t2);
+    t3 = any_int(sk_int_new(2));
+    sk_array_push_any(t1.value, t3);
+    t4 = any_int(sk_int_new(3));
+    sk_array_push_any(t1.value, t4);
+    x = t1;
+    t5 = any_int(sk_int_new(3));
+    *((sk_any*)sk_array_get(x.value, sk_int_new(1).value)) = t5;
+    t6 = any_arr(x);
+    sk_call_push("main.sk", 7, 5);
     __sk__sendln(t6);
     sk_call_pop();
-    t7 = any_double(sk_double_new(3.14));
-    sk_call_push("main.sk", 7, 16);
-    t8 = __sk__toInt(t7);
-    sk_call_pop();
-    t9 = any_int(t8);
-    sk_call_push("main.sk", 7, 5);
-    __sk__sendln(t9);
-    sk_call_pop();
-    t10 = any_bool(sk_bool_new(1));
-    sk_call_push("main.sk", 8, 16);
-    t11 = __sk__toInt(t10);
-    sk_call_pop();
-    t12 = any_int(t11);
-    sk_call_push("main.sk", 8, 5);
-    __sk__sendln(t12);
-    sk_call_pop();
-    t13 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    t14 = any_int(sk_int_new(1));
-    sk_array_push_any(t13.value, t14);
-    t15 = any_int(sk_int_new(2));
-    sk_array_push_any(t13.value, t15);
-    t16 = any_int(sk_int_new(3));
-    sk_array_push_any(t13.value, t16);
-    t17 = any_arr(t13);
-    sk_call_push("main.sk", 9, 16);
-    t18 = __sk__toInt(t17);
-    sk_call_pop();
-    t19 = any_int(t18);
-    sk_call_push("main.sk", 9, 5);
-    __sk__sendln(t19);
-    sk_call_pop();
-    t20 = any_int(sk_int_new(1));
-    sk_call_push("main.sk", 11, 16);
-    t21 = __sk__toBool(t20);
-    sk_call_pop();
-    t22 = any_bool(t21);
-    sk_call_push("main.sk", 11, 5);
-    __sk__sendln(t22);
-    sk_call_pop();
-    t23 = any_int(sk_int_new(0));
-    sk_call_push("main.sk", 12, 16);
-    t24 = __sk__toBool(t23);
-    sk_call_pop();
-    t25 = any_bool(t24);
-    sk_call_push("main.sk", 12, 5);
-    __sk__sendln(t25);
-    sk_call_pop();
-    t26 = any_string(sk_string_new("true"));
-    sk_call_push("main.sk", 13, 16);
-    t27 = __sk__toBool(t26);
-    sk_call_pop();
-    t28 = any_bool(t27);
-    sk_call_push("main.sk", 13, 5);
-    __sk__sendln(t28);
-    sk_call_pop();
-    t29 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    t30 = any_int(sk_int_new(1));
-    sk_array_push_any(t29.value, t30);
-    t31 = any_int(sk_int_new(2));
-    sk_array_push_any(t29.value, t31);
-    t32 = any_arr(t29);
-    sk_call_push("main.sk", 14, 16);
-    t33 = __sk__toBool(t32);
-    sk_call_pop();
-    t34 = any_bool(t33);
-    sk_call_push("main.sk", 14, 5);
-    __sk__sendln(t34);
-    sk_call_pop();
-    t35 = any_double(sk_double_new(3.14));
-    sk_call_push("main.sk", 16, 16);
-    t36 = __sk__toFloat(t35);
-    sk_call_pop();
-    t37 = any_float(t36);
-    sk_call_push("main.sk", 16, 5);
-    __sk__sendln(t37);
-    sk_call_pop();
-    t38 = any_string(sk_string_new("2.5"));
-    sk_call_push("main.sk", 17, 16);
-    t39 = __sk__toFloat(t38);
-    sk_call_pop();
-    t40 = any_float(t39);
-    sk_call_push("main.sk", 17, 5);
-    __sk__sendln(t40);
-    sk_call_pop();
-    t41 = any_double(sk_double_new(3.14));
-    sk_call_push("main.sk", 19, 16);
-    t42 = __sk__toDouble(t41);
-    sk_call_pop();
-    t43 = any_double(t42);
-    sk_call_push("main.sk", 19, 5);
-    __sk__sendln(t43);
-    sk_call_pop();
-    t44 = any_string(sk_string_new("2.5"));
-    sk_call_push("main.sk", 20, 16);
-    t45 = __sk__toDouble(t44);
-    sk_call_pop();
-    t46 = any_double(t45);
-    sk_call_push("main.sk", 20, 5);
-    __sk__sendln(t46);
-    sk_call_pop();
-    t47 = any_int(sk_int_new(42));
-    sk_call_push("main.sk", 22, 16);
-    t48 = __sk__toString(t47);
-    sk_call_pop();
-    t49 = any_string(t48);
-    free(t48.value);
-    sk_call_push("main.sk", 22, 5);
-    __sk__sendln(t49);
-    sk_call_pop();
-    t50 = any_bool(sk_bool_new(1));
-    sk_call_push("main.sk", 23, 16);
-    t51 = __sk__toString(t50);
-    sk_call_pop();
-    t52 = any_string(t51);
-    free(t51.value);
-    sk_call_push("main.sk", 23, 5);
-    __sk__sendln(t52);
-    sk_call_pop();
-    t53 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    t54 = any_int(sk_int_new(1));
-    sk_array_push_any(t53.value, t54);
-    t55 = any_int(sk_int_new(2));
-    sk_array_push_any(t53.value, t55);
-    t56 = any_int(sk_int_new(3));
-    sk_array_push_any(t53.value, t56);
-    t57 = any_arr(t53);
-    sk_call_push("main.sk", 24, 16);
-    t58 = __sk__toString(t57);
-    sk_call_pop();
-    t59 = any_string(t58);
-    free(t58.value);
-    sk_call_push("main.sk", 24, 5);
-    __sk__sendln(t59);
-    sk_call_pop();
-    sk_try_push(&t60);
-    if (setjmp(sk_try_stack->env) != 0) {
-        goto L2;
-    }
-    t62 = SK_NULL_int;
-    t63 = any_int(t62);
-    sk_call_push("main.sk", 28, 9);
-    __sk__toIntStrict(t63);
-    sk_call_pop();
-    goto L1;
-L2:
-    sk_try_pop(&t60);
-    t61 = t60.error;
-    t64 = sk_bool_new(sk_error_type_match(((SkError*)t61)->__type, "Error.RefactorError.VoidRefactorError.VoidToIntRefactorError"));
-    if (t64.value) {
-        goto L2_body;
-    } else {
-        goto L3;
-    }
-L2_body:
-    e = (VoidToIntRefactorError*)t61;
-t65 = e->msg;
-    t66 = any_string(t65);
-    sk_call_push("main.sk", 30, 9);
-    __sk__sendln(t66);
-    sk_call_pop();
-    sk_error_free(t61);
-    goto L1;
-L3:
-    t61 = t60.error;
-    sk_throw(t61, "main.sk", 27, 5);
-L1:
     return 0;
 }
 
@@ -1195,37 +967,37 @@ sk_string __sk__std_io_input(sk_string prompt) {
 }
 
 void __sk__sendln(sk_any msg) {
-    sk_string t67;
-    sk_string t68;
+    sk_string t7;
+    sk_string t8;
 
-    t67 = any_to_string(msg);
-    t68 = sk_string_concat(t67, sk_string_new("\n"));
-    free(t67.value);
+    t7 = any_to_string(msg);
+    t8 = sk_string_concat(t7, sk_string_new("\n"));
+    free(t7.value);
     sk_call_push("<builtin:std/io>", 34, 5);
-    __sk__std_io_send(t68);
+    __sk__std_io_send(t8);
     sk_call_pop();
-    free(t68.value);
+    free(t8.value);
     return;
 }
 
 void __sk__sendf(sk_any msg) {
-    sk_string t69;
+    sk_string t9;
 
-    t69 = any_to_string(msg);
+    t9 = any_to_string(msg);
     sk_call_push("<builtin:std/io>", 38, 5);
-    __sk__std_io_send(t69);
+    __sk__std_io_send(t9);
     sk_call_pop();
-    free(t69.value);
+    free(t9.value);
     return;
 }
 
 sk_string __sk__input(sk_string prefix) {
-    sk_string t70;
+    sk_string t10;
 
     sk_call_push("<builtin:std/io>", 42, 12);
-    t70 = __sk__std_io_input(prefix);
+    t10 = __sk__std_io_input(prefix);
     sk_call_pop();
-    return t70;
+    return t10;
 }
 
 sk_int __sk__len(sk_string line) {
@@ -1336,1280 +1108,1280 @@ sk_bool __sk__endWith(sk_string line, sk_string pattern) {
 
 sk_int __sk__toInt(sk_any value) {
     sk_int result;
-    sk_string t71;
-    sk_bool t72;
-    sk_int t73;
-    sk_bool t74;
-    sk_bool t75;
-    sk_bool t76;
-    sk_int t77;
-    sk_bool t78;
-    sk_bool t79;
-    sk_bool t80;
-    sk_bool t81;
+    sk_string t11;
+    sk_bool t12;
+    sk_int t13;
+    sk_bool t14;
+    sk_bool t15;
+    sk_bool t16;
+    sk_int t17;
+    sk_bool t18;
+    sk_bool t19;
+    sk_bool t20;
+    sk_bool t21;
     sk_arr a;
-    sk_arr t82;
-    sk_int t83;
-    sk_bool t84;
-    sk_int t85;
+    sk_arr t22;
+    sk_int t23;
+    sk_bool t24;
+    sk_int t25;
 
     result = sk_int_new(0);
-    char _buf_t71[32];
+    char _buf_t11[32];
     switch (value.type) {
-        case 0: strcpy(_buf_t71, "int"); break;
-        case 1: strcpy(_buf_t71, "string"); break;
-        case 2: strcpy(_buf_t71, "float"); break;
-        case 3: strcpy(_buf_t71, "double"); break;
-        case 4: strcpy(_buf_t71, "bool"); break;
-        case 5: strcpy(_buf_t71, "arr"); break;
-        case 6: strcpy(_buf_t71, "void"); break;
-        default: strcpy(_buf_t71, "unknown"); break;
+        case 0: strcpy(_buf_t11, "int"); break;
+        case 1: strcpy(_buf_t11, "string"); break;
+        case 2: strcpy(_buf_t11, "float"); break;
+        case 3: strcpy(_buf_t11, "double"); break;
+        case 4: strcpy(_buf_t11, "bool"); break;
+        case 5: strcpy(_buf_t11, "arr"); break;
+        case 6: strcpy(_buf_t11, "void"); break;
+        default: strcpy(_buf_t11, "unknown"); break;
     }
-    t71 = sk_string_new(_buf_t71);
-    t72 = sk_string_eq(t71, sk_string_new("int"));
-    if (t72.value) {
+    t11 = sk_string_new(_buf_t11);
+    t12 = sk_string_eq(t11, sk_string_new("int"));
+    if (t12.value) {
+        goto L2;
+    } else {
+        goto L3;
+    }
+L2:
+    t13 = any_to_int(value);
+    result = t13;
+    goto L1;
+L3:
+    t14 = sk_string_eq(t11, sk_string_new("float"));
+    t15 = sk_string_eq(t11, sk_string_new("double"));
+    t16 = sk_bool_or(t14, t15);
+    if (t16.value) {
+        goto L4;
+    } else {
         goto L5;
-    } else {
-        goto L6;
     }
+L4:
+    t17 = any_to_int(value);
+    result = t17;
+    goto L1;
 L5:
-    t73 = any_to_int(value);
-    result = t73;
-    goto L4;
-L6:
-    t74 = sk_string_eq(t71, sk_string_new("float"));
-    t75 = sk_string_eq(t71, sk_string_new("double"));
-    t76 = sk_bool_or(t74, t75);
-    if (t76.value) {
+    t18 = sk_string_eq(t11, sk_string_new("bool"));
+    if (t18.value) {
+        goto L6;
+    } else {
         goto L7;
-    } else {
+    }
+L6:
+    t19 = any_to_bool(value);
+    if (t19.value) {
         goto L8;
-    }
-L7:
-    t77 = any_to_int(value);
-    result = t77;
-    goto L4;
-L8:
-    t78 = sk_string_eq(t71, sk_string_new("bool"));
-    if (t78.value) {
-        goto L9;
     } else {
-        goto L10;
+        goto L9;
     }
+L8:
+    result = sk_int_new(1);
+    goto L10;
 L9:
-    t79 = any_to_bool(value);
-    if (t79.value) {
+    result = sk_int_new(0);
+L10:
+    goto L1;
+L7:
+    t20 = sk_string_eq(t11, sk_string_new("void"));
+    if (t20.value) {
         goto L11;
     } else {
         goto L12;
     }
 L11:
-    result = sk_int_new(1);
-    goto L13;
+    result = sk_int_new(0);
+    goto L1;
 L12:
-    result = sk_int_new(0);
-L13:
-    goto L4;
-L10:
-    t80 = sk_string_eq(t71, sk_string_new("void"));
-    if (t80.value) {
+    t21 = sk_string_eq(t11, sk_string_new("arr"));
+    if (t21.value) {
+        goto L13;
+    } else {
         goto L14;
-    } else {
-        goto L15;
     }
-L14:
-    result = sk_int_new(0);
-    goto L4;
-L15:
-    t81 = sk_string_eq(t71, sk_string_new("arr"));
-    if (t81.value) {
-        goto L16;
-    } else {
-        goto L17;
-    }
-L16:
-    t82 = any_to_arr(value);
-    a = t82;
-    t83 = sk_int_new(sk_array_len(a.value));
+L13:
+    t22 = any_to_arr(value);
+    a = t22;
+    t23 = sk_int_new(sk_array_len(a.value));
     sk_array_deep_free(a.value);
-    result = t83;
-    goto L4;
-L17:
-    t84 = sk_string_eq(t71, sk_string_new("string"));
-    if (t84.value) {
-        goto L18;
+    result = t23;
+    goto L1;
+L14:
+    t24 = sk_string_eq(t11, sk_string_new("string"));
+    if (t24.value) {
+        goto L15;
     } else {
-        goto L19;
+        goto L16;
     }
-L18:
-    t85 = any_to_int(value);
-    result = t85;
-    goto L4;
-L19:
-L20:
+L15:
+    t25 = any_to_int(value);
+    result = t25;
+    goto L1;
+L16:
+L17:
     result = sk_int_new(0);
-L4:
+L1:
     return result;
 }
 
 sk_bool __sk__toBool(sk_any value) {
-    sk_string t86;
-    sk_bool t87;
-    sk_bool t88;
-    sk_bool t89;
-    sk_bool t90;
-    sk_bool t91;
-    sk_double t92;
-    sk_bool t93;
-    sk_bool t94;
-    sk_bool t95;
-    sk_bool t96;
-    sk_bool t97;
+    sk_string t26;
+    sk_bool t27;
+    sk_bool t28;
+    sk_bool t29;
+    sk_bool t30;
+    sk_bool t31;
+    sk_double t32;
+    sk_bool t33;
+    sk_bool t34;
+    sk_bool t35;
+    sk_bool t36;
+    sk_bool t37;
     sk_arr a;
-    sk_arr t98;
-    sk_int t99;
-    sk_bool t100;
-    sk_bool t101;
+    sk_arr t38;
+    sk_int t39;
+    sk_bool t40;
+    sk_bool t41;
     sk_string s;
-    sk_string t102;
-    sk_int t103;
-    sk_bool t104;
-    sk_bool t105;
+    sk_string t42;
+    sk_int t43;
+    sk_bool t44;
+    sk_bool t45;
 
-    char _buf_t86[32];
+    char _buf_t26[32];
     switch (value.type) {
-        case 0: strcpy(_buf_t86, "int"); break;
-        case 1: strcpy(_buf_t86, "string"); break;
-        case 2: strcpy(_buf_t86, "float"); break;
-        case 3: strcpy(_buf_t86, "double"); break;
-        case 4: strcpy(_buf_t86, "bool"); break;
-        case 5: strcpy(_buf_t86, "arr"); break;
-        case 6: strcpy(_buf_t86, "void"); break;
-        default: strcpy(_buf_t86, "unknown"); break;
+        case 0: strcpy(_buf_t26, "int"); break;
+        case 1: strcpy(_buf_t26, "string"); break;
+        case 2: strcpy(_buf_t26, "float"); break;
+        case 3: strcpy(_buf_t26, "double"); break;
+        case 4: strcpy(_buf_t26, "bool"); break;
+        case 5: strcpy(_buf_t26, "arr"); break;
+        case 6: strcpy(_buf_t26, "void"); break;
+        default: strcpy(_buf_t26, "unknown"); break;
     }
-    t86 = sk_string_new(_buf_t86);
-    t87 = sk_string_eq(t86, sk_string_new("int"));
-    t88 = sk_string_eq(t86, sk_string_new("float"));
-    t89 = sk_bool_or(t87, t88);
-    t90 = sk_string_eq(t86, sk_string_new("double"));
-    t91 = sk_bool_or(t89, t90);
-    if (t91.value) {
-        goto L22;
+    t26 = sk_string_new(_buf_t26);
+    t27 = sk_string_eq(t26, sk_string_new("int"));
+    t28 = sk_string_eq(t26, sk_string_new("float"));
+    t29 = sk_bool_or(t27, t28);
+    t30 = sk_string_eq(t26, sk_string_new("double"));
+    t31 = sk_bool_or(t29, t30);
+    if (t31.value) {
+        goto L19;
     } else {
-        goto L23;
+        goto L20;
     }
+L19:
+    t32 = any_to_double(value);
+    t33 = sk_double_gt(t32, sk_double_new(0.0));
+    if (t33.value) {
+        goto L21;
+    } else {
+        goto L22;
+    }
+L21:
+    return sk_bool_new(1);
+    goto L23;
 L22:
-    t92 = any_to_double(value);
-    t93 = sk_double_gt(t92, sk_double_new(0.0));
-    if (t93.value) {
+    return sk_bool_new(0);
+L23:
+    goto L18;
+L20:
+    t34 = sk_string_eq(t26, sk_string_new("bool"));
+    if (t34.value) {
         goto L24;
     } else {
         goto L25;
     }
 L24:
-    return sk_bool_new(1);
-    goto L26;
+    t35 = any_to_bool(value);
+    return t35;
+    goto L18;
 L25:
-    return sk_bool_new(0);
-L26:
-    goto L21;
-L23:
-    t94 = sk_string_eq(t86, sk_string_new("bool"));
-    if (t94.value) {
+    t36 = sk_string_eq(t26, sk_string_new("void"));
+    if (t36.value) {
+        goto L26;
+    } else {
         goto L27;
-    } else {
-        goto L28;
     }
-L27:
-    t95 = any_to_bool(value);
-    return t95;
-    goto L21;
-L28:
-    t96 = sk_string_eq(t86, sk_string_new("void"));
-    if (t96.value) {
-        goto L29;
-    } else {
-        goto L30;
-    }
-L29:
+L26:
     return sk_bool_new(0);
-    goto L21;
-L30:
-    t97 = sk_string_eq(t86, sk_string_new("arr"));
-    if (t97.value) {
-        goto L31;
+    goto L18;
+L27:
+    t37 = sk_string_eq(t26, sk_string_new("arr"));
+    if (t37.value) {
+        goto L28;
     } else {
-        goto L32;
+        goto L29;
     }
-L31:
-    t98 = any_to_arr(value);
-    a = t98;
-    t99 = sk_int_new(sk_array_len(a.value));
+L28:
+    t38 = any_to_arr(value);
+    a = t38;
+    t39 = sk_int_new(sk_array_len(a.value));
     sk_array_deep_free(a.value);
-    t100 = sk_int_gt(t99, sk_int_new(0));
-    if (t100.value) {
+    t40 = sk_int_gt(t39, sk_int_new(0));
+    if (t40.value) {
+        goto L30;
+    } else {
+        goto L31;
+    }
+L30:
+    return sk_bool_new(1);
+    goto L32;
+L31:
+    return sk_bool_new(0);
+L32:
+    goto L18;
+L29:
+    t41 = sk_string_eq(t26, sk_string_new("string"));
+    if (t41.value) {
         goto L33;
     } else {
         goto L34;
     }
 L33:
-    return sk_bool_new(1);
-    goto L35;
-L34:
-    return sk_bool_new(0);
-L35:
-    goto L21;
-L32:
-    t101 = sk_string_eq(t86, sk_string_new("string"));
-    if (t101.value) {
+    t42 = any_to_string(value);
+    s = t42;
+    t43 = sk_int_new((int)__sk__utf8__strlen(s.value));
+    t44 = sk_int_gt(t43, sk_int_new(0));
+    if (t44.value) {
+        goto L35;
+    } else {
         goto L36;
-    } else {
-        goto L37;
     }
-L36:
-    t102 = any_to_string(value);
-    s = t102;
-    t103 = sk_int_new((int)__sk__utf8__strlen(s.value));
-    t104 = sk_int_gt(t103, sk_int_new(0));
-    if (t104.value) {
-        goto L38;
-    } else {
-        goto L39;
-    }
-L38:
-    t105 = sk_string_eq(s, sk_string_new("true"));
+L35:
+    t45 = sk_string_eq(s, sk_string_new("true"));
     free(s.value);
-    if (t105.value) {
-        goto L40;
+    if (t45.value) {
+        goto L37;
     } else {
-        goto L41;
+        goto L38;
     }
-L40:
+L37:
     return sk_bool_new(1);
-    goto L42;
+    goto L39;
+L38:
+    return sk_bool_new(0);
+L39:
+    goto L40;
+L36:
+    return sk_bool_new(0);
+L40:
+    goto L18;
+L34:
 L41:
     return sk_bool_new(0);
-L42:
-    goto L43;
-L39:
-    return sk_bool_new(0);
-L43:
-    goto L21;
-L37:
-L44:
-    return sk_bool_new(0);
-L21:
+L18:
 }
 
 sk_float __sk__toFloat(sk_any value) {
     sk_float result;
-    sk_string t106;
-    sk_bool t107;
-    sk_bool t108;
-    sk_bool t109;
-    sk_bool t110;
-    sk_bool t111;
-    sk_float t112;
-    sk_bool t113;
-    sk_bool t114;
-    sk_bool t115;
-    sk_bool t116;
+    sk_string t46;
+    sk_bool t47;
+    sk_bool t48;
+    sk_bool t49;
+    sk_bool t50;
+    sk_bool t51;
+    sk_float t52;
+    sk_bool t53;
+    sk_bool t54;
+    sk_bool t55;
+    sk_bool t56;
     sk_arr a;
-    sk_arr t117;
-    sk_int t118;
-    sk_float t119;
-    sk_bool t120;
-    sk_float t121;
+    sk_arr t57;
+    sk_int t58;
+    sk_float t59;
+    sk_bool t60;
+    sk_float t61;
 
     result = sk_float_new(0.0f);
-    char _buf_t106[32];
+    char _buf_t46[32];
     switch (value.type) {
-        case 0: strcpy(_buf_t106, "int"); break;
-        case 1: strcpy(_buf_t106, "string"); break;
-        case 2: strcpy(_buf_t106, "float"); break;
-        case 3: strcpy(_buf_t106, "double"); break;
-        case 4: strcpy(_buf_t106, "bool"); break;
-        case 5: strcpy(_buf_t106, "arr"); break;
-        case 6: strcpy(_buf_t106, "void"); break;
-        default: strcpy(_buf_t106, "unknown"); break;
+        case 0: strcpy(_buf_t46, "int"); break;
+        case 1: strcpy(_buf_t46, "string"); break;
+        case 2: strcpy(_buf_t46, "float"); break;
+        case 3: strcpy(_buf_t46, "double"); break;
+        case 4: strcpy(_buf_t46, "bool"); break;
+        case 5: strcpy(_buf_t46, "arr"); break;
+        case 6: strcpy(_buf_t46, "void"); break;
+        default: strcpy(_buf_t46, "unknown"); break;
     }
-    t106 = sk_string_new(_buf_t106);
-    t107 = sk_string_eq(t106, sk_string_new("int"));
-    t108 = sk_string_eq(t106, sk_string_new("float"));
-    t109 = sk_bool_or(t107, t108);
-    t110 = sk_string_eq(t106, sk_string_new("double"));
-    t111 = sk_bool_or(t109, t110);
-    if (t111.value) {
+    t46 = sk_string_new(_buf_t46);
+    t47 = sk_string_eq(t46, sk_string_new("int"));
+    t48 = sk_string_eq(t46, sk_string_new("float"));
+    t49 = sk_bool_or(t47, t48);
+    t50 = sk_string_eq(t46, sk_string_new("double"));
+    t51 = sk_bool_or(t49, t50);
+    if (t51.value) {
+        goto L43;
+    } else {
+        goto L44;
+    }
+L43:
+    t52 = any_to_float(value);
+    result = t52;
+    goto L42;
+L44:
+    t53 = sk_string_eq(t46, sk_string_new("bool"));
+    if (t53.value) {
+        goto L45;
+    } else {
         goto L46;
-    } else {
+    }
+L45:
+    t54 = any_to_bool(value);
+    if (t54.value) {
         goto L47;
-    }
-L46:
-    t112 = any_to_float(value);
-    result = t112;
-    goto L45;
-L47:
-    t113 = sk_string_eq(t106, sk_string_new("bool"));
-    if (t113.value) {
-        goto L48;
     } else {
-        goto L49;
+        goto L48;
     }
+L47:
+    result = sk_float_new(1.0f);
+    goto L49;
 L48:
-    t114 = any_to_bool(value);
-    if (t114.value) {
+    result = sk_float_new(0.0f);
+L49:
+    goto L42;
+L46:
+    t55 = sk_string_eq(t46, sk_string_new("void"));
+    if (t55.value) {
         goto L50;
     } else {
         goto L51;
     }
 L50:
-    result = sk_float_new(1.0f);
-    goto L52;
+    result = sk_float_new(0.0f);
+    goto L42;
 L51:
-    result = sk_float_new(0.0f);
-L52:
-    goto L45;
-L49:
-    t115 = sk_string_eq(t106, sk_string_new("void"));
-    if (t115.value) {
+    t56 = sk_string_eq(t46, sk_string_new("arr"));
+    if (t56.value) {
+        goto L52;
+    } else {
         goto L53;
-    } else {
-        goto L54;
     }
-L53:
-    result = sk_float_new(0.0f);
-    goto L45;
-L54:
-    t116 = sk_string_eq(t106, sk_string_new("arr"));
-    if (t116.value) {
-        goto L55;
-    } else {
-        goto L56;
-    }
-L55:
-    t117 = any_to_arr(value);
-    a = t117;
-    t118 = sk_int_new(sk_array_len(a.value));
+L52:
+    t57 = any_to_arr(value);
+    a = t57;
+    t58 = sk_int_new(sk_array_len(a.value));
     sk_array_deep_free(a.value);
-    t119 = sk_float_new((float)t118.value);
-    result = t119;
-    goto L45;
-L56:
-    t120 = sk_string_eq(t106, sk_string_new("string"));
-    if (t120.value) {
-        goto L57;
+    t59 = sk_float_new((float)t58.value);
+    result = t59;
+    goto L42;
+L53:
+    t60 = sk_string_eq(t46, sk_string_new("string"));
+    if (t60.value) {
+        goto L54;
     } else {
-        goto L58;
+        goto L55;
     }
-L57:
-    t121 = any_to_float(value);
-    result = t121;
-    goto L45;
-L58:
-L59:
+L54:
+    t61 = any_to_float(value);
+    result = t61;
+    goto L42;
+L55:
+L56:
     result = sk_float_new(0.0f);
-L45:
+L42:
     return result;
 }
 
 sk_double __sk__toDouble(sk_any value) {
     sk_double result;
-    sk_string t122;
-    sk_bool t123;
-    sk_bool t124;
-    sk_bool t125;
-    sk_bool t126;
-    sk_bool t127;
-    sk_double t128;
-    sk_bool t129;
-    sk_bool t130;
-    sk_bool t131;
-    sk_bool t132;
+    sk_string t62;
+    sk_bool t63;
+    sk_bool t64;
+    sk_bool t65;
+    sk_bool t66;
+    sk_bool t67;
+    sk_double t68;
+    sk_bool t69;
+    sk_bool t70;
+    sk_bool t71;
+    sk_bool t72;
     sk_arr a;
-    sk_arr t133;
-    sk_int t134;
-    sk_double t135;
-    sk_bool t136;
-    sk_double t137;
+    sk_arr t73;
+    sk_int t74;
+    sk_double t75;
+    sk_bool t76;
+    sk_double t77;
 
     result = sk_double_new(0.0);
-    char _buf_t122[32];
+    char _buf_t62[32];
     switch (value.type) {
-        case 0: strcpy(_buf_t122, "int"); break;
-        case 1: strcpy(_buf_t122, "string"); break;
-        case 2: strcpy(_buf_t122, "float"); break;
-        case 3: strcpy(_buf_t122, "double"); break;
-        case 4: strcpy(_buf_t122, "bool"); break;
-        case 5: strcpy(_buf_t122, "arr"); break;
-        case 6: strcpy(_buf_t122, "void"); break;
-        default: strcpy(_buf_t122, "unknown"); break;
+        case 0: strcpy(_buf_t62, "int"); break;
+        case 1: strcpy(_buf_t62, "string"); break;
+        case 2: strcpy(_buf_t62, "float"); break;
+        case 3: strcpy(_buf_t62, "double"); break;
+        case 4: strcpy(_buf_t62, "bool"); break;
+        case 5: strcpy(_buf_t62, "arr"); break;
+        case 6: strcpy(_buf_t62, "void"); break;
+        default: strcpy(_buf_t62, "unknown"); break;
     }
-    t122 = sk_string_new(_buf_t122);
-    t123 = sk_string_eq(t122, sk_string_new("int"));
-    t124 = sk_string_eq(t122, sk_string_new("float"));
-    t125 = sk_bool_or(t123, t124);
-    t126 = sk_string_eq(t122, sk_string_new("double"));
-    t127 = sk_bool_or(t125, t126);
-    if (t127.value) {
+    t62 = sk_string_new(_buf_t62);
+    t63 = sk_string_eq(t62, sk_string_new("int"));
+    t64 = sk_string_eq(t62, sk_string_new("float"));
+    t65 = sk_bool_or(t63, t64);
+    t66 = sk_string_eq(t62, sk_string_new("double"));
+    t67 = sk_bool_or(t65, t66);
+    if (t67.value) {
+        goto L58;
+    } else {
+        goto L59;
+    }
+L58:
+    t68 = any_to_double(value);
+    result = t68;
+    goto L57;
+L59:
+    t69 = sk_string_eq(t62, sk_string_new("bool"));
+    if (t69.value) {
+        goto L60;
+    } else {
         goto L61;
-    } else {
+    }
+L60:
+    t70 = any_to_bool(value);
+    if (t70.value) {
         goto L62;
-    }
-L61:
-    t128 = any_to_double(value);
-    result = t128;
-    goto L60;
-L62:
-    t129 = sk_string_eq(t122, sk_string_new("bool"));
-    if (t129.value) {
-        goto L63;
     } else {
-        goto L64;
+        goto L63;
     }
+L62:
+    result = sk_double_new(1.0);
+    goto L64;
 L63:
-    t130 = any_to_bool(value);
-    if (t130.value) {
+    result = sk_double_new(0.0);
+L64:
+    goto L57;
+L61:
+    t71 = sk_string_eq(t62, sk_string_new("void"));
+    if (t71.value) {
         goto L65;
     } else {
         goto L66;
     }
 L65:
-    result = sk_double_new(1.0);
-    goto L67;
+    result = sk_double_new(0.0);
+    goto L57;
 L66:
-    result = sk_double_new(0.0);
-L67:
-    goto L60;
-L64:
-    t131 = sk_string_eq(t122, sk_string_new("void"));
-    if (t131.value) {
+    t72 = sk_string_eq(t62, sk_string_new("arr"));
+    if (t72.value) {
+        goto L67;
+    } else {
         goto L68;
-    } else {
-        goto L69;
     }
-L68:
-    result = sk_double_new(0.0);
-    goto L60;
-L69:
-    t132 = sk_string_eq(t122, sk_string_new("arr"));
-    if (t132.value) {
-        goto L70;
-    } else {
-        goto L71;
-    }
-L70:
-    t133 = any_to_arr(value);
-    a = t133;
-    t134 = sk_int_new(sk_array_len(a.value));
+L67:
+    t73 = any_to_arr(value);
+    a = t73;
+    t74 = sk_int_new(sk_array_len(a.value));
     sk_array_deep_free(a.value);
-    t135 = sk_double_new((double)t134.value);
-    result = t135;
-    goto L60;
-L71:
-    t136 = sk_string_eq(t122, sk_string_new("string"));
-    if (t136.value) {
-        goto L72;
+    t75 = sk_double_new((double)t74.value);
+    result = t75;
+    goto L57;
+L68:
+    t76 = sk_string_eq(t62, sk_string_new("string"));
+    if (t76.value) {
+        goto L69;
     } else {
-        goto L73;
+        goto L70;
     }
-L72:
-    t137 = any_to_double(value);
-    result = t137;
-    goto L60;
-L73:
-L74:
+L69:
+    t77 = any_to_double(value);
+    result = t77;
+    goto L57;
+L70:
+L71:
     result = sk_double_new(0.0);
-L60:
+L57:
     return result;
 }
 
 sk_string __sk__toString(sk_any value) {
     sk_string result;
-    sk_string t138;
-    sk_bool t139;
-    sk_bool t140;
-    sk_bool t141;
-    sk_bool t142;
-    sk_bool t143;
-    sk_bool t144;
-    sk_bool t145;
-    sk_string t146;
-    sk_bool t147;
-    sk_bool t148;
-    sk_string t149;
-    sk_bool t150;
-    sk_string t151;
+    sk_string t78;
+    sk_bool t79;
+    sk_bool t80;
+    sk_bool t81;
+    sk_bool t82;
+    sk_bool t83;
+    sk_bool t84;
+    sk_bool t85;
+    sk_string t86;
+    sk_bool t87;
+    sk_bool t88;
+    sk_string t89;
+    sk_bool t90;
+    sk_string t91;
 
     result = sk_string_new("");
-    char _buf_t138[32];
+    char _buf_t78[32];
     switch (value.type) {
-        case 0: strcpy(_buf_t138, "int"); break;
-        case 1: strcpy(_buf_t138, "string"); break;
-        case 2: strcpy(_buf_t138, "float"); break;
-        case 3: strcpy(_buf_t138, "double"); break;
-        case 4: strcpy(_buf_t138, "bool"); break;
-        case 5: strcpy(_buf_t138, "arr"); break;
-        case 6: strcpy(_buf_t138, "void"); break;
-        default: strcpy(_buf_t138, "unknown"); break;
+        case 0: strcpy(_buf_t78, "int"); break;
+        case 1: strcpy(_buf_t78, "string"); break;
+        case 2: strcpy(_buf_t78, "float"); break;
+        case 3: strcpy(_buf_t78, "double"); break;
+        case 4: strcpy(_buf_t78, "bool"); break;
+        case 5: strcpy(_buf_t78, "arr"); break;
+        case 6: strcpy(_buf_t78, "void"); break;
+        default: strcpy(_buf_t78, "unknown"); break;
     }
-    t138 = sk_string_new(_buf_t138);
-    t139 = sk_string_eq(t138, sk_string_new("int"));
-    t140 = sk_string_eq(t138, sk_string_new("float"));
-    t141 = sk_bool_or(t139, t140);
-    t142 = sk_string_eq(t138, sk_string_new("double"));
-    t143 = sk_bool_or(t141, t142);
-    t144 = sk_string_eq(t138, sk_string_new("bool"));
-    t145 = sk_bool_or(t143, t144);
-    if (t145.value) {
+    t78 = sk_string_new(_buf_t78);
+    t79 = sk_string_eq(t78, sk_string_new("int"));
+    t80 = sk_string_eq(t78, sk_string_new("float"));
+    t81 = sk_bool_or(t79, t80);
+    t82 = sk_string_eq(t78, sk_string_new("double"));
+    t83 = sk_bool_or(t81, t82);
+    t84 = sk_string_eq(t78, sk_string_new("bool"));
+    t85 = sk_bool_or(t83, t84);
+    if (t85.value) {
+        goto L73;
+    } else {
+        goto L74;
+    }
+L73:
+    t86 = any_to_string(value);
+    result = t86;
+    goto L72;
+L74:
+    t87 = sk_string_eq(t78, sk_string_new("void"));
+    if (t87.value) {
+        goto L75;
+    } else {
         goto L76;
-    } else {
-        goto L77;
     }
-L76:
-    t146 = any_to_string(value);
-    result = t146;
-    goto L75;
-L77:
-    t147 = sk_string_eq(t138, sk_string_new("void"));
-    if (t147.value) {
-        goto L78;
-    } else {
-        goto L79;
-    }
-L78:
-    result = sk_string_new("null");
-    goto L75;
-L79:
-    t148 = sk_string_eq(t138, sk_string_new("arr"));
-    if (t148.value) {
-        goto L80;
-    } else {
-        goto L81;
-    }
-L80:
-    t149 = any_to_string(value);
-    result = t149;
-    goto L75;
-L81:
-    t150 = sk_string_eq(t138, sk_string_new("string"));
-    if (t150.value) {
-        goto L82;
-    } else {
-        goto L83;
-    }
-L82:
-    t151 = any_to_string(value);
-    result = t151;
-    goto L75;
-L83:
-L84:
-    result = sk_string_new("");
 L75:
+    result = sk_string_new("null");
+    goto L72;
+L76:
+    t88 = sk_string_eq(t78, sk_string_new("arr"));
+    if (t88.value) {
+        goto L77;
+    } else {
+        goto L78;
+    }
+L77:
+    t89 = any_to_string(value);
+    result = t89;
+    goto L72;
+L78:
+    t90 = sk_string_eq(t78, sk_string_new("string"));
+    if (t90.value) {
+        goto L79;
+    } else {
+        goto L80;
+    }
+L79:
+    t91 = any_to_string(value);
+    result = t91;
+    goto L72;
+L80:
+L81:
+    result = sk_string_new("");
+L72:
     return result;
 }
 
 sk_int __sk__toIntStrict(sk_any value) {
     sk_int result;
-    sk_string t152;
-    sk_bool t153;
-    sk_int t154;
-    sk_bool t155;
-    sk_bool t156;
-    sk_bool t157;
-    sk_int t158;
-    sk_bool t159;
-    sk_bool t160;
-    sk_bool t161;
-    VoidToIntRefactorError* t162;
-    sk_bool t163;
+    sk_string t92;
+    sk_bool t93;
+    sk_int t94;
+    sk_bool t95;
+    sk_bool t96;
+    sk_bool t97;
+    sk_int t98;
+    sk_bool t99;
+    sk_bool t100;
+    sk_bool t101;
+    VoidToIntRefactorError* t102;
+    sk_bool t103;
     sk_arr a;
-    sk_arr t164;
-    sk_int t165;
-    sk_bool t166;
-    sk_int t167;
+    sk_arr t104;
+    sk_int t105;
+    sk_bool t106;
+    sk_int t107;
     sk_string line;
-    sk_string t168;
-    sk_string t169;
-    sk_string t170;
-    CustomToIntRefactorError* t171;
+    sk_string t108;
+    sk_string t109;
+    sk_string t110;
+    CustomToIntRefactorError* t111;
 
     result = sk_int_new(0);
-    char _buf_t152[32];
+    char _buf_t92[32];
     switch (value.type) {
-        case 0: strcpy(_buf_t152, "int"); break;
-        case 1: strcpy(_buf_t152, "string"); break;
-        case 2: strcpy(_buf_t152, "float"); break;
-        case 3: strcpy(_buf_t152, "double"); break;
-        case 4: strcpy(_buf_t152, "bool"); break;
-        case 5: strcpy(_buf_t152, "arr"); break;
-        case 6: strcpy(_buf_t152, "void"); break;
-        default: strcpy(_buf_t152, "unknown"); break;
+        case 0: strcpy(_buf_t92, "int"); break;
+        case 1: strcpy(_buf_t92, "string"); break;
+        case 2: strcpy(_buf_t92, "float"); break;
+        case 3: strcpy(_buf_t92, "double"); break;
+        case 4: strcpy(_buf_t92, "bool"); break;
+        case 5: strcpy(_buf_t92, "arr"); break;
+        case 6: strcpy(_buf_t92, "void"); break;
+        default: strcpy(_buf_t92, "unknown"); break;
     }
-    t152 = sk_string_new(_buf_t152);
-    t153 = sk_string_eq(t152, sk_string_new("int"));
-    if (t153.value) {
+    t92 = sk_string_new(_buf_t92);
+    t93 = sk_string_eq(t92, sk_string_new("int"));
+    if (t93.value) {
+        goto L83;
+    } else {
+        goto L84;
+    }
+L83:
+    t94 = any_to_int(value);
+    result = t94;
+    goto L82;
+L84:
+    t95 = sk_string_eq(t92, sk_string_new("float"));
+    t96 = sk_string_eq(t92, sk_string_new("double"));
+    t97 = sk_bool_or(t95, t96);
+    if (t97.value) {
+        goto L85;
+    } else {
         goto L86;
-    } else {
-        goto L87;
     }
+L85:
+    t98 = any_to_int(value);
+    result = t98;
+    goto L82;
 L86:
-    t154 = any_to_int(value);
-    result = t154;
-    goto L85;
-L87:
-    t155 = sk_string_eq(t152, sk_string_new("float"));
-    t156 = sk_string_eq(t152, sk_string_new("double"));
-    t157 = sk_bool_or(t155, t156);
-    if (t157.value) {
+    t99 = sk_string_eq(t92, sk_string_new("bool"));
+    if (t99.value) {
+        goto L87;
+    } else {
         goto L88;
-    } else {
+    }
+L87:
+    t100 = any_to_bool(value);
+    if (t100.value) {
         goto L89;
-    }
-L88:
-    t158 = any_to_int(value);
-    result = t158;
-    goto L85;
-L89:
-    t159 = sk_string_eq(t152, sk_string_new("bool"));
-    if (t159.value) {
-        goto L90;
     } else {
-        goto L91;
+        goto L90;
     }
+L89:
+    result = sk_int_new(1);
+    goto L91;
 L90:
-    t160 = any_to_bool(value);
-    if (t160.value) {
+    result = sk_int_new(0);
+L91:
+    goto L82;
+L88:
+    t101 = sk_string_eq(t92, sk_string_new("void"));
+    if (t101.value) {
         goto L92;
     } else {
         goto L93;
     }
 L92:
-    result = sk_int_new(1);
-    goto L94;
+t102 = malloc(sizeof(VoidToIntRefactorError));
+t102->__type = "Error.RefactorError.VoidRefactorError.VoidToIntRefactorError";
+t102->msg = sk_string_new("Cannot convert 'null' to int.");
+    sk_throw(t102, "<builtin:std/ref>", 206, 7);
+    goto L82;
 L93:
-    result = sk_int_new(0);
-L94:
-    goto L85;
-L91:
-    t161 = sk_string_eq(t152, sk_string_new("void"));
-    if (t161.value) {
+    t103 = sk_string_eq(t92, sk_string_new("arr"));
+    if (t103.value) {
+        goto L94;
+    } else {
         goto L95;
-    } else {
-        goto L96;
     }
-L95:
-t162 = malloc(sizeof(VoidToIntRefactorError));
-t162->__type = "Error.RefactorError.VoidRefactorError.VoidToIntRefactorError";
-t162->msg = sk_string_new("Cannot convert 'null' to int.");
-    sk_throw(t162, "<builtin:std/ref>", 206, 7);
-    goto L85;
-L96:
-    t163 = sk_string_eq(t152, sk_string_new("arr"));
-    if (t163.value) {
-        goto L97;
-    } else {
-        goto L98;
-    }
-L97:
-    t164 = any_to_arr(value);
-    a = t164;
-    t165 = sk_int_new(sk_array_len(a.value));
+L94:
+    t104 = any_to_arr(value);
+    a = t104;
+    t105 = sk_int_new(sk_array_len(a.value));
     sk_array_deep_free(a.value);
-    result = t165;
-    goto L85;
-L98:
-    t166 = sk_string_eq(t152, sk_string_new("string"));
-    if (t166.value) {
-        goto L99;
+    result = t105;
+    goto L82;
+L95:
+    t106 = sk_string_eq(t92, sk_string_new("string"));
+    if (t106.value) {
+        goto L96;
     } else {
-        goto L100;
+        goto L97;
     }
-L99:
-    t167 = any_to_int(value);
-    result = t167;
-    goto L85;
-L100:
-L101:
-    char _buf_t168[32];
+L96:
+    t107 = any_to_int(value);
+    result = t107;
+    goto L82;
+L97:
+L98:
+    char _buf_t108[32];
     switch (value.type) {
-        case 0: strcpy(_buf_t168, "int"); break;
-        case 1: strcpy(_buf_t168, "string"); break;
-        case 2: strcpy(_buf_t168, "float"); break;
-        case 3: strcpy(_buf_t168, "double"); break;
-        case 4: strcpy(_buf_t168, "bool"); break;
-        case 5: strcpy(_buf_t168, "arr"); break;
-        case 6: strcpy(_buf_t168, "void"); break;
-        default: strcpy(_buf_t168, "unknown"); break;
+        case 0: strcpy(_buf_t108, "int"); break;
+        case 1: strcpy(_buf_t108, "string"); break;
+        case 2: strcpy(_buf_t108, "float"); break;
+        case 3: strcpy(_buf_t108, "double"); break;
+        case 4: strcpy(_buf_t108, "bool"); break;
+        case 5: strcpy(_buf_t108, "arr"); break;
+        case 6: strcpy(_buf_t108, "void"); break;
+        default: strcpy(_buf_t108, "unknown"); break;
     }
-    t168 = sk_string_new(_buf_t168);
-    t169 = sk_string_concat(sk_string_new("Cannot convert type '"), t168);
-    t170 = sk_string_concat(t169, sk_string_new("' to int."));
-    free(t169.value);
-    line = t170;
-t171 = malloc(sizeof(CustomToIntRefactorError));
-t171->__type = "Error.RefactorError.CustomRefactorError.CustomToIntRefactorError";
-t171->msg = line;
-    sk_throw(t171, "<builtin:std/ref>", 217, 7);
-L85:
+    t108 = sk_string_new(_buf_t108);
+    t109 = sk_string_concat(sk_string_new("Cannot convert type '"), t108);
+    t110 = sk_string_concat(t109, sk_string_new("' to int."));
+    free(t109.value);
+    line = t110;
+t111 = malloc(sizeof(CustomToIntRefactorError));
+t111->__type = "Error.RefactorError.CustomRefactorError.CustomToIntRefactorError";
+t111->msg = line;
+    sk_throw(t111, "<builtin:std/ref>", 217, 7);
+L82:
     return result;
 }
 
 sk_bool __sk__toBoolStrict(sk_any value) {
-    sk_string t172;
-    sk_bool t173;
-    sk_bool t174;
-    sk_bool t175;
-    sk_bool t176;
-    sk_bool t177;
-    sk_double t178;
-    sk_bool t179;
-    sk_bool t180;
-    sk_bool t181;
-    sk_bool t182;
-    VoidToBoolRefactorError* t183;
-    sk_bool t184;
+    sk_string t112;
+    sk_bool t113;
+    sk_bool t114;
+    sk_bool t115;
+    sk_bool t116;
+    sk_bool t117;
+    sk_double t118;
+    sk_bool t119;
+    sk_bool t120;
+    sk_bool t121;
+    sk_bool t122;
+    VoidToBoolRefactorError* t123;
+    sk_bool t124;
     sk_arr a;
-    sk_arr t185;
-    sk_int t186;
-    sk_bool t187;
-    sk_bool t188;
+    sk_arr t125;
+    sk_int t126;
+    sk_bool t127;
+    sk_bool t128;
     sk_string s;
-    sk_string t189;
-    sk_int t190;
-    sk_bool t191;
-    sk_bool t192;
+    sk_string t129;
+    sk_int t130;
+    sk_bool t131;
+    sk_bool t132;
     sk_string line;
-    sk_string t193;
-    sk_string t194;
-    sk_string t195;
-    CustomToBoolRefactorError* t196;
+    sk_string t133;
+    sk_string t134;
+    sk_string t135;
+    CustomToBoolRefactorError* t136;
 
-    char _buf_t172[32];
+    char _buf_t112[32];
     switch (value.type) {
-        case 0: strcpy(_buf_t172, "int"); break;
-        case 1: strcpy(_buf_t172, "string"); break;
-        case 2: strcpy(_buf_t172, "float"); break;
-        case 3: strcpy(_buf_t172, "double"); break;
-        case 4: strcpy(_buf_t172, "bool"); break;
-        case 5: strcpy(_buf_t172, "arr"); break;
-        case 6: strcpy(_buf_t172, "void"); break;
-        default: strcpy(_buf_t172, "unknown"); break;
+        case 0: strcpy(_buf_t112, "int"); break;
+        case 1: strcpy(_buf_t112, "string"); break;
+        case 2: strcpy(_buf_t112, "float"); break;
+        case 3: strcpy(_buf_t112, "double"); break;
+        case 4: strcpy(_buf_t112, "bool"); break;
+        case 5: strcpy(_buf_t112, "arr"); break;
+        case 6: strcpy(_buf_t112, "void"); break;
+        default: strcpy(_buf_t112, "unknown"); break;
     }
-    t172 = sk_string_new(_buf_t172);
-    t173 = sk_string_eq(t172, sk_string_new("int"));
-    t174 = sk_string_eq(t172, sk_string_new("float"));
-    t175 = sk_bool_or(t173, t174);
-    t176 = sk_string_eq(t172, sk_string_new("double"));
-    t177 = sk_bool_or(t175, t176);
-    if (t177.value) {
-        goto L103;
+    t112 = sk_string_new(_buf_t112);
+    t113 = sk_string_eq(t112, sk_string_new("int"));
+    t114 = sk_string_eq(t112, sk_string_new("float"));
+    t115 = sk_bool_or(t113, t114);
+    t116 = sk_string_eq(t112, sk_string_new("double"));
+    t117 = sk_bool_or(t115, t116);
+    if (t117.value) {
+        goto L100;
     } else {
-        goto L104;
+        goto L101;
     }
+L100:
+    t118 = any_to_double(value);
+    t119 = sk_double_gt(t118, sk_double_new(0.0));
+    if (t119.value) {
+        goto L102;
+    } else {
+        goto L103;
+    }
+L102:
+    return sk_bool_new(1);
+    goto L104;
 L103:
-    t178 = any_to_double(value);
-    t179 = sk_double_gt(t178, sk_double_new(0.0));
-    if (t179.value) {
+    return sk_bool_new(0);
+L104:
+    goto L99;
+L101:
+    t120 = sk_string_eq(t112, sk_string_new("bool"));
+    if (t120.value) {
         goto L105;
     } else {
         goto L106;
     }
 L105:
-    return sk_bool_new(1);
-    goto L107;
+    t121 = any_to_bool(value);
+    return t121;
+    goto L99;
 L106:
-    return sk_bool_new(0);
-L107:
-    goto L102;
-L104:
-    t180 = sk_string_eq(t172, sk_string_new("bool"));
-    if (t180.value) {
+    t122 = sk_string_eq(t112, sk_string_new("void"));
+    if (t122.value) {
+        goto L107;
+    } else {
         goto L108;
-    } else {
-        goto L109;
     }
+L107:
+t123 = malloc(sizeof(VoidToBoolRefactorError));
+t123->__type = "Error.RefactorError.VoidRefactorError.VoidToBoolRefactorError";
+t123->msg = sk_string_new("Cannot convert 'null' to bool.");
+    sk_throw(t123, "<builtin:std/ref>", 236, 7);
+    goto L99;
 L108:
-    t181 = any_to_bool(value);
-    return t181;
-    goto L102;
-L109:
-    t182 = sk_string_eq(t172, sk_string_new("void"));
-    if (t182.value) {
+    t124 = sk_string_eq(t112, sk_string_new("arr"));
+    if (t124.value) {
+        goto L109;
+    } else {
         goto L110;
-    } else {
-        goto L111;
     }
-L110:
-t183 = malloc(sizeof(VoidToBoolRefactorError));
-t183->__type = "Error.RefactorError.VoidRefactorError.VoidToBoolRefactorError";
-t183->msg = sk_string_new("Cannot convert 'null' to bool.");
-    sk_throw(t183, "<builtin:std/ref>", 236, 7);
-    goto L102;
-L111:
-    t184 = sk_string_eq(t172, sk_string_new("arr"));
-    if (t184.value) {
-        goto L112;
-    } else {
-        goto L113;
-    }
-L112:
-    t185 = any_to_arr(value);
-    a = t185;
-    t186 = sk_int_new(sk_array_len(a.value));
+L109:
+    t125 = any_to_arr(value);
+    a = t125;
+    t126 = sk_int_new(sk_array_len(a.value));
     sk_array_deep_free(a.value);
-    t187 = sk_int_gt(t186, sk_int_new(0));
-    if (t187.value) {
+    t127 = sk_int_gt(t126, sk_int_new(0));
+    if (t127.value) {
+        goto L111;
+    } else {
+        goto L112;
+    }
+L111:
+    return sk_bool_new(1);
+    goto L113;
+L112:
+    return sk_bool_new(0);
+L113:
+    goto L99;
+L110:
+    t128 = sk_string_eq(t112, sk_string_new("string"));
+    if (t128.value) {
         goto L114;
     } else {
         goto L115;
     }
 L114:
-    return sk_bool_new(1);
-    goto L116;
-L115:
-    return sk_bool_new(0);
-L116:
-    goto L102;
-L113:
-    t188 = sk_string_eq(t172, sk_string_new("string"));
-    if (t188.value) {
+    t129 = any_to_string(value);
+    s = t129;
+    t130 = sk_int_new((int)__sk__utf8__strlen(s.value));
+    t131 = sk_int_gt(t130, sk_int_new(0));
+    if (t131.value) {
+        goto L116;
+    } else {
         goto L117;
-    } else {
-        goto L118;
     }
-L117:
-    t189 = any_to_string(value);
-    s = t189;
-    t190 = sk_int_new((int)__sk__utf8__strlen(s.value));
-    t191 = sk_int_gt(t190, sk_int_new(0));
-    if (t191.value) {
-        goto L119;
-    } else {
-        goto L120;
-    }
-L119:
-    t192 = sk_string_eq(s, sk_string_new("true"));
+L116:
+    t132 = sk_string_eq(s, sk_string_new("true"));
     free(s.value);
-    if (t192.value) {
-        goto L121;
+    if (t132.value) {
+        goto L118;
     } else {
-        goto L122;
+        goto L119;
     }
-L121:
-    return sk_bool_new(1);
-    goto L123;
-L122:
-    return sk_bool_new(0);
-L123:
-    goto L124;
-L120:
-    return sk_bool_new(0);
-L124:
-    goto L102;
 L118:
-L125:
-    char _buf_t193[32];
+    return sk_bool_new(1);
+    goto L120;
+L119:
+    return sk_bool_new(0);
+L120:
+    goto L121;
+L117:
+    return sk_bool_new(0);
+L121:
+    goto L99;
+L115:
+L122:
+    char _buf_t133[32];
     switch (value.type) {
-        case 0: strcpy(_buf_t193, "int"); break;
-        case 1: strcpy(_buf_t193, "string"); break;
-        case 2: strcpy(_buf_t193, "float"); break;
-        case 3: strcpy(_buf_t193, "double"); break;
-        case 4: strcpy(_buf_t193, "bool"); break;
-        case 5: strcpy(_buf_t193, "arr"); break;
-        case 6: strcpy(_buf_t193, "void"); break;
-        default: strcpy(_buf_t193, "unknown"); break;
+        case 0: strcpy(_buf_t133, "int"); break;
+        case 1: strcpy(_buf_t133, "string"); break;
+        case 2: strcpy(_buf_t133, "float"); break;
+        case 3: strcpy(_buf_t133, "double"); break;
+        case 4: strcpy(_buf_t133, "bool"); break;
+        case 5: strcpy(_buf_t133, "arr"); break;
+        case 6: strcpy(_buf_t133, "void"); break;
+        default: strcpy(_buf_t133, "unknown"); break;
     }
-    t193 = sk_string_new(_buf_t193);
-    t194 = sk_string_concat(sk_string_new("Cannot convert type '"), t193);
-    t195 = sk_string_concat(t194, sk_string_new("' to bool."));
-    free(t194.value);
-    line = t195;
-t196 = malloc(sizeof(CustomToBoolRefactorError));
-t196->__type = "Error.RefactorError.CustomRefactorError.CustomToBoolRefactorError";
-t196->msg = line;
-    sk_throw(t196, "<builtin:std/ref>", 260, 7);
-L102:
+    t133 = sk_string_new(_buf_t133);
+    t134 = sk_string_concat(sk_string_new("Cannot convert type '"), t133);
+    t135 = sk_string_concat(t134, sk_string_new("' to bool."));
+    free(t134.value);
+    line = t135;
+t136 = malloc(sizeof(CustomToBoolRefactorError));
+t136->__type = "Error.RefactorError.CustomRefactorError.CustomToBoolRefactorError";
+t136->msg = line;
+    sk_throw(t136, "<builtin:std/ref>", 260, 7);
+L99:
 }
 
 sk_float __sk__toFloatStrict(sk_any value) {
-    sk_string t197;
-    sk_bool t198;
-    sk_bool t199;
-    sk_bool t200;
-    sk_bool t201;
-    sk_bool t202;
-    sk_float t203;
-    sk_bool t204;
-    sk_bool t205;
-    sk_bool t206;
-    VoidToFloatRefactorError* t207;
-    sk_bool t208;
+    sk_string t137;
+    sk_bool t138;
+    sk_bool t139;
+    sk_bool t140;
+    sk_bool t141;
+    sk_bool t142;
+    sk_float t143;
+    sk_bool t144;
+    sk_bool t145;
+    sk_bool t146;
+    VoidToFloatRefactorError* t147;
+    sk_bool t148;
     sk_arr a;
-    sk_arr t209;
-    sk_int t210;
-    sk_float t211;
-    sk_bool t212;
-    sk_float t213;
+    sk_arr t149;
+    sk_int t150;
+    sk_float t151;
+    sk_bool t152;
+    sk_float t153;
     sk_string line;
-    sk_string t214;
-    sk_string t215;
-    sk_string t216;
-    CustomToFloatRefactorError* t217;
+    sk_string t154;
+    sk_string t155;
+    sk_string t156;
+    CustomToFloatRefactorError* t157;
 
-    char _buf_t197[32];
+    char _buf_t137[32];
     switch (value.type) {
-        case 0: strcpy(_buf_t197, "int"); break;
-        case 1: strcpy(_buf_t197, "string"); break;
-        case 2: strcpy(_buf_t197, "float"); break;
-        case 3: strcpy(_buf_t197, "double"); break;
-        case 4: strcpy(_buf_t197, "bool"); break;
-        case 5: strcpy(_buf_t197, "arr"); break;
-        case 6: strcpy(_buf_t197, "void"); break;
-        default: strcpy(_buf_t197, "unknown"); break;
+        case 0: strcpy(_buf_t137, "int"); break;
+        case 1: strcpy(_buf_t137, "string"); break;
+        case 2: strcpy(_buf_t137, "float"); break;
+        case 3: strcpy(_buf_t137, "double"); break;
+        case 4: strcpy(_buf_t137, "bool"); break;
+        case 5: strcpy(_buf_t137, "arr"); break;
+        case 6: strcpy(_buf_t137, "void"); break;
+        default: strcpy(_buf_t137, "unknown"); break;
     }
-    t197 = sk_string_new(_buf_t197);
-    t198 = sk_string_eq(t197, sk_string_new("int"));
-    t199 = sk_string_eq(t197, sk_string_new("float"));
-    t200 = sk_bool_or(t198, t199);
-    t201 = sk_string_eq(t197, sk_string_new("double"));
-    t202 = sk_bool_or(t200, t201);
-    if (t202.value) {
+    t137 = sk_string_new(_buf_t137);
+    t138 = sk_string_eq(t137, sk_string_new("int"));
+    t139 = sk_string_eq(t137, sk_string_new("float"));
+    t140 = sk_bool_or(t138, t139);
+    t141 = sk_string_eq(t137, sk_string_new("double"));
+    t142 = sk_bool_or(t140, t141);
+    if (t142.value) {
+        goto L124;
+    } else {
+        goto L125;
+    }
+L124:
+    t143 = any_to_float(value);
+    return t143;
+    goto L123;
+L125:
+    t144 = sk_string_eq(t137, sk_string_new("bool"));
+    if (t144.value) {
+        goto L126;
+    } else {
         goto L127;
-    } else {
+    }
+L126:
+    t145 = any_to_bool(value);
+    if (t145.value) {
         goto L128;
-    }
-L127:
-    t203 = any_to_float(value);
-    return t203;
-    goto L126;
-L128:
-    t204 = sk_string_eq(t197, sk_string_new("bool"));
-    if (t204.value) {
-        goto L129;
     } else {
-        goto L130;
+        goto L129;
     }
+L128:
+    return sk_float_new(1.0f);
+    goto L130;
 L129:
-    t205 = any_to_bool(value);
-    if (t205.value) {
+    return sk_float_new(0.0f);
+L130:
+    goto L123;
+L127:
+    t146 = sk_string_eq(t137, sk_string_new("void"));
+    if (t146.value) {
         goto L131;
     } else {
         goto L132;
     }
 L131:
-    return sk_float_new(1.0f);
-    goto L133;
+t147 = malloc(sizeof(VoidToFloatRefactorError));
+t147->__type = "Error.RefactorError.VoidRefactorError.VoidToFloatRefactorError";
+t147->msg = sk_string_new("Cannot convert 'null' to float.");
+    sk_throw(t147, "<builtin:std/ref>", 278, 7);
+    goto L123;
 L132:
-    return sk_float_new(0.0f);
-L133:
-    goto L126;
-L130:
-    t206 = sk_string_eq(t197, sk_string_new("void"));
-    if (t206.value) {
+    t148 = sk_string_eq(t137, sk_string_new("arr"));
+    if (t148.value) {
+        goto L133;
+    } else {
         goto L134;
-    } else {
-        goto L135;
     }
-L134:
-t207 = malloc(sizeof(VoidToFloatRefactorError));
-t207->__type = "Error.RefactorError.VoidRefactorError.VoidToFloatRefactorError";
-t207->msg = sk_string_new("Cannot convert 'null' to float.");
-    sk_throw(t207, "<builtin:std/ref>", 278, 7);
-    goto L126;
-L135:
-    t208 = sk_string_eq(t197, sk_string_new("arr"));
-    if (t208.value) {
-        goto L136;
-    } else {
-        goto L137;
-    }
-L136:
-    t209 = any_to_arr(value);
-    a = t209;
-    t210 = sk_int_new(sk_array_len(a.value));
+L133:
+    t149 = any_to_arr(value);
+    a = t149;
+    t150 = sk_int_new(sk_array_len(a.value));
     sk_array_deep_free(a.value);
-    t211 = sk_float_new((float)t210.value);
-    return t211;
-    goto L126;
-L137:
-    t212 = sk_string_eq(t197, sk_string_new("string"));
-    if (t212.value) {
-        goto L138;
+    t151 = sk_float_new((float)t150.value);
+    return t151;
+    goto L123;
+L134:
+    t152 = sk_string_eq(t137, sk_string_new("string"));
+    if (t152.value) {
+        goto L135;
     } else {
-        goto L139;
+        goto L136;
     }
-L138:
-    t213 = any_to_float(value);
-    return t213;
-    goto L126;
-L139:
-L140:
-    char _buf_t214[32];
+L135:
+    t153 = any_to_float(value);
+    return t153;
+    goto L123;
+L136:
+L137:
+    char _buf_t154[32];
     switch (value.type) {
-        case 0: strcpy(_buf_t214, "int"); break;
-        case 1: strcpy(_buf_t214, "string"); break;
-        case 2: strcpy(_buf_t214, "float"); break;
-        case 3: strcpy(_buf_t214, "double"); break;
-        case 4: strcpy(_buf_t214, "bool"); break;
-        case 5: strcpy(_buf_t214, "arr"); break;
-        case 6: strcpy(_buf_t214, "void"); break;
-        default: strcpy(_buf_t214, "unknown"); break;
+        case 0: strcpy(_buf_t154, "int"); break;
+        case 1: strcpy(_buf_t154, "string"); break;
+        case 2: strcpy(_buf_t154, "float"); break;
+        case 3: strcpy(_buf_t154, "double"); break;
+        case 4: strcpy(_buf_t154, "bool"); break;
+        case 5: strcpy(_buf_t154, "arr"); break;
+        case 6: strcpy(_buf_t154, "void"); break;
+        default: strcpy(_buf_t154, "unknown"); break;
     }
-    t214 = sk_string_new(_buf_t214);
-    t215 = sk_string_concat(sk_string_new("Cannot convert type '"), t214);
-    t216 = sk_string_concat(t215, sk_string_new("' to float."));
-    free(t215.value);
-    line = t216;
-t217 = malloc(sizeof(CustomToFloatRefactorError));
-t217->__type = "Error.RefactorError.CustomRefactorError.CustomToFloatRefactorError";
-t217->msg = line;
-    sk_throw(t217, "<builtin:std/ref>", 289, 7);
-L126:
+    t154 = sk_string_new(_buf_t154);
+    t155 = sk_string_concat(sk_string_new("Cannot convert type '"), t154);
+    t156 = sk_string_concat(t155, sk_string_new("' to float."));
+    free(t155.value);
+    line = t156;
+t157 = malloc(sizeof(CustomToFloatRefactorError));
+t157->__type = "Error.RefactorError.CustomRefactorError.CustomToFloatRefactorError";
+t157->msg = line;
+    sk_throw(t157, "<builtin:std/ref>", 289, 7);
+L123:
 }
 
 sk_double __sk__toDoubleStrict(sk_any value) {
-    sk_string t218;
-    sk_bool t219;
-    sk_bool t220;
-    sk_bool t221;
-    sk_bool t222;
-    sk_bool t223;
-    sk_double t224;
-    sk_bool t225;
-    sk_bool t226;
-    sk_bool t227;
-    VoidToDoubleRefactorError* t228;
-    sk_bool t229;
+    sk_string t158;
+    sk_bool t159;
+    sk_bool t160;
+    sk_bool t161;
+    sk_bool t162;
+    sk_bool t163;
+    sk_double t164;
+    sk_bool t165;
+    sk_bool t166;
+    sk_bool t167;
+    VoidToDoubleRefactorError* t168;
+    sk_bool t169;
     sk_arr a;
-    sk_arr t230;
-    sk_int t231;
-    sk_double t232;
-    sk_bool t233;
-    sk_double t234;
+    sk_arr t170;
+    sk_int t171;
+    sk_double t172;
+    sk_bool t173;
+    sk_double t174;
     sk_string line;
-    sk_string t235;
-    sk_string t236;
-    sk_string t237;
-    CustomToDoubleRefactorError* t238;
+    sk_string t175;
+    sk_string t176;
+    sk_string t177;
+    CustomToDoubleRefactorError* t178;
 
-    char _buf_t218[32];
+    char _buf_t158[32];
     switch (value.type) {
-        case 0: strcpy(_buf_t218, "int"); break;
-        case 1: strcpy(_buf_t218, "string"); break;
-        case 2: strcpy(_buf_t218, "float"); break;
-        case 3: strcpy(_buf_t218, "double"); break;
-        case 4: strcpy(_buf_t218, "bool"); break;
-        case 5: strcpy(_buf_t218, "arr"); break;
-        case 6: strcpy(_buf_t218, "void"); break;
-        default: strcpy(_buf_t218, "unknown"); break;
+        case 0: strcpy(_buf_t158, "int"); break;
+        case 1: strcpy(_buf_t158, "string"); break;
+        case 2: strcpy(_buf_t158, "float"); break;
+        case 3: strcpy(_buf_t158, "double"); break;
+        case 4: strcpy(_buf_t158, "bool"); break;
+        case 5: strcpy(_buf_t158, "arr"); break;
+        case 6: strcpy(_buf_t158, "void"); break;
+        default: strcpy(_buf_t158, "unknown"); break;
     }
-    t218 = sk_string_new(_buf_t218);
-    t219 = sk_string_eq(t218, sk_string_new("int"));
-    t220 = sk_string_eq(t218, sk_string_new("float"));
-    t221 = sk_bool_or(t219, t220);
-    t222 = sk_string_eq(t218, sk_string_new("double"));
-    t223 = sk_bool_or(t221, t222);
-    if (t223.value) {
+    t158 = sk_string_new(_buf_t158);
+    t159 = sk_string_eq(t158, sk_string_new("int"));
+    t160 = sk_string_eq(t158, sk_string_new("float"));
+    t161 = sk_bool_or(t159, t160);
+    t162 = sk_string_eq(t158, sk_string_new("double"));
+    t163 = sk_bool_or(t161, t162);
+    if (t163.value) {
+        goto L139;
+    } else {
+        goto L140;
+    }
+L139:
+    t164 = any_to_double(value);
+    return t164;
+    goto L138;
+L140:
+    t165 = sk_string_eq(t158, sk_string_new("bool"));
+    if (t165.value) {
+        goto L141;
+    } else {
         goto L142;
-    } else {
+    }
+L141:
+    t166 = any_to_bool(value);
+    if (t166.value) {
         goto L143;
-    }
-L142:
-    t224 = any_to_double(value);
-    return t224;
-    goto L141;
-L143:
-    t225 = sk_string_eq(t218, sk_string_new("bool"));
-    if (t225.value) {
-        goto L144;
     } else {
-        goto L145;
+        goto L144;
     }
+L143:
+    return sk_double_new(1.0);
+    goto L145;
 L144:
-    t226 = any_to_bool(value);
-    if (t226.value) {
+    return sk_double_new(0.0);
+L145:
+    goto L138;
+L142:
+    t167 = sk_string_eq(t158, sk_string_new("void"));
+    if (t167.value) {
         goto L146;
     } else {
         goto L147;
     }
 L146:
-    return sk_double_new(1.0);
-    goto L148;
+t168 = malloc(sizeof(VoidToDoubleRefactorError));
+t168->__type = "Error.RefactorError.VoidRefactorError.VoidToDoubleRefactorError";
+t168->msg = sk_string_new("Cannot convert 'null' to double.");
+    sk_throw(t168, "<builtin:std/ref>", 307, 7);
+    goto L138;
 L147:
-    return sk_double_new(0.0);
-L148:
-    goto L141;
-L145:
-    t227 = sk_string_eq(t218, sk_string_new("void"));
-    if (t227.value) {
+    t169 = sk_string_eq(t158, sk_string_new("arr"));
+    if (t169.value) {
+        goto L148;
+    } else {
         goto L149;
-    } else {
-        goto L150;
     }
-L149:
-t228 = malloc(sizeof(VoidToDoubleRefactorError));
-t228->__type = "Error.RefactorError.VoidRefactorError.VoidToDoubleRefactorError";
-t228->msg = sk_string_new("Cannot convert 'null' to double.");
-    sk_throw(t228, "<builtin:std/ref>", 307, 7);
-    goto L141;
-L150:
-    t229 = sk_string_eq(t218, sk_string_new("arr"));
-    if (t229.value) {
-        goto L151;
-    } else {
-        goto L152;
-    }
-L151:
-    t230 = any_to_arr(value);
-    a = t230;
-    t231 = sk_int_new(sk_array_len(a.value));
+L148:
+    t170 = any_to_arr(value);
+    a = t170;
+    t171 = sk_int_new(sk_array_len(a.value));
     sk_array_deep_free(a.value);
-    t232 = sk_double_new((double)t231.value);
-    return t232;
-    goto L141;
-L152:
-    t233 = sk_string_eq(t218, sk_string_new("string"));
-    if (t233.value) {
-        goto L153;
+    t172 = sk_double_new((double)t171.value);
+    return t172;
+    goto L138;
+L149:
+    t173 = sk_string_eq(t158, sk_string_new("string"));
+    if (t173.value) {
+        goto L150;
     } else {
-        goto L154;
+        goto L151;
     }
-L153:
-    t234 = any_to_double(value);
-    return t234;
-    goto L141;
-L154:
-L155:
-    char _buf_t235[32];
+L150:
+    t174 = any_to_double(value);
+    return t174;
+    goto L138;
+L151:
+L152:
+    char _buf_t175[32];
     switch (value.type) {
-        case 0: strcpy(_buf_t235, "int"); break;
-        case 1: strcpy(_buf_t235, "string"); break;
-        case 2: strcpy(_buf_t235, "float"); break;
-        case 3: strcpy(_buf_t235, "double"); break;
-        case 4: strcpy(_buf_t235, "bool"); break;
-        case 5: strcpy(_buf_t235, "arr"); break;
-        case 6: strcpy(_buf_t235, "void"); break;
-        default: strcpy(_buf_t235, "unknown"); break;
+        case 0: strcpy(_buf_t175, "int"); break;
+        case 1: strcpy(_buf_t175, "string"); break;
+        case 2: strcpy(_buf_t175, "float"); break;
+        case 3: strcpy(_buf_t175, "double"); break;
+        case 4: strcpy(_buf_t175, "bool"); break;
+        case 5: strcpy(_buf_t175, "arr"); break;
+        case 6: strcpy(_buf_t175, "void"); break;
+        default: strcpy(_buf_t175, "unknown"); break;
     }
-    t235 = sk_string_new(_buf_t235);
-    t236 = sk_string_concat(sk_string_new("Cannot convert type '"), t235);
-    t237 = sk_string_concat(t236, sk_string_new("' to double."));
-    free(t236.value);
-    line = t237;
-t238 = malloc(sizeof(CustomToDoubleRefactorError));
-t238->__type = "Error.RefactorError.CustomRefactorError.CustomToDoubleRefactorError";
-t238->msg = line;
-    sk_throw(t238, "<builtin:std/ref>", 318, 7);
-L141:
+    t175 = sk_string_new(_buf_t175);
+    t176 = sk_string_concat(sk_string_new("Cannot convert type '"), t175);
+    t177 = sk_string_concat(t176, sk_string_new("' to double."));
+    free(t176.value);
+    line = t177;
+t178 = malloc(sizeof(CustomToDoubleRefactorError));
+t178->__type = "Error.RefactorError.CustomRefactorError.CustomToDoubleRefactorError";
+t178->msg = line;
+    sk_throw(t178, "<builtin:std/ref>", 318, 7);
+L138:
 }
 
 sk_string __sk__toStringStrict(sk_any value) {
-    sk_string t239;
-    sk_bool t240;
-    sk_bool t241;
-    sk_bool t242;
-    sk_bool t243;
-    sk_bool t244;
-    sk_bool t245;
-    sk_bool t246;
-    sk_string t247;
-    sk_bool t248;
-    VoidToStringRefactorError* t249;
-    sk_bool t250;
-    sk_string t251;
-    sk_bool t252;
-    sk_string t253;
+    sk_string t179;
+    sk_bool t180;
+    sk_bool t181;
+    sk_bool t182;
+    sk_bool t183;
+    sk_bool t184;
+    sk_bool t185;
+    sk_bool t186;
+    sk_string t187;
+    sk_bool t188;
+    VoidToStringRefactorError* t189;
+    sk_bool t190;
+    sk_string t191;
+    sk_bool t192;
+    sk_string t193;
     sk_string line;
-    sk_string t254;
-    sk_string t255;
-    sk_string t256;
-    CustomToStringRefactorError* t257;
+    sk_string t194;
+    sk_string t195;
+    sk_string t196;
+    CustomToStringRefactorError* t197;
 
-    char _buf_t239[32];
+    char _buf_t179[32];
     switch (value.type) {
-        case 0: strcpy(_buf_t239, "int"); break;
-        case 1: strcpy(_buf_t239, "string"); break;
-        case 2: strcpy(_buf_t239, "float"); break;
-        case 3: strcpy(_buf_t239, "double"); break;
-        case 4: strcpy(_buf_t239, "bool"); break;
-        case 5: strcpy(_buf_t239, "arr"); break;
-        case 6: strcpy(_buf_t239, "void"); break;
-        default: strcpy(_buf_t239, "unknown"); break;
+        case 0: strcpy(_buf_t179, "int"); break;
+        case 1: strcpy(_buf_t179, "string"); break;
+        case 2: strcpy(_buf_t179, "float"); break;
+        case 3: strcpy(_buf_t179, "double"); break;
+        case 4: strcpy(_buf_t179, "bool"); break;
+        case 5: strcpy(_buf_t179, "arr"); break;
+        case 6: strcpy(_buf_t179, "void"); break;
+        default: strcpy(_buf_t179, "unknown"); break;
     }
-    t239 = sk_string_new(_buf_t239);
-    t240 = sk_string_eq(t239, sk_string_new("int"));
-    t241 = sk_string_eq(t239, sk_string_new("float"));
-    t242 = sk_bool_or(t240, t241);
-    t243 = sk_string_eq(t239, sk_string_new("double"));
-    t244 = sk_bool_or(t242, t243);
-    t245 = sk_string_eq(t239, sk_string_new("bool"));
-    t246 = sk_bool_or(t244, t245);
-    if (t246.value) {
+    t179 = sk_string_new(_buf_t179);
+    t180 = sk_string_eq(t179, sk_string_new("int"));
+    t181 = sk_string_eq(t179, sk_string_new("float"));
+    t182 = sk_bool_or(t180, t181);
+    t183 = sk_string_eq(t179, sk_string_new("double"));
+    t184 = sk_bool_or(t182, t183);
+    t185 = sk_string_eq(t179, sk_string_new("bool"));
+    t186 = sk_bool_or(t184, t185);
+    if (t186.value) {
+        goto L154;
+    } else {
+        goto L155;
+    }
+L154:
+    t187 = any_to_string(value);
+    return t187;
+    goto L153;
+L155:
+    t188 = sk_string_eq(t179, sk_string_new("void"));
+    if (t188.value) {
+        goto L156;
+    } else {
         goto L157;
-    } else {
-        goto L158;
     }
-L157:
-    t247 = any_to_string(value);
-    return t247;
-    goto L156;
-L158:
-    t248 = sk_string_eq(t239, sk_string_new("void"));
-    if (t248.value) {
-        goto L159;
-    } else {
-        goto L160;
-    }
-L159:
-t249 = malloc(sizeof(VoidToStringRefactorError));
-t249->__type = "Error.RefactorError.VoidRefactorError.VoidToStringRefactorError";
-t249->msg = sk_string_new("Cannot convert 'null' to string.");
-    sk_throw(t249, "<builtin:std/ref>", 329, 7);
-    goto L156;
-L160:
-    t250 = sk_string_eq(t239, sk_string_new("arr"));
-    if (t250.value) {
-        goto L161;
-    } else {
-        goto L162;
-    }
-L161:
-    t251 = any_to_string(value);
-    return t251;
-    goto L156;
-L162:
-    t252 = sk_string_eq(t239, sk_string_new("string"));
-    if (t252.value) {
-        goto L163;
-    } else {
-        goto L164;
-    }
-L163:
-    t253 = any_to_string(value);
-    return t253;
-    goto L156;
-L164:
-L165:
-    char _buf_t254[32];
-    switch (value.type) {
-        case 0: strcpy(_buf_t254, "int"); break;
-        case 1: strcpy(_buf_t254, "string"); break;
-        case 2: strcpy(_buf_t254, "float"); break;
-        case 3: strcpy(_buf_t254, "double"); break;
-        case 4: strcpy(_buf_t254, "bool"); break;
-        case 5: strcpy(_buf_t254, "arr"); break;
-        case 6: strcpy(_buf_t254, "void"); break;
-        default: strcpy(_buf_t254, "unknown"); break;
-    }
-    t254 = sk_string_new(_buf_t254);
-    t255 = sk_string_concat(sk_string_new("Cannot convert type '"), t254);
-    t256 = sk_string_concat(t255, sk_string_new("' to string."));
-    free(t255.value);
-    line = t256;
-t257 = malloc(sizeof(CustomToStringRefactorError));
-t257->__type = "Error.RefactorError.CustomRefactorError.CustomToStringRefactorError";
-t257->msg = line;
-    sk_throw(t257, "<builtin:std/ref>", 339, 7);
 L156:
+t189 = malloc(sizeof(VoidToStringRefactorError));
+t189->__type = "Error.RefactorError.VoidRefactorError.VoidToStringRefactorError";
+t189->msg = sk_string_new("Cannot convert 'null' to string.");
+    sk_throw(t189, "<builtin:std/ref>", 329, 7);
+    goto L153;
+L157:
+    t190 = sk_string_eq(t179, sk_string_new("arr"));
+    if (t190.value) {
+        goto L158;
+    } else {
+        goto L159;
+    }
+L158:
+    t191 = any_to_string(value);
+    return t191;
+    goto L153;
+L159:
+    t192 = sk_string_eq(t179, sk_string_new("string"));
+    if (t192.value) {
+        goto L160;
+    } else {
+        goto L161;
+    }
+L160:
+    t193 = any_to_string(value);
+    return t193;
+    goto L153;
+L161:
+L162:
+    char _buf_t194[32];
+    switch (value.type) {
+        case 0: strcpy(_buf_t194, "int"); break;
+        case 1: strcpy(_buf_t194, "string"); break;
+        case 2: strcpy(_buf_t194, "float"); break;
+        case 3: strcpy(_buf_t194, "double"); break;
+        case 4: strcpy(_buf_t194, "bool"); break;
+        case 5: strcpy(_buf_t194, "arr"); break;
+        case 6: strcpy(_buf_t194, "void"); break;
+        default: strcpy(_buf_t194, "unknown"); break;
+    }
+    t194 = sk_string_new(_buf_t194);
+    t195 = sk_string_concat(sk_string_new("Cannot convert type '"), t194);
+    t196 = sk_string_concat(t195, sk_string_new("' to string."));
+    free(t195.value);
+    line = t196;
+t197 = malloc(sizeof(CustomToStringRefactorError));
+t197->__type = "Error.RefactorError.CustomRefactorError.CustomToStringRefactorError";
+t197->msg = line;
+    sk_throw(t197, "<builtin:std/ref>", 339, 7);
+L153:
 }
 
