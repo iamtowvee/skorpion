@@ -5,3 +5,44 @@
       Copyrights (c) 2026 iamtowvee
   ------------------------------------- */
 
+const NilDivError{} = new Error
+
+void nullProc(any a, any b, string op) {
+  if (a == null || b == null) {
+    string errline = "Cannot use 'null' in '" + op + "'"
+    throw ImpossibleOperationOverZeroError{msg: errline}
+  }
+}
+
+T<int,float,double> add(T<int,float,double> a, T<int,float,double> b) {
+  nullProc(a, b, "add()")
+  return a + b
+}
+
+T<int,float,double> minus(T<int,float,double> a, T<int,float,double> b) {
+  nullProc(a, b, "minus()")
+  return a - b
+}
+
+T<int,float,double> mul(T<int,float,double> a, T<int,float,double> b) {
+  nullProc(a, b, "mul()")
+  return a * b
+}
+
+T<int,float,double> div(T<int,float,double> a, T<int,float,double> b) {
+  nullProc(a, b, "div()")
+  if (b == 0 || b == 0.0 || b == 0.0f) {
+    throw NilDivError{msg: "You can't divide by zero."}
+  }
+  return a / b
+}
+
+T<int,float,double> pow(T<int,float,double> a, T<int,float,double> b) {
+  nullProc(a, b, "pow()")
+  return a ** b
+}
+
+T<int,float,double> sqrt(T<int,float,double> a) {
+  nullProc(a, b, "sqrt()")
+  return a ** 0.5
+}
