@@ -1495,6 +1495,8 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 		return "char"
 	case *front.NullLiteral:
 		return "void"
+	case *front.DictLiteral:
+		return "dict"
 	case *front.ArrayLiteral:
 		return "arr[any]"
 	case *front.TypeOf:

@@ -215,7 +215,7 @@ func (p *Pipeline) typeToC(typ string) string {
 	case "arr":
 		return "sk_arr"
 	case "dict":
-		return "void*"
+		return "sk_dict_ref"
 	case "any":
 		return "sk_any"
 	case "null":
@@ -231,6 +231,13 @@ func isUnionTypeP(t string) bool {
 }
 
 func (p *Pipeline) processFieldAccess(fa *front.FieldAccess, irFn *IRFunction) string {
+	// === dict ===
+	if irFn.VarTypes != nil {
+		if objType, ok := irFn.VarTypes[fa.Object]; ok && objType == "dict" {
+			return p.processDictAccess(fa.Object, fa.Field, irFn)
+		}
+	}
+
 	fieldType := "int"
 
 	if irFn.VarTypes != nil {
@@ -248,7 +255,6 @@ func (p *Pipeline) processFieldAccess(fa *front.FieldAccess, irFn *IRFunction) s
 		}
 	}
 
-	// Фолбэк: если ничего не нашли, но поле msg — считаем string
 	if fieldType == "int" && fa.Field == "msg" {
 		fieldType = "string"
 	}
@@ -831,6 +837,39 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 		return
 	}
 
+	// === dict ===
+	if decl.Type == "dict" {
+		irFn.Locals = append(irFn.Locals, "sk_dict_ref "+decl.Name)
+		if irFn.VarTypes != nil {
+			irFn.VarTypes[decl.Name] = "dict"
+		}
+
+		if decl.Expr != nil {
+			exprType := p.getExprType(decl.Expr, irFn)
+			if exprType == "void" {
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op:     "=",
+					Result: decl.Name,
+					Arg1:   "SK_NULL_dict",
+				})
+				return
+			}
+			exprResult := p.processExpression(decl.Expr, irFn)
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:     "=",
+				Result: decl.Name,
+				Arg1:   exprResult,
+			})
+		} else {
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:     "=",
+				Result: decl.Name,
+				Arg1:   "SK_NULL_dict",
+			})
+		}
+		return
+	}
+
 	if decl.IsArray {
 		irFn.Locals = append(irFn.Locals, "sk_arr "+decl.Name)
 
@@ -1022,8 +1061,48 @@ func (p *Pipeline) processAssign(assign *front.Assign, irFn *IRFunction) {
 		return
 	}
 
-	// x[index] = value
+	// === dict: d.key = value ===
+	if assign.Field != "" {
+		if irFn.VarTypes != nil {
+			if varType, ok := irFn.VarTypes[assign.Name]; ok && varType == "dict" {
+				valType := p.getExprType(assign.Expr, irFn)
+				val := p.processExpression(assign.Expr, irFn)
+				valAny := p.wrapToAny(valType, val, irFn)
+
+				keyStr := p.newTemp()
+				irFn.Locals = append(irFn.Locals, "sk_string "+keyStr)
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op:     "=",
+					Result: keyStr,
+					Arg1:   fmt.Sprintf("sk_string_new(%q)", assign.Field),
+				})
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op:   "call",
+					Arg1: "sk_dict_set",
+					Arg2: assign.Name + ".value, " + keyStr + ", " + valAny,
+				})
+				return
+			}
+		}
+	}
+
+	// === dict: d["key"] = value; arr: x[i] = value ===
 	if assign.Index != nil {
+		if irFn.VarTypes != nil {
+			if varType, ok := irFn.VarTypes[assign.Name]; ok && varType == "dict" {
+				key := p.processExpression(assign.Index, irFn)
+				valType := p.getExprType(assign.Expr, irFn)
+				val := p.processExpression(assign.Expr, irFn)
+				valAny := p.wrapToAny(valType, val, irFn)
+
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op:   "call",
+					Arg1: "sk_dict_set",
+					Arg2: assign.Name + ".value, " + key + ", " + valAny,
+				})
+				return
+			}
+		}
 		p.processArrayAssign(assign, irFn)
 		return
 	}
@@ -1093,6 +1172,8 @@ func (p *Pipeline) processAssign(assign *front.Assign, irFn *IRFunction) {
 				varType = "arr"
 			case "sk_any":
 				varType = "any"
+			case "sk_dict_ref":
+				varType = "dict"
 			}
 			break
 		}
@@ -1762,6 +1843,8 @@ func (p *Pipeline) processExpression(expr front.Node, irFn *IRFunction) string {
 		return fmt.Sprintf("sk_int_new(%s)", n.Value)
 	case *front.NullLiteral:
 		return "SK_NULL_int"
+	case *front.DictLiteral:
+		return p.processDictLiteral(n, irFn)
 	case *front.UnicodeLiteral:
 		return fmt.Sprintf("sk_char_new(%d)", n.Codepoint)
 	case *front.String:
@@ -1822,6 +1905,86 @@ func (p *Pipeline) processExpression(expr front.Node, irFn *IRFunction) string {
 	default:
 		return "SK_NULL_int"
 	}
+}
+
+func (p *Pipeline) processDictAccess(objName, key string, irFn *IRFunction) string {
+	result := p.newTemp()
+	irFn.Locals = append(irFn.Locals, "sk_any "+result)
+	keyStr := p.newTemp()
+	irFn.Locals = append(irFn.Locals, "sk_string "+keyStr)
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:     "=",
+		Result: keyStr,
+		Arg1:   fmt.Sprintf("sk_string_new(%q)", key),
+	})
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:         "call",
+		Result:     result,
+		Arg1:       "sk_dict_get",
+		Arg2:       objName + ".value, " + keyStr,
+		ReturnType: "sk_any",
+	})
+	return result
+}
+
+func (p *Pipeline) processDictLiteral(d *front.DictLiteral, irFn *IRFunction) string {
+	result := p.newTemp()
+	irFn.Locals = append(irFn.Locals, "sk_dict_ref "+result)
+	tmpDict := p.newTemp()
+	irFn.Locals = append(irFn.Locals, "sk_dict* "+tmpDict)
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:     "=",
+		Result: tmpDict,
+		Arg1:   "sk_dict_new()",
+	})
+
+	for _, elem := range d.Elements {
+		valType := p.getExprType(elem.Value, irFn)
+		val := p.processExpression(elem.Value, irFn)
+		valAny := p.wrapToAny(valType, val, irFn)
+
+		keyStr := p.newTemp()
+		irFn.Locals = append(irFn.Locals, "sk_string "+keyStr)
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "=",
+			Result: keyStr,
+			Arg1:   fmt.Sprintf("sk_string_new(%q)", elem.Key),
+		})
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:   "call",
+			Arg1: "sk_dict_set",
+			Arg2: tmpDict + ", " + keyStr + ", " + valAny,
+		})
+	}
+
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:         "call",
+		Result:     result,
+		Arg1:       "sk_dict_ref_new",
+		Arg2:       tmpDict,
+		ReturnType: "sk_dict_ref",
+	})
+	return result
+}
+
+func (p *Pipeline) wrapToAny(t, val string, irFn *IRFunction) string {
+	if t == "any" || isUnionTypeP(t) {
+		return val
+	}
+	wrapper := p.getAnyWrapperByType(t)
+	if wrapper == "" {
+		return val
+	}
+	tmp := p.newTemp()
+	irFn.Locals = append(irFn.Locals, "sk_any "+tmp)
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:         "call",
+		Result:     tmp,
+		Arg1:       wrapper,
+		Arg2:       val,
+		ReturnType: "sk_any",
+	})
+	return tmp
 }
 
 func (p *Pipeline) processReturn(ret *front.ReturnStmt, irFn *IRFunction) {
@@ -2589,6 +2752,24 @@ func (p *Pipeline) processForIn(forIn *front.ForInStmt, irFn *IRFunction) {
 }
 
 func (p *Pipeline) processArrayIndex(idx *front.ArrayIndex, irFn *IRFunction) string {
+	if irFn.VarTypes != nil {
+		if objType, ok := irFn.VarTypes[idx.Name]; ok && objType == "dict" {
+			indexType := p.getExprType(idx.Index, irFn)
+			index := p.processExpression(idx.Index, irFn)
+			result := p.newTemp()
+			irFn.Locals = append(irFn.Locals, "sk_any "+result)
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:         "call",
+				Result:     result,
+				Arg1:       "sk_dict_get",
+				Arg2:       fmt.Sprintf("%s.value, %s", idx.Name, index),
+				ReturnType: "sk_any",
+			})
+			_ = indexType
+			return result
+		}
+	}
+
 	elemType := ""
 	if irFn.ArrayElemTypes != nil {
 		elemType = irFn.ArrayElemTypes[idx.Name]
@@ -2651,12 +2832,19 @@ func (p *Pipeline) processArrayLength(length *front.ArrayLength, irFn *IRFunctio
 	irFn.Locals = append(irFn.Locals, "sk_int "+result)
 
 	if varType == "sk_string" {
-		// Для строки — длина в UTF-8 символах
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:         "call",
 			Result:     result,
 			Arg1:       "sk_int_new",
 			Arg2:       fmt.Sprintf("(int)__sk__utf8__strlen(%s.value)", length.Name),
+			ReturnType: "sk_int",
+		})
+	} else if varType == "sk_dict_ref" {
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "call",
+			Result:     result,
+			Arg1:       "sk_int_new",
+			Arg2:       fmt.Sprintf("sk_dict_len(%s.value)", length.Name),
 			ReturnType: "sk_int",
 		})
 	} else {
@@ -3236,11 +3424,16 @@ func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 		return "char"
 	case *front.NullLiteral:
 		return "void"
+	case *front.DictLiteral:
+		return "dict"
 	case *front.ErrorInstance:
 		return n.TypeName
 	case *front.FieldAccess:
 		if irFn.VarTypes != nil {
 			if objType, ok := irFn.VarTypes[n.Object]; ok {
+				if objType == "dict" {
+					return "any"
+				}
 				if objType == "Error" {
 					if n.Field == "msg" {
 						return "string"
@@ -3288,6 +3481,8 @@ func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 						return "arr"
 					case "sk_any":
 						return "any"
+					case "sk_dict_ref":
+						return "dict"
 					}
 				}
 			}
@@ -3297,7 +3492,6 @@ func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 		leftType := p.getExprType(n.Left, irFn)
 		rightType := p.getExprType(n.Right, irFn)
 
-		// СНАЧАЛА — сравнения и логика (всегда bool)
 		if n.Op == "<" || n.Op == ">" || n.Op == "==" || n.Op == "!=" || n.Op == "<=" || n.Op == ">=" {
 			return "bool"
 		}
@@ -3305,12 +3499,10 @@ func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 			return "bool"
 		}
 
-		// Потом union
 		if isUnionTypeP(leftType) || isUnionTypeP(rightType) {
 			return "any"
 		}
 
-		// Конкатенация строк
 		if n.Op == "+" && (leftType == "string" || rightType == "string" || leftType == "any" || rightType == "any") {
 			return "string"
 		}
@@ -3372,6 +3564,11 @@ func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 	case *front.ArrayLiteral:
 		return "arr"
 	case *front.ArrayIndex:
+		if irFn.VarTypes != nil {
+			if objType, ok := irFn.VarTypes[n.Name]; ok && objType == "dict" {
+				return "any"
+			}
+		}
 		if irFn.ArrayElemTypes != nil {
 			elemType, ok := irFn.ArrayElemTypes[n.Name]
 			if ok {
@@ -3396,7 +3593,7 @@ func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 
 func (p *Pipeline) getAnyWrapperByType(t string) string {
 	if isUnionTypeP(t) || t == "any" {
-		return "" // уже sk_any, оборачивать не надо
+		return ""
 	}
 	if isArrayType(t) {
 		return "any_arr"
@@ -3414,6 +3611,8 @@ func (p *Pipeline) getAnyWrapperByType(t string) string {
 		return "any_double"
 	case "bool":
 		return "any_bool"
+	case "dict":
+		return "any_dict"
 	default:
 		return "any_int"
 	}
@@ -3436,6 +3635,8 @@ func (p *Pipeline) getAnyGetterByType(t string) string {
 		return "any_to_double"
 	case "bool":
 		return "any_to_bool"
+	case "dict":
+		return "any_to_dict"
 	default:
 		return "any_to_int"
 	}

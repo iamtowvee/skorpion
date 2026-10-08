@@ -1164,6 +1164,37 @@ func (p *Parser) parseAssignmentOrCall() Node {
 		}
 	}
 
+	// x.field = value
+	if p.peek.Type == TOKEN_DOT {
+		p.advance()
+		if p.peek.Type != TOKEN_IDENT {
+			p.hasErrors = true
+			errors.NewFatalError("0520",
+				"Expected method name after '.'",
+				p.peek.Line, p.peek.Column, p.FileName)
+			return nil
+		}
+		fieldName := p.peek.Literal
+		p.advance()
+
+		if p.peek.Type != TOKEN_EQUALS {
+			p.hasErrors = true
+			errors.NewFatalError("0653",
+				fmt.Sprintf("Expected '=' after field name, got '%s'", p.peek.Literal),
+				p.peek.Line, p.peek.Column, p.FileName)
+			return nil
+		}
+		p.advance()
+		value := p.parseExpression()
+		if value == nil {
+			return nil
+		}
+		if p.peek.Type == TOKEN_SEMICOLON {
+			p.advance()
+		}
+		return &Assign{Position: pos, Name: name, Field: fieldName, Expr: value}
+	}
+
 	// x = value
 	if p.peek.Type == TOKEN_EQUALS {
 		p.advance()
@@ -1595,6 +1626,63 @@ func (p *Parser) parsePrimary() Node {
 		}
 
 		return &UnicodeLiteral{Position: pos, Codepoint: uint32(cp)}
+
+	case TOKEN_LBRACE:
+		pos := p.pos()
+		p.advance() // {
+		elements := []*DictElement{}
+		if p.peek.Type != TOKEN_RBRACE {
+			for {
+				// ключ
+				if p.peek.Type != TOKEN_IDENT {
+					p.hasErrors = true
+					errors.NewFatalError("0650",
+						fmt.Sprintf("Expected key in dict literal, got '%s'", p.peek.Literal),
+						p.peek.Line, p.peek.Column, p.FileName)
+					return nil
+				}
+				keyName := p.peek.Literal
+				keyPos := p.pos()
+				p.advance()
+
+				// :
+				if p.peek.Type != TOKEN_COLON {
+					p.hasErrors = true
+					errors.NewFatalError("0651",
+						fmt.Sprintf("Expected ':' after key, got '%s'", p.peek.Literal),
+						p.peek.Line, p.peek.Column, p.FileName)
+					return nil
+				}
+				p.advance()
+
+				// значение
+				value := p.parseExpression()
+				if value == nil {
+					return nil
+				}
+
+				elements = append(elements, &DictElement{
+					Position: keyPos,
+					Key:      keyName,
+					Value:    value,
+				})
+
+				if p.peek.Type == TOKEN_COMMA {
+					p.advance()
+					continue
+				}
+				break
+			}
+		}
+		if p.peek.Type != TOKEN_RBRACE {
+			p.hasErrors = true
+			errors.NewFatalError("0652",
+				fmt.Sprintf("Expected '}' in dict literal, got '%s'", p.peek.Literal),
+				p.peek.Line, p.peek.Column, p.FileName)
+			return nil
+		}
+		p.advance()
+		return &DictLiteral{Position: pos, Elements: elements}
 
 	case TOKEN_STRING:
 		pos := p.pos()

@@ -43,6 +43,8 @@ typedef struct { int value; int __is_null; } sk_bool;
 typedef struct { char* value; int __is_null; } sk_string;
 typedef struct sk_array sk_array;
 typedef struct { sk_array* value; int __is_null; } sk_arr;
+typedef struct sk_dict sk_dict;
+typedef struct { sk_dict* value; int __is_null; } sk_dict_ref;
 
 #define SK_NULL_int    ((sk_int){0, 1})
 #define SK_NULL_char   ((sk_char){0, 1})
@@ -51,9 +53,10 @@ typedef struct { sk_array* value; int __is_null; } sk_arr;
 #define SK_NULL_bool   ((sk_bool){0, 1})
 #define SK_NULL_string ((sk_string){NULL, 1})
 #define SK_NULL_arr    ((sk_arr){NULL, 1})
+#define SK_NULL_dict   ((sk_dict_ref){NULL, 1})
 
 typedef struct {
-    int type; // 0=int, 1=string, 2=float, 3=double, 4=bool, 5=arr, 6=null, 7=char
+    int type; // 0=int, 1=string, 2=float, 3=double, 4=bool, 5=arr, 6=null, 7=char, 8=dict
     int prec; // для float/double: точность; -1 = без
     union {
         int i;
@@ -73,9 +76,31 @@ struct sk_array {
     int elem_type;
 };
 
+typedef struct {
+    sk_string key;
+    sk_any value;
+} sk_dict_entry;
+
+struct sk_dict {
+    sk_dict_entry* entries;
+    int length;
+    int capacity;
+};
+
 // Skorpion CLI args
 int __sk__argc = 0;
 char** __sk__argv = NULL;
+
+// Forward declarations
+void sk_any_free(sk_any* a);
+sk_any any_null(void);
+sk_array* sk_array_deep_copy(sk_array* a);
+sk_string sk_array_to_string(sk_array* a);
+void sk_array_deep_free(sk_array* a);
+sk_string sk_string_concat(sk_string a, sk_string b);
+sk_bool sk_bool_eq(sk_bool a, sk_bool b);
+sk_bool sk_bool_ne(sk_bool a, sk_bool b);
+unsigned int __sk__utf8__decode(const char *s, int *len);
 
 sk_int sk_int_new(int v) { sk_int r; r.value = v; r.__is_null = 0; return r; }
 sk_float sk_float_new(float v) { sk_float r; r.value = v; r.__is_null = 0; r.prec = -1; return r; }
@@ -112,7 +137,6 @@ sk_string sk_char_to_string(sk_char c) {
     }
     return sk_string_new(buf);
 }
-unsigned int __sk__utf8__decode(const char *s, int *len);
 sk_char sk_string_to_char(sk_string s) {
     if (s.__is_null || !s.value || s.value[0] == '\0') return SK_NULL_char;
     int l = 0;
@@ -156,7 +180,6 @@ sk_bool sk_int_ne(sk_int a, sk_int b) { if (a.__is_null || b.__is_null) return S
 sk_bool sk_string_eq(sk_string a, sk_string b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(strcmp(a.value, b.value) == 0); }
 sk_bool sk_string_ne(sk_string a, sk_string b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(strcmp(a.value, b.value) != 0); }
 
-sk_string sk_string_concat(sk_string a, sk_string b);
 sk_string sk_char_add_char(sk_char a, sk_char b) {
     if (a.__is_null || b.__is_null) return SK_NULL_string;
     sk_string sa = sk_char_to_string(a);
@@ -427,6 +450,64 @@ sk_array* sk_range_new(int start, int end) {
     return a;
 }
 
+sk_dict* sk_dict_new(void) {
+    sk_dict* d = malloc(sizeof(sk_dict));
+    d->entries = NULL;
+    d->length = 0;
+    d->capacity = 0;
+    return d;
+}
+
+void sk_dict_set(sk_dict* d, sk_string key, sk_any value) {
+    if (key.__is_null) return;
+    for (int i = 0; i < d->length; i++) {
+        if (strcmp(d->entries[i].key.value, key.value) == 0) {
+            sk_any_free(&d->entries[i].value);
+            d->entries[i].value = value;
+            return;
+        }
+    }
+    if (d->length >= d->capacity) {
+        d->capacity = d->capacity == 0 ? 8 : d->capacity * 2;
+        d->entries = realloc(d->entries, d->capacity * sizeof(sk_dict_entry));
+    }
+    d->entries[d->length].key = sk_string_new(key.value);
+    d->entries[d->length].value = value;
+    d->length++;
+}
+
+sk_any sk_dict_get(sk_dict* d, sk_string key) {
+    if (!d || key.__is_null) return any_null();
+    for (int i = 0; i < d->length; i++) {
+        if (strcmp(d->entries[i].key.value, key.value) == 0) {
+            return d->entries[i].value;
+        }
+    }
+    return any_null();
+}
+
+int sk_dict_has(sk_dict* d, sk_string key) {
+    if (!d || key.__is_null) return 0;
+    for (int i = 0; i < d->length; i++) {
+        if (strcmp(d->entries[i].key.value, key.value) == 0) return 1;
+    }
+    return 0;
+}
+
+int sk_dict_len(sk_dict* d) { return d ? d->length : 0; }
+
+void sk_dict_free(sk_dict* d) {
+    if (!d) return;
+    for (int i = 0; i < d->length; i++) {
+        if (d->entries[i].key.value) free(d->entries[i].key.value);
+        sk_any_free(&d->entries[i].value);
+    }
+    free(d->entries);
+    free(d);
+}
+
+sk_dict_ref sk_dict_ref_new(sk_dict* d) { sk_dict_ref r; r.value = d; r.__is_null = d ? 0 : 1; return r; }
+
 sk_any any_null(void) { sk_any a; a.type = 6; a.prec = -1; a.data.p = NULL; return a; }
 sk_any any_int(sk_int v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.data.p = NULL; return a; } a.type = 0; a.prec = -1; a.data.i = v.value; return a; }
 sk_any any_string(sk_string v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.data.p = NULL; return a; } a.type = 1; a.prec = -1; a.data.s = v.value ? strdup(v.value) : NULL; return a; }
@@ -435,12 +516,7 @@ sk_any any_double(sk_double v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec
 sk_any any_bool(sk_bool v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.data.p = NULL; return a; } a.type = 4; a.prec = -1; a.data.b = v.value; return a; }
 sk_any any_char(sk_char v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.data.p = NULL; return a; } a.type = 7; a.prec = -1; a.data.i = v.value; return a; }
 sk_any any_arr(sk_arr v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.data.p = NULL; return a; } a.type = 5; a.prec = -1; a.data.p = v.value ? sk_array_deep_copy(v.value) : NULL; return a; }
-
-sk_string sk_array_to_string(sk_array* a);
-void sk_any_free(sk_any* a);
-void sk_array_deep_free(sk_array* a);
-sk_bool sk_bool_eq(sk_bool a, sk_bool b);
-sk_bool sk_bool_ne(sk_bool a, sk_bool b);
+sk_any any_dict(sk_dict_ref v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.data.p = NULL; return a; } a.type = 8; a.prec = -1; a.data.p = v.value; return a; }
 
 sk_int any_to_int(sk_any a) {
     if (a.type == 6) return SK_NULL_int;
@@ -510,6 +586,21 @@ sk_string any_to_string(sk_any a) {
         case 4: return sk_string_new(a.data.b ? "true" : "false");
         case 5: return sk_array_to_string((sk_array*)a.data.p);
         case 7: return sk_char_to_string(sk_char_new(a.data.i));
+        case 8: {
+            sk_dict* d = (sk_dict*)a.data.p;
+            char* buf = malloc(1024);
+            strcpy(buf, "{");
+            for (int i = 0; i < d->length; i++) {
+                if (i > 0) strcat(buf, ", ");
+                strcat(buf, d->entries[i].key.value);
+                strcat(buf, ": ");
+                sk_string vs = any_to_string(d->entries[i].value);
+                strcat(buf, vs.value);
+                free(vs.value);
+            }
+            strcat(buf, "}");
+            return sk_string_new_take(buf);
+        }
         default: return sk_string_new("unknown");
     }
 }
@@ -517,6 +608,10 @@ sk_arr any_to_arr(sk_any a) {
     if (a.type == 6) return SK_NULL_arr;
     if (a.type == 5) return sk_arr_new(sk_array_deep_copy((sk_array*)a.data.p));
     return SK_NULL_arr;
+}
+sk_dict_ref any_to_dict(sk_any a) {
+    if (a.type == 8) return sk_dict_ref_new((sk_dict*)a.data.p);
+    return SK_NULL_dict;
 }
 
 sk_any sk_any_add(sk_any a, sk_any b) {
@@ -1036,6 +1131,11 @@ int __sk__str_find(const char *haystack, const char *needle) {
 
 
 // Function prototypes
+void __sk__std_io_send(sk_string line);
+sk_string __sk__std_io_input(sk_string prompt);
+void __sk__sendln(sk_any msg);
+void __sk__sendf(sk_any msg);
+sk_string __sk__input(sk_string prefix);
 sk_int __sk__len(sk_string line);
 sk_int __sk__bytes(sk_string line);
 sk_string __sk__concat(sk_string a, sk_string b);
@@ -1118,11 +1218,6 @@ sk_string __sk__Bell(void);
 sk_string __sk__SaveCursor(void);
 sk_string __sk__RestoreCursor(void);
 sk_bool __sk__isAnsiSupported(void);
-void __sk__std_io_send(sk_string line);
-sk_string __sk__std_io_input(sk_string prompt);
-void __sk__sendln(sk_any msg);
-void __sk__sendf(sk_any msg);
-sk_string __sk__input(sk_string prefix);
 
 int main(int argc, char** argv) {
     __sk__argc = argc;
@@ -1151,6 +1246,62 @@ int main(int argc, char** argv) {
     __sk__sendln(t2);
     sk_call_pop();
     return 0;
+}
+
+void __sk__std_io_send(sk_string line) {
+    if (line.__is_null) {
+                printf("null");
+            } else {
+                printf("%s", line.value);
+            }
+    return;
+}
+
+sk_string __sk__std_io_input(sk_string prompt) {
+    if (!prompt.__is_null) {
+                printf("%s", prompt.value);
+            }
+            char buffer[256];
+            fgets(buffer, sizeof(buffer), stdin);
+            size_t len = strlen(buffer);
+            if (len > 0 && buffer[len-1] == '\n') {
+                buffer[len-1] = '\0';
+            }
+            return sk_string_new(buffer);
+}
+
+void __sk__sendln(sk_any msg) {
+    sk_string t3;
+    sk_string t4;
+
+    t3 = any_to_string(msg);
+    t4 = sk_string_concat(t3, sk_string_new("\n"));
+    free(t3.value);
+    sk_call_push("<builtin:std/io>", 34, 5);
+    __sk__std_io_send(t4);
+    sk_call_pop();
+    free(t4.value);
+    return;
+}
+
+void __sk__sendf(sk_any msg) {
+    sk_string t5;
+
+    t5 = any_to_string(msg);
+    sk_call_push("<builtin:std/io>", 38, 5);
+    __sk__std_io_send(t5);
+    sk_call_pop();
+    free(t5.value);
+    return;
+}
+
+sk_string __sk__input(sk_string prefix) {
+    sk_string t6;
+
+    sk_call_push("<builtin:std/io>", 42, 12);
+    t6 = __sk__std_io_input(prefix);
+    sk_call_pop();
+    return t6;
 }
 
 sk_int __sk__len(sk_string line) {
@@ -1260,7 +1411,7 @@ sk_bool __sk__endWith(sk_string line, sk_string pattern) {
 }
 
 sk_arr __sk__slice(sk_string line, sk_int pos) {
-    sk_arr t3;
+    sk_arr t7;
 
     if (line.__is_null) {
             VoidSliceError* err = malloc(sizeof(VoidSliceError));
@@ -1296,12 +1447,12 @@ sk_arr __sk__slice(sk_string line, sk_int pos) {
         sk_string s_right = sk_string_new(s + byte_pos);
         sk_array_push_string(arr, s_right);
         return sk_arr_new(arr);
-    t3 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t3;
+    t7 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    return t7;
 }
 
 sk_arr __sk__crash(sk_string line, sk_string symbol) {
-    sk_arr t4;
+    sk_arr t8;
 
     if (line.__is_null || symbol.__is_null) {
             VoidCrashError* err = malloc(sizeof(VoidCrashError));
@@ -1340,12 +1491,12 @@ sk_arr __sk__crash(sk_string line, sk_string symbol) {
             sk_array_push_string(arr, s_tail);
         }
         return sk_arr_new(arr);
-    t4 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t4;
+    t8 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    return t8;
 }
 
 sk_arr __sk__crashAll(sk_string line, sk_string symbol) {
-    sk_arr t5;
+    sk_arr t9;
 
     if (line.__is_null || symbol.__is_null) {
             VoidCrashError* err = malloc(sizeof(VoidCrashError));
@@ -1383,12 +1534,12 @@ sk_arr __sk__crashAll(sk_string line, sk_string symbol) {
             sk_array_push_string(arr, s_tail);
         }
         return sk_arr_new(arr);
-    t5 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t5;
+    t9 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    return t9;
 }
 
 sk_arr __sk__chars(sk_string line) {
-    sk_arr t6;
+    sk_arr t10;
 
     if (line.__is_null) {
             VoidSliceError* err = malloc(sizeof(VoidSliceError));
@@ -1410,8 +1561,8 @@ sk_arr __sk__chars(sk_string line) {
             i += len;
         }
         return sk_arr_new(arr);
-    t6 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t6;
+    t10 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    return t10;
 }
 
 sk_string __sk__repeat(sk_string line, sk_int n) {
@@ -1988,61 +2139,5 @@ sk_bool __sk__isAnsiSupported(void) {
         // (современные Windows 10+ conhost и так поддерживают ANSI)
         return sk_bool_new(1);
     return sk_bool_new(0);
-}
-
-void __sk__std_io_send(sk_string line) {
-    if (line.__is_null) {
-                printf("null");
-            } else {
-                printf("%s", line.value);
-            }
-    return;
-}
-
-sk_string __sk__std_io_input(sk_string prompt) {
-    if (!prompt.__is_null) {
-                printf("%s", prompt.value);
-            }
-            char buffer[256];
-            fgets(buffer, sizeof(buffer), stdin);
-            size_t len = strlen(buffer);
-            if (len > 0 && buffer[len-1] == '\n') {
-                buffer[len-1] = '\0';
-            }
-            return sk_string_new(buffer);
-}
-
-void __sk__sendln(sk_any msg) {
-    sk_string t7;
-    sk_string t8;
-
-    t7 = any_to_string(msg);
-    t8 = sk_string_concat(t7, sk_string_new("\n"));
-    free(t7.value);
-    sk_call_push("<builtin:std/io>", 34, 5);
-    __sk__std_io_send(t8);
-    sk_call_pop();
-    free(t8.value);
-    return;
-}
-
-void __sk__sendf(sk_any msg) {
-    sk_string t9;
-
-    t9 = any_to_string(msg);
-    sk_call_push("<builtin:std/io>", 38, 5);
-    __sk__std_io_send(t9);
-    sk_call_pop();
-    free(t9.value);
-    return;
-}
-
-sk_string __sk__input(sk_string prefix) {
-    sk_string t10;
-
-    sk_call_push("<builtin:std/io>", 42, 12);
-    t10 = __sk__std_io_input(prefix);
-    sk_call_pop();
-    return t10;
 }
 

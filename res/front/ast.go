@@ -211,6 +211,37 @@ type ArrayAdd struct {
 func (a *ArrayAdd) GetType() NodeType { return NODE_ARRAY_ADD }
 
 // ============================================================================
+// DictLiteral — {name: value, age: value}
+// ============================================================================
+
+type DictElement struct {
+	Position
+	Key   string // имя ключа (идентификатор в литерале)
+	Value Node
+}
+
+func (d *DictElement) GetType() NodeType { return "DictElement" }
+
+type DictLiteral struct {
+	Position
+	Elements []*DictElement
+}
+
+func (d *DictLiteral) GetType() NodeType { return "DictLiteral" }
+
+// ============================================================================
+// DictIndex — d["key"]
+// ============================================================================
+
+type DictIndex struct {
+	Position
+	Object string // имя переменной-dict
+	Key    Node   // выражение-ключ
+}
+
+func (d *DictIndex) GetType() NodeType { return "DictIndex" }
+
+// ============================================================================
 // VarDecl
 // ============================================================================
 
@@ -234,6 +265,7 @@ func (v *VarDecl) GetTypeString() string { return v.Type }
 type Assign struct {
 	Position
 	Name  string
+	Field string
 	Index Node
 	Expr  Node
 }
