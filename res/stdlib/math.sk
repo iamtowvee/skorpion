@@ -8,7 +8,7 @@
 use std/strings
 
 const NilDivError{} = new Error
-const ImpossibleOperationOverZeroError{} = new Error
+const ImpossibleOperationOverNullError{} = new Error
 const SqrtFromNumLessZeroError{} = new Error
 
 void nullProc(any a, any b, string op) {
