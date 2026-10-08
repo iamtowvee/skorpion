@@ -403,6 +403,8 @@ func (sa *SemanticAnalyzer) analyzeNode(node front.Node) front.Node {
 		return n
 	case *front.Assign:
 		return sa.analyzeAssign(n)
+	case *front.CharLiteral:
+		return sa.analyzeChar(n)
 	case *front.BinaryExpr:
 		return sa.analyzeBinary(n)
 	case *front.ArrayLiteral:
@@ -441,8 +443,8 @@ func (sa *SemanticAnalyzer) analyzeNode(node front.Node) front.Node {
 		return sa.analyzeCase(n)
 	case *front.WhileStmt:
 		return sa.analyzeWhile(n)
-	case *front.ForStmt:
-		return sa.analyzeFor(n)
+	case *front.ForInStmt:
+		return sa.analyzeForIn(n)
 	case *front.FieldAccess:
 		return sa.analyzeFieldAccess(n)
 	case *front.ErrorInstance:
@@ -710,6 +712,10 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 
 		if decl.Type == "any" {
 			// any принимает любой не-void тип
+		} else if decl.Type == "int" && exprType == "char" {
+			// OK: неявная конверсия char → int
+		} else if decl.Type == "char" && exprType == "int" {
+			// OK: неявная конверсия int → char
 		} else if decl.Type != exprType && exprType != "" {
 			sa.addError("1507", fmt.Sprintf("Type mismatch: cannot assign '%s' to '%s'", exprType, decl.Type),
 				decl.GetLine(), decl.GetColumn(), sa.CurrentFile)
@@ -823,6 +829,10 @@ func (sa *SemanticAnalyzer) analyzeAssign(assign *front.Assign) front.Node {
 
 	if sym.Type == "any" {
 		// ок
+	} else if sym.Type == "int" && exprType == "char" {
+		// ок
+	} else if sym.Type == "char" && exprType == "int" {
+		// ок
 	} else if sym.Type != exprType && exprType != "" {
 		sa.addError("1510", fmt.Sprintf("Type mismatch: cannot assign '%s' to '%s' (variable '%s')",
 			exprType, sym.Type, assign.Name),
@@ -859,6 +869,19 @@ func (sa *SemanticAnalyzer) analyzeBinary(bin *front.BinaryExpr) front.Node {
 					bin.GetLine(), bin.GetColumn(), sa.CurrentFile)
 			}
 		}
+	}
+
+	// char + char → string (конкатенация)
+	if bin.Op == "+" && leftType == "char" && rightType == "char" {
+		return bin
+	}
+	// char + string → string
+	if bin.Op == "+" && (leftType == "char" && rightType == "string" || leftType == "string" && rightType == "char") {
+		return bin
+	}
+	// char + int → int (и наоборот)
+	if bin.Op == "+" && ((leftType == "char" && rightType == "int") || (leftType == "int" && rightType == "char")) {
+		return bin
 	}
 
 	switch bin.Op {
@@ -1006,6 +1029,10 @@ func (sa *SemanticAnalyzer) analyzeNumber(num *front.Number) front.Node {
 
 func (sa *SemanticAnalyzer) analyzeString(str *front.String) front.Node {
 	return str
+}
+
+func (sa *SemanticAnalyzer) analyzeChar(ch *front.CharLiteral) front.Node {
+	return ch
 }
 
 func (sa *SemanticAnalyzer) analyzeIdent(ident *front.Ident) front.Node {
@@ -1373,29 +1400,45 @@ func (sa *SemanticAnalyzer) analyzeWhile(while *front.WhileStmt) front.Node {
 	return while
 }
 
-func (sa *SemanticAnalyzer) analyzeFor(forStmt *front.ForStmt) front.Node {
-	if forStmt.Init != nil {
-		sa.analyzeNode(forStmt.Init)
-	}
+func (sa *SemanticAnalyzer) analyzeForIn(forIn *front.ForInStmt) front.Node {
+	iterType := sa.getNodeType(forIn.Iterable)
 
-	if forStmt.Cond != nil {
-		condType := sa.getNodeType(forStmt.Cond)
-		if condType != "bool" && condType != "" {
-			sa.addError("1523", fmt.Sprintf("For condition must be boolean, got '%s'", condType),
-				forStmt.GetLine(), forStmt.GetColumn(), sa.CurrentFile)
+	// iterable должен быть arr[T], string или range
+	var elemType string
+	switch {
+	case iterType == "string":
+		elemType = "string"
+	case isArrayTypeSemantic(iterType):
+		elemType = parseArrayElemTypeSemantic(iterType)
+		if elemType == "" {
+			elemType = "any"
 		}
+	case iterType == "arr[int]":
+		elemType = "int"
+	default:
+		sa.addError("0631",
+			fmt.Sprintf("Cannot iterate over '%s' — expected arr or string", iterType),
+			forIn.GetLine(), forIn.GetColumn(), sa.CurrentFile)
+		return forIn
 	}
 
-	if forStmt.Post != nil {
-		sa.analyzeNode(forStmt.Post)
+	// Проверка типа переменной
+	if forIn.VarType != elemType && forIn.VarType != "any" && elemType != "any" {
+		sa.addError("0632",
+			fmt.Sprintf("Element type mismatch: expected '%s', got '%s'",
+				elemType, forIn.VarType),
+			forIn.GetLine(), forIn.GetColumn(), sa.CurrentFile)
 	}
 
-	if forStmt.Body != nil {
-		sa.analyzeBlock(forStmt.Body, false)
+	// Определяем переменную в scope
+	sa.CurrentScope.Define(forIn.VarName, SYM_VARIABLE, forIn.VarType, false)
+
+	if forIn.Body != nil {
+		sa.analyzeBlock(forIn.Body, false)
 	}
 
 	sa.resetUnionCurrentTypes()
-	return forStmt
+	return forIn
 }
 
 func (sa *SemanticAnalyzer) isValidType(typ string) bool {
@@ -1441,6 +1484,8 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 		return "int"
 	case *front.String:
 		return "string"
+	case *front.CharLiteral:
+		return "char"
 	case *front.NullLiteral:
 		return "void"
 	case *front.ArrayLiteral:
@@ -1484,6 +1529,7 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 		rightType := sa.getNodeType(n.Right)
 		debug.Debug("  leftType=%s, rightType=%s\n", leftType, rightType)
 
+		// Сравнения и логика — bool
 		if n.Op == "&&" || n.Op == "||" {
 			return "bool"
 		}
@@ -1492,8 +1538,17 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 			return "bool"
 		}
 
-		isLeftNumeric := leftType == "int" || leftType == "float" || leftType == "double"
-		isRightNumeric := rightType == "int" || rightType == "float" || rightType == "double"
+		// char + char → string
+		if n.Op == "+" && leftType == "char" && rightType == "char" {
+			return "string"
+		}
+		// char + string / string + char → string
+		if n.Op == "+" && ((leftType == "char" && rightType == "string") || (leftType == "string" && rightType == "char")) {
+			return "string"
+		}
+
+		isLeftNumeric := leftType == "int" || leftType == "float" || leftType == "double" || leftType == "char"
+		isRightNumeric := rightType == "int" || rightType == "float" || rightType == "double" || rightType == "char"
 
 		if isLeftNumeric && isRightNumeric {
 			if leftType == "double" || rightType == "double" {
@@ -1731,7 +1786,7 @@ func (sa *SemanticAnalyzer) nodeHasReturn(node front.Node) bool {
 		return false
 	case *front.WhileStmt:
 		return false
-	case *front.ForStmt:
+	case *front.ForInStmt:
 		return false
 	}
 	return false
@@ -1829,15 +1884,9 @@ func (sa *SemanticAnalyzer) collectUsedIdents(node front.Node, used map[string]b
 		if n.Body != nil {
 			sa.collectUsedIdents(n.Body, used)
 		}
-	case *front.ForStmt:
-		if n.Init != nil {
-			sa.collectUsedIdents(n.Init, used)
-		}
-		if n.Cond != nil {
-			sa.collectUsedIdents(n.Cond, used)
-		}
-		if n.Post != nil {
-			sa.collectUsedIdents(n.Post, used)
+	case *front.ForInStmt:
+		if n.Iterable != nil {
+			sa.collectUsedIdents(n.Iterable, used)
 		}
 		if n.Body != nil {
 			sa.collectUsedIdents(n.Body, used)
@@ -1940,7 +1989,7 @@ func (sa *SemanticAnalyzer) checkUnusedVariables(block *front.Block, used map[st
 			}
 		case *front.WhileStmt:
 			sa.checkUnusedVariables(n.Body, used)
-		case *front.ForStmt:
+		case *front.ForInStmt:
 			sa.checkUnusedVariables(n.Body, used)
 		case *front.Block:
 			sa.checkUnusedVariables(n, used)
@@ -2125,8 +2174,11 @@ func (sa *SemanticAnalyzer) containsIncludeC(node front.Node) bool {
 		}
 	case *front.WhileStmt:
 		return sa.containsIncludeC(n.Body)
-	case *front.ForStmt:
-		return sa.containsIncludeC(n.Body)
+	case *front.ForInStmt:
+		if n.Body != nil {
+			return sa.containsIncludeC(n.Body)
+		}
+		return false
 	case *front.TryStmt:
 		if n.Body != nil && sa.containsIncludeC(n.Body) {
 			return true

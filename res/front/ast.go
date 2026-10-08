@@ -379,6 +379,18 @@ func (s *String) GetType() NodeType     { return NODE_STRING }
 func (s *String) GetTypeString() string { return "string" }
 
 // ============================================================================
+// CharLiteral
+// ============================================================================
+
+type CharLiteral struct {
+	Position
+	Value byte // ASCII-код символа
+}
+
+func (c *CharLiteral) GetType() NodeType     { return "CharLiteral" }
+func (c *CharLiteral) GetTypeString() string { return "char" }
+
+// ============================================================================
 // Null
 // ============================================================================
 
@@ -443,18 +455,18 @@ type WhileStmt struct {
 func (w *WhileStmt) GetType() NodeType { return NODE_WHILE }
 
 // ============================================================================
-// ForStmt
+// ForInStmt — for (T x in iterable) { ... }
 // ============================================================================
 
-type ForStmt struct {
+type ForInStmt struct {
 	Position
-	Init Node
-	Cond Node
-	Post Node
-	Body *Block
+	VarType  string // "int", "string", "float", ...
+	VarName  string // "x"
+	Iterable Node
+	Body     *Block
 }
 
-func (f *ForStmt) GetType() NodeType { return NODE_FOR }
+func (f *ForInStmt) GetType() NodeType { return NODE_FOR }
 
 // ============================================================================
 // IncludeC

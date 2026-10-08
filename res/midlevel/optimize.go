@@ -84,8 +84,11 @@ func (o *Optimizer) optimizeNode(node front.Node) front.Node {
 	case *front.WhileStmt:
 		return o.optimizeWhile(n)
 
-	case *front.ForStmt:
-		return o.optimizeFor(n)
+	case *front.ForInStmt:
+		return o.optimizeForIn(n)
+
+	case *front.CharLiteral:
+		return node
 
 	case *front.TernaryExpr:
 		return o.optimizeTernary(n)
@@ -219,33 +222,14 @@ func (o *Optimizer) optimizeWhile(while *front.WhileStmt) front.Node {
 	return while
 }
 
-func (o *Optimizer) optimizeFor(forStmt *front.ForStmt) front.Node {
-	if forStmt.Init != nil {
-		forStmt.Init = o.optimizeNode(forStmt.Init)
+func (o *Optimizer) optimizeForIn(forIn *front.ForInStmt) front.Node {
+	if forIn.Iterable != nil {
+		forIn.Iterable = o.optimizeNode(forIn.Iterable)
 	}
-	if forStmt.Cond != nil {
-		forStmt.Cond = o.optimizeNode(forStmt.Cond)
+	if forIn.Body != nil {
+		forIn.Body = o.optimizeBlock(forIn.Body)
 	}
-	if forStmt.Post != nil {
-		forStmt.Post = o.optimizeNode(forStmt.Post)
-	}
-	if forStmt.Body != nil {
-		forStmt.Body = o.optimizeBlock(forStmt.Body)
-	}
-
-	// for (init; false; post) → init
-	if forStmt.Cond != nil {
-		if val, ok := o.getBoolConstant(forStmt.Cond); ok && !val {
-			o.Changed = true
-			result := &front.Block{Statements: []front.Node{}}
-			if forStmt.Init != nil {
-				result.Statements = append(result.Statements, forStmt.Init)
-			}
-			return result
-		}
-	}
-
-	return forStmt
+	return forIn
 }
 
 func (o *Optimizer) optimizeCase(caseStmt *front.CaseStmt) front.Node {
@@ -337,6 +321,14 @@ func (o *Optimizer) optimizeBinary(bin *front.BinaryExpr) front.Node {
 func (o *Optimizer) tryFoldConstants(bin *front.BinaryExpr) front.Node {
 	leftNum, leftIsNum := bin.Left.(*front.Number)
 	rightNum, rightIsNum := bin.Right.(*front.Number)
+
+	leftChar, leftIsChar := bin.Left.(*front.CharLiteral)
+	rightChar, rightIsChar := bin.Right.(*front.CharLiteral)
+
+	if leftIsChar && rightIsChar && bin.Op == "+" {
+		// char + char → string из 2 символов
+		return &front.String{Value: string([]byte{leftChar.Value, rightChar.Value})}
+	}
 
 	// Числа
 	if leftIsNum && rightIsNum {
@@ -533,6 +525,8 @@ func (o *Optimizer) isConstant(node front.Node) bool {
 		return true
 	case *front.String:
 		return true
+	case *front.CharLiteral:
+		return true
 	case *front.Ident:
 		if ident, ok := node.(*front.Ident); ok {
 			return ident.Name == "true" || ident.Name == "false"
@@ -549,6 +543,8 @@ func (o *Optimizer) getConstantValue(node front.Node) string {
 		return numberStripSuffix(n.Value)
 	case *front.String:
 		return n.Value
+	case *front.CharLiteral:
+		return string([]byte{n.Value})
 	case *front.Ident:
 		if n.Name == "true" {
 			return "true"
@@ -562,7 +558,7 @@ func (o *Optimizer) getConstantValue(node front.Node) string {
 
 func (o *Optimizer) hasNoSideEffects(node front.Node) bool {
 	switch n := node.(type) {
-	case *front.Number, *front.String, *front.Ident:
+	case *front.Number, *front.String, *front.Ident, *front.CharLiteral:
 		return true
 	case *front.BinaryExpr:
 		return o.hasNoSideEffects(n.Left) && o.hasNoSideEffects(n.Right)
@@ -675,15 +671,9 @@ func (o *Optimizer) collectUsedIdents(node front.Node, used map[string]bool) {
 		if n.Body != nil {
 			o.collectUsedIdents(n.Body, used)
 		}
-	case *front.ForStmt:
-		if n.Init != nil {
-			o.collectUsedIdents(n.Init, used)
-		}
-		if n.Cond != nil {
-			o.collectUsedIdents(n.Cond, used)
-		}
-		if n.Post != nil {
-			o.collectUsedIdents(n.Post, used)
+	case *front.ForInStmt:
+		if n.Iterable != nil {
+			o.collectUsedIdents(n.Iterable, used)
 		}
 		if n.Body != nil {
 			o.collectUsedIdents(n.Body, used)
@@ -832,7 +822,7 @@ func (o *Optimizer) filterNestedBlocks(node front.Node, used map[string]bool) {
 		if n.Body != nil {
 			n.Body = o.filterUnusedDecls(n.Body, used)
 		}
-	case *front.ForStmt:
+	case *front.ForInStmt:
 		if n.Body != nil {
 			n.Body = o.filterUnusedDecls(n.Body, used)
 		}

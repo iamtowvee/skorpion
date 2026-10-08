@@ -847,53 +847,79 @@ func (p *Parser) parseFor() Node {
 
 	pos := p.pos()
 	p.advance() // for
-	p.expect(TOKEN_LPAREN)
-	if p.hasErrors || errors.HasFatal() {
+
+	if p.peek.Type != TOKEN_LPAREN {
+		p.hasErrors = true
+		errors.NewFatalError("0507",
+			fmt.Sprintf("Expected '(' after 'for', got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
+	}
+	p.advance() // (
+
+	// Тип переменной
+	if !p.isType(p.peek) {
+		p.hasErrors = true
+		errors.NewFatalError("0502",
+			fmt.Sprintf("Expected element type in for-in, got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
+	}
+	varType := p.parseType()
+	if varType == "" {
 		return nil
 	}
 
-	var init Node
-	if p.peek.Type != TOKEN_SEMICOLON {
-		init = p.parseStatement()
-		if init == nil {
-			return nil
-		}
+	// Имя переменной
+	if p.peek.Type != TOKEN_IDENT {
+		p.hasErrors = true
+		errors.NewFatalError("0503",
+			fmt.Sprintf("Expected element name in for-in, got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
 	}
-	p.expect(TOKEN_SEMICOLON)
-	if p.hasErrors || errors.HasFatal() {
+	varName := p.peek.Literal
+	p.advance()
+
+	// Ключевое слово in
+	if p.peek.Type != TOKEN_KEYWORD || p.peek.Literal != "in" {
+		p.hasErrors = true
+		errors.NewFatalError("0630",
+			fmt.Sprintf("Expected 'in' in for-in, got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
+	}
+	p.advance() // in
+
+	// Iterable
+	iterable := p.parseExpression()
+	if iterable == nil {
 		return nil
 	}
 
-	var cond Node
-	if p.peek.Type != TOKEN_SEMICOLON {
-		cond = p.parseExpression()
-		if cond == nil {
-			return nil
-		}
-	}
-	p.expect(TOKEN_SEMICOLON)
-	if p.hasErrors || errors.HasFatal() {
-		return nil
-	}
-
-	var post Node
+	// Закрывающая скобка
 	if p.peek.Type != TOKEN_RPAREN {
-		post = p.parseStatement()
-		if post == nil {
-			return nil
-		}
-	}
-	p.expect(TOKEN_RPAREN)
-	if p.hasErrors || errors.HasFatal() {
+		p.hasErrors = true
+		errors.NewFatalError("0541",
+			fmt.Sprintf("Expected ')' in for-in, got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
 	}
+	p.advance() // )
 
+	// Тело
 	body := p.parseBlock()
 	if body == nil {
 		return nil
 	}
 
-	return &ForStmt{Position: pos, Init: init, Cond: cond, Post: post, Body: body}
+	return &ForInStmt{
+		Position: pos,
+		VarType:  varType,
+		VarName:  varName,
+		Iterable: iterable,
+		Body:     body,
+	}
 }
 
 func (p *Parser) parseReturn() Node {
@@ -1512,6 +1538,18 @@ func (p *Parser) parsePrimary() Node {
 		val := p.peek.Literal
 		p.advance()
 		return &String{Position: pos, Value: val}
+
+	case TOKEN_CHARLIT:
+		pos := p.pos()
+		val := p.peek.Literal
+		p.advance()
+		if len(val) == 0 {
+			p.hasErrors = true
+			errors.NewFatalError("0112", "Empty char literal",
+				pos.Line, pos.Column, p.FileName)
+			return nil
+		}
+		return &CharLiteral{Position: pos, Value: val[0]}
 
 	case TOKEN_DOLLAR:
 		pos := p.pos()

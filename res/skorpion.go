@@ -563,8 +563,14 @@ func printAST(node front.Node, indent int) {
 			printAST(n.Body, indent+1)
 		}
 
-	case *front.ForStmt:
-		fmt.Println(prefix + cli.Colors.Yellow("For"))
+	case *front.ForInStmt:
+		fmt.Printf("%s%s %s %s in ...\n", prefix,
+			cli.Colors.Yellow("ForIn"),
+			n.VarType,
+			n.VarName)
+		if n.Iterable != nil {
+			printAST(n.Iterable, indent+1)
+		}
 		if n.Body != nil {
 			printAST(n.Body, indent+1)
 		}

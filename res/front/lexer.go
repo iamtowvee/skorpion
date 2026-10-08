@@ -46,6 +46,7 @@ const (
 	TOKEN_DOT
 	TOKEN_DOTDOT
 	TOKEN_QUESTION
+	TOKEN_CHARLIT
 	TOKEN_COLON
 	TOKEN_INCLUDE_C
 	TOKEN_AT
@@ -102,6 +103,10 @@ func (l *Lexer) NextToken() Token {
 
 	if unicode.IsDigit(rune(ch)) || (ch == '-' && l.pos+1 < len(l.input) && unicode.IsDigit(rune(l.input[l.pos+1]))) {
 		return l.readNumber()
+	}
+
+	if ch == '\'' {
+		return l.readCharLit()
 	}
 
 	if ch == '"' {
@@ -247,6 +252,7 @@ func (l *Lexer) readIdent() Token {
 		"else":     TOKEN_KEYWORD,
 		"case":     TOKEN_KEYWORD,
 		"for":      TOKEN_KEYWORD,
+		"in":       TOKEN_KEYWORD,
 		"while":    TOKEN_KEYWORD,
 		"type":     TOKEN_KEYWORD,
 		"return":   TOKEN_KEYWORD,
@@ -276,6 +282,66 @@ func (l *Lexer) readIdent() Token {
 		tokType = kwType
 	}
 	return Token{Type: tokType, Literal: literal, Line: l.line, Column: startCol}
+}
+
+func (l *Lexer) readCharLit() Token {
+	startCol := l.col
+	l.pos++ // '
+	l.col++
+
+	if l.pos >= len(l.input) {
+		errors.NewError("0110", "Unterminated char literal", l.line, l.col, "")
+		return Token{Type: TOKEN_CHARLIT, Literal: "", Line: l.line, Column: startCol}
+	}
+
+	var ch byte
+	if l.input[l.pos] == '\\' && l.pos+1 < len(l.input) {
+		l.pos++
+		l.col++
+		esc := l.input[l.pos]
+		switch esc {
+		case 'n':
+			ch = '\n'
+		case 't':
+			ch = '\t'
+		case 'r':
+			ch = '\r'
+		case '0':
+			ch = 0
+		case '\\':
+			ch = '\\'
+		case '\'':
+			ch = '\''
+		case '"':
+			ch = '"'
+		case 'a':
+			ch = 0x07
+		case 'b':
+			ch = 0x08
+		case 'f':
+			ch = 0x0C
+		case 'v':
+			ch = 0x0B
+		default:
+			errors.NewWarning("0111", fmt.Sprintf("Unknown escape '\\%c'", esc), l.line, l.col, "")
+			ch = esc
+		}
+		l.pos++
+		l.col++
+	} else {
+		ch = l.input[l.pos]
+		l.pos++
+		l.col++
+	}
+
+	if l.pos >= len(l.input) || l.input[l.pos] != '\'' {
+		errors.NewError("0112", "Expected closing '", l.line, l.col, "")
+		return Token{Type: TOKEN_CHARLIT, Literal: string(ch), Line: l.line, Column: startCol}
+	}
+	l.pos++ // '
+	l.col++
+
+	return Token{Type: TOKEN_CHARLIT, Literal: string(ch), Line: l.line, Column: startCol}
 }
 
 func (l *Lexer) readNumber() Token {
@@ -471,6 +537,8 @@ func (tt TokenType) String() string {
 		return "NUMBER"
 	case TOKEN_STRING:
 		return "STRING"
+	case TOKEN_CHARLIT:
+		return "CHARLIT"
 	case TOKEN_KEYWORD:
 		return "KEYWORD"
 	case TOKEN_LPAREN:

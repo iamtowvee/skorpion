@@ -29,27 +29,6 @@ const EmptySeparatorError{} = new Error
 const VoidCrashError{} = new VoidMeasurementError
 
 includeC ~~~
-// UTF-8: декодирование одного символа
-// Возвращает codepoint, а через *len — длину в байтах
-unsigned int __sk__utf8__decode(const char *s, int *len) {
-    unsigned char c = (unsigned char)s[0];
-    if (c < 0x80) { *len = 1; return c; }
-    if ((c & 0xE0) == 0xC0) {
-        *len = 2;
-        return ((c & 0x1F) << 6) | (s[1] & 0x3F);
-    }
-    if ((c & 0xF0) == 0xE0) {
-        *len = 3;
-        return ((c & 0x0F) << 12) | ((s[1] & 0x3F) << 6) | (s[2] & 0x3F);
-    }
-    if ((c & 0xF8) == 0xF0) {
-        *len = 4;
-        return ((c & 0x07) << 18) | ((s[1] & 0x3F) << 12) | ((s[2] & 0x3F) << 6) | (s[3] & 0x3F);
-    }
-    *len = 1;
-    return c;
-}
-
 // UTF-8: кодирование codepoint в буфер
 // Возвращает длину в байтах
 int __sk__utf8__encode(unsigned int cp, char *out) {
