@@ -614,6 +614,20 @@ func (p *Pipeline) processUnary(unary *front.UnaryExpr, irFn *IRFunction) string
 		exprType := p.getExprType(unary.Expr, irFn)
 		expr := p.processExpression(unary.Expr, irFn)
 		result := p.newTemp()
+
+		// Union — используем sk_any_neg
+		if isUnionTypeP(exprType) || exprType == "any" {
+			irFn.Locals = append(irFn.Locals, "sk_any "+result)
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:         "call",
+				Result:     result,
+				Arg1:       "sk_any_neg",
+				Arg2:       expr,
+				ReturnType: "sk_any",
+			})
+			return result
+		}
+
 		cType := p.typeToC(exprType)
 		irFn.Locals = append(irFn.Locals, cType+" "+result)
 
@@ -722,7 +736,8 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 			exprType := p.getExprType(decl.Expr, irFn)
 			exprResult := p.processExpression(decl.Expr, irFn)
 
-			if exprType == "any" {
+			// Если expr уже sk_any (any или union) — не оборачивать
+			if exprType == "any" || isUnionTypeP(exprType) {
 				irFn.Instructions = append(irFn.Instructions, IRInstruction{
 					Op:     "=",
 					Result: decl.Name,
@@ -730,20 +745,28 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 				})
 			} else {
 				wrapper := p.getAnyWrapperByType(exprType)
-				tempVar := p.newTemp()
-				irFn.Locals = append(irFn.Locals, "sk_any "+tempVar)
-				irFn.Instructions = append(irFn.Instructions, IRInstruction{
-					Op:         "call",
-					Result:     tempVar,
-					Arg1:       wrapper,
-					Arg2:       exprResult,
-					ReturnType: "sk_any",
-				})
-				irFn.Instructions = append(irFn.Instructions, IRInstruction{
-					Op:     "=",
-					Result: decl.Name,
-					Arg1:   tempVar,
-				})
+				if wrapper == "" {
+					irFn.Instructions = append(irFn.Instructions, IRInstruction{
+						Op:     "=",
+						Result: decl.Name,
+						Arg1:   exprResult,
+					})
+				} else {
+					tempVar := p.newTemp()
+					irFn.Locals = append(irFn.Locals, "sk_any "+tempVar)
+					irFn.Instructions = append(irFn.Instructions, IRInstruction{
+						Op:         "call",
+						Result:     tempVar,
+						Arg1:       wrapper,
+						Arg2:       exprResult,
+						ReturnType: "sk_any",
+					})
+					irFn.Instructions = append(irFn.Instructions, IRInstruction{
+						Op:     "=",
+						Result: decl.Name,
+						Arg1:   tempVar,
+					})
+				}
 			}
 		}
 		return
@@ -792,8 +815,6 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 				Arg1:   exprResult,
 			})
 		} else {
-			// Без инициализатора — инлайним sk_array_new в sk_arr_new,
-			// чтобы GC не освободил промежуточный sk_array*
 			var elemType int = 5
 			elemSize := "sizeof(sk_any)"
 			if decl.ElemType != "" {
@@ -876,7 +897,7 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 		exprResult := p.processExpression(decl.Expr, irFn)
 
 		if decl.Type == "any" {
-			if exprType == "any" {
+			if exprType == "any" || isUnionTypeP(exprType) {
 				irFn.Instructions = append(irFn.Instructions, IRInstruction{
 					Op:     "=",
 					Result: decl.Name,
@@ -926,7 +947,7 @@ func (p *Pipeline) processAssign(assign *front.Assign, irFn *IRFunction) {
 			exprType := p.getExprType(assign.Expr, irFn)
 			exprResult := p.processExpression(assign.Expr, irFn)
 
-			if exprType == "any" {
+			if exprType == "any" || isUnionTypeP(exprType) {
 				irFn.Instructions = append(irFn.Instructions, IRInstruction{
 					Op:     "=",
 					Result: assign.Name,
@@ -934,20 +955,28 @@ func (p *Pipeline) processAssign(assign *front.Assign, irFn *IRFunction) {
 				})
 			} else {
 				wrapper := p.getAnyWrapperByType(exprType)
-				tempVar := p.newTemp()
-				irFn.Locals = append(irFn.Locals, "sk_any "+tempVar)
-				irFn.Instructions = append(irFn.Instructions, IRInstruction{
-					Op:         "call",
-					Result:     tempVar,
-					Arg1:       wrapper,
-					Arg2:       exprResult,
-					ReturnType: "sk_any",
-				})
-				irFn.Instructions = append(irFn.Instructions, IRInstruction{
-					Op:     "=",
-					Result: assign.Name,
-					Arg1:   tempVar,
-				})
+				if wrapper == "" {
+					irFn.Instructions = append(irFn.Instructions, IRInstruction{
+						Op:     "=",
+						Result: assign.Name,
+						Arg1:   exprResult,
+					})
+				} else {
+					tempVar := p.newTemp()
+					irFn.Locals = append(irFn.Locals, "sk_any "+tempVar)
+					irFn.Instructions = append(irFn.Instructions, IRInstruction{
+						Op:         "call",
+						Result:     tempVar,
+						Arg1:       wrapper,
+						Arg2:       exprResult,
+						ReturnType: "sk_any",
+					})
+					irFn.Instructions = append(irFn.Instructions, IRInstruction{
+						Op:     "=",
+						Result: assign.Name,
+						Arg1:   tempVar,
+					})
+				}
 			}
 			return
 		}
@@ -995,7 +1024,7 @@ func (p *Pipeline) processAssign(assign *front.Assign, irFn *IRFunction) {
 	exprResult := p.processExpression(assign.Expr, irFn)
 
 	if varType == "any" {
-		if exprType == "any" {
+		if exprType == "any" || isUnionTypeP(exprType) {
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op:     "=",
 				Result: assign.Name,
@@ -1192,6 +1221,40 @@ func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string
 			rightVal = tempR
 		}
 
+		// === СНАЧАЛА — сравнения ===
+		if bin.Op == "<" || bin.Op == ">" || bin.Op == "==" ||
+			bin.Op == "!=" || bin.Op == "<=" || bin.Op == ">=" {
+
+			result := p.newTemp()
+			irFn.Locals = append(irFn.Locals, "sk_bool "+result)
+
+			var fnName string
+			switch bin.Op {
+			case "<":
+				fnName = "sk_any_lt"
+			case ">":
+				fnName = "sk_any_gt"
+			case "==":
+				fnName = "sk_any_eq"
+			case "!=":
+				fnName = "sk_any_ne"
+			case "<=":
+				fnName = "sk_any_le"
+			case ">=":
+				fnName = "sk_any_ge"
+			}
+
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:         "call",
+				Result:     result,
+				Arg1:       fnName,
+				Arg2:       leftVal + ", " + rightVal,
+				ReturnType: "sk_bool",
+			})
+			return result
+		}
+
+		// === Арифметика ===
 		result := p.newTemp()
 		irFn.Locals = append(irFn.Locals, "sk_any "+result)
 
@@ -1483,6 +1546,7 @@ func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string
 	if bin.Op == "<" || bin.Op == ">" || bin.Op == "==" || bin.Op == "!=" || bin.Op == "<=" || bin.Op == ">=" {
 		result := p.newTemp()
 		irFn.Locals = append(irFn.Locals, "sk_bool "+result)
+
 		prefix := "sk_" + resultT
 		suffix := ""
 		switch bin.Op {
@@ -1643,24 +1707,27 @@ func (p *Pipeline) processReturn(ret *front.ReturnStmt, irFn *IRFunction) {
 		exprType := p.getExprType(ret.Expr, irFn)
 
 		if isUnionTypeP(irFn.ReturnType) {
-			// Union return
 			expr := p.processExpression(ret.Expr, irFn)
 
-			if exprType == "any" {
-				// Уже sk_any — не оборачивать
+			// Если expr уже sk_any (any или union) — не оборачивать
+			if exprType == "any" || isUnionTypeP(exprType) {
 				exprResult = expr
 			} else {
 				wrapper := p.getAnyWrapperByType(exprType)
-				tempVar := p.newTemp()
-				irFn.Locals = append(irFn.Locals, "sk_any "+tempVar)
-				irFn.Instructions = append(irFn.Instructions, IRInstruction{
-					Op:         "call",
-					Result:     tempVar,
-					Arg1:       wrapper,
-					Arg2:       expr,
-					ReturnType: "sk_any",
-				})
-				exprResult = tempVar
+				if wrapper == "" {
+					exprResult = expr
+				} else {
+					tempVar := p.newTemp()
+					irFn.Locals = append(irFn.Locals, "sk_any "+tempVar)
+					irFn.Instructions = append(irFn.Instructions, IRInstruction{
+						Op:         "call",
+						Result:     tempVar,
+						Arg1:       wrapper,
+						Arg2:       expr,
+						ReturnType: "sk_any",
+					})
+					exprResult = tempVar
+				}
 			}
 		} else if exprType == "void" {
 			cType := p.typeToC(irFn.ReturnType)
@@ -2916,18 +2983,25 @@ func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 	case *front.BinaryExpr:
 		leftType := p.getExprType(n.Left, irFn)
 		rightType := p.getExprType(n.Right, irFn)
-		if isUnionTypeP(leftType) || isUnionTypeP(rightType) {
-			return "any"
-		}
-		if n.Op == "+" && (leftType == "string" || rightType == "string" || leftType == "any" || rightType == "any") {
-			return "string"
-		}
+
+		// СНАЧАЛА — сравнения и логика (всегда bool)
 		if n.Op == "<" || n.Op == ">" || n.Op == "==" || n.Op == "!=" || n.Op == "<=" || n.Op == ">=" {
 			return "bool"
 		}
 		if n.Op == "&&" || n.Op == "||" {
 			return "bool"
 		}
+
+		// Потом union
+		if isUnionTypeP(leftType) || isUnionTypeP(rightType) {
+			return "any"
+		}
+
+		// Конкатенация строк
+		if n.Op == "+" && (leftType == "string" || rightType == "string" || leftType == "any" || rightType == "any") {
+			return "string"
+		}
+
 		if leftType == "double" || rightType == "double" {
 			return "double"
 		}
@@ -3006,6 +3080,9 @@ func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 }
 
 func (p *Pipeline) getAnyWrapperByType(t string) string {
+	if isUnionTypeP(t) || t == "any" {
+		return "" // уже sk_any, оборачивать не надо
+	}
 	if isArrayType(t) {
 		return "any_arr"
 	}

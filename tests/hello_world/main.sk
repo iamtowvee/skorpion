@@ -1,6 +1,10 @@
 use #std/io
+use std/math
 
 void main(arr args) {
-    string x = input()
-    sendln(x)
+    sendln(sqrt(16))       // 4.0  — квадратный корень
+    sendln(sqrt(16, 2))    // 4.0  — то же явно
+    sendln(sqrt(27, 3))    // 3.0  — кубический корень
+    sendln(sqrt(-8, 3))    // -2.0 — кубический корень из отрицательного
+    sendln(sqrt(16, 0))    // throw BadRootDegreeError
 }

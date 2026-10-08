@@ -10,6 +10,7 @@ use std/strings
 const ZeroDivError{} = new Error
 const ImpossibleOperationOverNullError{} = new Error
 const SqrtFromNumLessZeroError{} = new Error
+const BadRootDegreeError{} = new Error
 
 void nullProc(any a, any b, string op) {
   if (a == null || b == null) {
@@ -55,35 +56,32 @@ T<int,float,double> pow(T<int,float,double> a, T<int,float,double> b) {
 
 T<int,float,double> invert(T<int,float,double> a) {
   nullProcOne(a, "invert()")
-  string real = type(a)
-  string val = $a
-  if (strings.has(val, "-")) {
-    val = strings.splice(0)[1]
-  } else {
-    val = "-" + val
-  }
-  case (real) {
-    "int" {
-      return val.to_int()
-    },
-    "float" {
-      return val.to_float()
-    },
-    "double" {
-      return val.to_double()
-    },
-    _ {
-      // T<int, float, double> не содержит других типов, но default (_) ветвь обязательна
-      return -1
-    },
-  }
+  return -a
 }
 
-T<int,float,double> sqrt(T<int,float,double> a) {
-  nullProcOne(a, "sqrt()")
+T<int,float,double> unsign(T<int,float,double> a) {
+  nullProcOne(a, "unsign()")
   if (a < 0) {
-    string errline = "It is impossible to get the root of '" + a + "'"
-    throw SqrtFromNumLessZeroError{msg: errline}
+    return -a
   }
-  return a ** 0.5
+  return a
+}
+
+T<int,float,double> sqrt(T<int,float,double> a, int n = 2) {
+  nullProcOne(a, "sqrt()")
+
+  if (n <= 0) {
+    throw BadRootDegreeError{msg: "Root degree must be positive, got " + n}
+  }
+
+  if (a < 0) {
+    if (n % 2 == 0) {
+      string errline = "It is impossible to get the " + n + "-th root of '" + a + "'"
+      throw SqrtFromNumLessZeroError{msg: errline}
+    }
+    // Нечётная степень и отрицательное a: корень от |a|, результат с минусом
+    return -((-a) ** (1.0 / to_double(n)))
+  }
+
+  return a ** (1.0 / to_double(n))
 }
