@@ -7,7 +7,7 @@
 
 use std/strings
 
-const NilDivError{} = new Error
+const ZeroDivError{} = new Error
 const ImpossibleOperationOverNullError{} = new Error
 const SqrtFromNumLessZeroError{} = new Error
 
