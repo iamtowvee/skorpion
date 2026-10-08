@@ -1762,6 +1762,8 @@ func (p *Pipeline) processExpression(expr front.Node, irFn *IRFunction) string {
 		return fmt.Sprintf("sk_int_new(%s)", n.Value)
 	case *front.NullLiteral:
 		return "SK_NULL_int"
+	case *front.UnicodeLiteral:
+		return fmt.Sprintf("sk_char_new(%d)", n.Codepoint)
 	case *front.String:
 		return fmt.Sprintf("sk_string_new(%q)", n.Value)
 	case *front.CharLiteral:
@@ -3228,6 +3230,8 @@ func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 		return "int"
 	case *front.String:
 		return "string"
+	case *front.UnicodeLiteral:
+		return "char"
 	case *front.CharLiteral:
 		return "char"
 	case *front.NullLiteral:

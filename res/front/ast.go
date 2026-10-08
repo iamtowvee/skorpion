@@ -480,7 +480,7 @@ type IncludeC struct {
 func (i *IncludeC) GetType() NodeType { return NODE_INCLUDE_C }
 
 // ============================================================================
-// IncludeC
+// InId
 // ============================================================================
 
 type IknowIdoBlock struct {
@@ -489,6 +489,18 @@ type IknowIdoBlock struct {
 }
 
 func (b *IknowIdoBlock) GetType() NodeType { return "IknowIdo" }
+
+// ============================================================================
+// IncludeC
+// ============================================================================
+
+type UnicodeLiteral struct {
+	Position
+	Codepoint uint32
+}
+
+func (u *UnicodeLiteral) GetType() NodeType     { return "UnicodeLiteral" }
+func (u *UnicodeLiteral) GetTypeString() string { return "char" }
 
 // ============================================================================
 // ErrorDecl — объявление типа ошибки

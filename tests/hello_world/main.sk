@@ -1,5 +1,6 @@
 use #std/io
 
 void main(arr args) {
-  sendln(127.to_char())
+  sendln(67.to_char())
+  sendln(Unicode["11FFFF"])
 }

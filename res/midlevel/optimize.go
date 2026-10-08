@@ -78,6 +78,9 @@ func (o *Optimizer) optimizeNode(node front.Node) front.Node {
 	case *front.Block:
 		return o.optimizeBlock(n)
 
+	case *front.UnicodeLiteral:
+		return node
+
 	case *front.IfStmt:
 		return o.optimizeIf(n)
 
@@ -530,6 +533,8 @@ func (o *Optimizer) isConstant(node front.Node) bool {
 	case *front.String:
 		return true
 	case *front.CharLiteral:
+		return true
+	case *front.UnicodeLiteral:
 		return true
 	case *front.Ident:
 		if ident, ok := node.(*front.Ident); ok {

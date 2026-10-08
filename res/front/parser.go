@@ -1562,6 +1562,36 @@ func (p *Parser) parsePrimary() Node {
 		p.advance()
 		return &Number{Position: pos, Value: val}
 
+	case TOKEN_UNICODE_LIT:
+		pos := p.pos()
+		hex := p.peek.Literal
+		p.advance()
+
+		cp, err := strconv.ParseUint(hex, 16, 32)
+		if err != nil {
+			p.hasErrors = true
+			errors.NewFatalError("0124",
+				fmt.Sprintf("Invalid Unicode codepoint '%s'", hex),
+				pos.Line, pos.Column, p.FileName)
+			return nil
+		}
+		if cp > 0x10FFFF {
+			p.hasErrors = true
+			errors.NewFatalError("0125",
+				fmt.Sprintf("Unicode codepoint out of range: %s (max 10FFFF)", hex),
+				pos.Line, pos.Column, p.FileName)
+			return nil
+		}
+		if cp >= 0xD800 && cp <= 0xDFFF {
+			p.hasErrors = true
+			errors.NewFatalError("0126",
+				fmt.Sprintf("Unicode codepoint %s is in surrogate range (D800-DFFF) — not valid UTF-8", hex),
+				pos.Line, pos.Column, p.FileName)
+			return nil
+		}
+
+		return &UnicodeLiteral{Position: pos, Codepoint: uint32(cp)}
+
 	case TOKEN_STRING:
 		pos := p.pos()
 		val := p.peek.Literal

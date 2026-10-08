@@ -34,6 +34,7 @@ const (
 	TOKEN_SLASH
 	TOKEN_CARET
 	TOKEN_POW
+	TOKEN_UNICODE_LIT // Unicode["XXXX"]
 	TOKEN_EQUALS
 	TOKEN_LT
 	TOKEN_GT
@@ -111,6 +112,13 @@ func (l *Lexer) NextToken() Token {
 
 	if ch == '"' {
 		return l.readString()
+	}
+
+	if ch == 'U' && l.pos+7 <= len(l.input) && l.input[l.pos:l.pos+7] == "Unicode" {
+		next := l.input[l.pos+7]
+		if next == '[' {
+			return l.readUnicodeLit()
+		}
 	}
 
 	if unicode.IsLetter(rune(ch)) || ch == '_' {
@@ -232,6 +240,50 @@ func (l *Lexer) makeToken(tt TokenType, lit string) Token {
 	l.pos++
 	l.col++
 	return tok
+}
+
+func (l *Lexer) readUnicodeLit() Token {
+	startCol := l.col
+	l.pos += 7 // "Unicode"
+	l.col += 7
+
+	if l.pos >= len(l.input) || l.input[l.pos] != '[' {
+		errors.NewError("0120", "Expected '[' after Unicode", l.line, l.col, "")
+		return Token{Type: TOKEN_UNICODE_LIT, Literal: "", Line: l.line, Column: startCol}
+	}
+	l.pos++ // [
+	l.col++
+
+	if l.pos >= len(l.input) || l.input[l.pos] != '"' {
+		errors.NewError("0121", "Expected '\"' in Unicode[...]", l.line, l.col, "")
+		return Token{Type: TOKEN_UNICODE_LIT, Literal: "", Line: l.line, Column: startCol}
+	}
+	l.pos++ // "
+	l.col++
+
+	hexStart := l.pos
+	for l.pos < len(l.input) && l.input[l.pos] != '"' {
+		l.pos++
+		l.col++
+	}
+
+	if l.pos >= len(l.input) {
+		errors.NewError("0122", "Unterminated Unicode string", l.line, l.col, "")
+		return Token{Type: TOKEN_UNICODE_LIT, Literal: "", Line: l.line, Column: startCol}
+	}
+
+	hex := l.input[hexStart:l.pos]
+	l.pos++ // "
+	l.col++
+
+	if l.pos >= len(l.input) || l.input[l.pos] != ']' {
+		errors.NewError("0123", "Expected ']' after Unicode[...]", l.line, l.col, "")
+		return Token{Type: TOKEN_UNICODE_LIT, Literal: hex, Line: l.line, Column: startCol}
+	}
+	l.pos++ // ]
+	l.col++
+
+	return Token{Type: TOKEN_UNICODE_LIT, Literal: hex, Line: l.line, Column: startCol}
 }
 
 func (l *Lexer) readIdent() Token {
@@ -610,6 +662,8 @@ func (tt TokenType) String() string {
 		return "%"
 	case TOKEN_INCLUDE_C:
 		return "includeC"
+	case TOKEN_UNICODE_LIT:
+		return "UNICODE"
 	default:
 		return "UNKNOWN"
 	}

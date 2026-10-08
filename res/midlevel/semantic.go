@@ -401,6 +401,8 @@ func (sa *SemanticAnalyzer) analyzeNode(node front.Node) front.Node {
 		return sa.analyzeVarDecl(n)
 	case *front.NullLiteral:
 		return n
+	case *front.UnicodeLiteral:
+		return n
 	case *front.IknowIdoBlock:
 		// Полностью пропускаем анализ — ни типов, ни объявлений, ни проверок.
 		return n
@@ -1487,6 +1489,8 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 		return "int"
 	case *front.String:
 		return "string"
+	case *front.UnicodeLiteral:
+		return "char"
 	case *front.CharLiteral:
 		return "char"
 	case *front.NullLiteral:
