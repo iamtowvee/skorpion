@@ -5,3 +5,85 @@
       Copyrights (c) 2026 iamtowvee
   ------------------------------------- */
 
+use std/strings
+
+const ZeroDivError{} = new Error
+const ImpossibleOperationOverNullError{} = new Error
+const SqrtFromNumLessZeroError{} = new Error
+
+void nullProc(any a, any b, string op) {
+  if (a == null || b == null) {
+    string errline = "Cannot use 'null' in '" + op + "'"
+    throw ImpossibleOperationOverNullError{msg: errline}
+  }
+}
+
+void nullProcOne(any a, string op) {
+  if (a == null) {
+    string errline = "Cannot use 'null' in '" + op + "'"
+    throw ImpossibleOperationOverNullError{msg: errline}
+  }
+}
+
+T<int,float,double> add(T<int,float,double> a, T<int,float,double> b) {
+  nullProc(a, b, "add()")
+  return a + b
+}
+
+T<int,float,double> minus(T<int,float,double> a, T<int,float,double> b) {
+  nullProc(a, b, "minus()")
+  return a - b
+}
+
+T<int,float,double> mul(T<int,float,double> a, T<int,float,double> b) {
+  nullProc(a, b, "mul()")
+  return a * b
+}
+
+T<int,float,double> div(T<int,float,double> a, T<int,float,double> b) {
+  nullProc(a, b, "div()")
+  if (b == 0 || b == 0.0 || b == 0.0f) {
+    throw ZeroDivError{msg: "You can't divide by zero."}
+  }
+  return a / b
+}
+
+T<int,float,double> pow(T<int,float,double> a, T<int,float,double> b) {
+  nullProc(a, b, "pow()")
+  return a ** b
+}
+
+T<int,float,double> invert(T<int,float,double> a) {
+  nullProcOne(a, "invert()")
+  string real = type(a)
+  string val = $a
+  if (strings.has(val, "-")) {
+    val = strings.splice(0)[1]
+  } else {
+    val = "-" + val
+  }
+  case (real) {
+    "int" {
+      return val.to_int()
+    },
+    "float" {
+      return val.to_float()
+    },
+    "double" {
+      return val.to_double()
+    },
+    _ {
+      // T<int, float, double> не содержит других типов, но default (_) ветвь обязательна
+      return -1
+    },
+  }
+}
+
+T<int,float,double> sqrt(T<int,float,double> a) {
+  nullProcOne(a, "sqrt()")
+  if (a < 0) {
+    string errline = "It is impossible to get the root of '" + a + "'"
+    throw SqrtFromNumLessZeroError{msg: errline}
+  }
+  return a ** 0.5
+}
