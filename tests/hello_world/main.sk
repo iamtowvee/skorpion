@@ -1,8 +1,5 @@
 use #std/io
-use std/arrays
 
 void main(arr args) {
-  sendln(type('c'))
-  sendln(type('c' + 'a'))
-  sendln(type('c' * 'a'))
+  sendln(127.to_char())
 }

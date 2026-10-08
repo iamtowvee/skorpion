@@ -436,6 +436,8 @@ func (p *Parser) parseStatement() Node {
 			return p.parseIf()
 		case "while":
 			return p.parseWhile()
+		case "IknowIdo":
+			return p.parseIknowIdo()
 		case "for":
 			return p.parseFor()
 		case "return":
@@ -475,6 +477,33 @@ func (p *Parser) parseStatement() Node {
 			fmt.Sprintf("Expected statement, got '%s'", p.peek.Literal),
 			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
+	}
+}
+
+func (p *Parser) parseIknowIdo() Node {
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	pos := p.pos()
+	p.advance() // IknowIdo
+
+	if p.peek.Type != TOKEN_LBRACE {
+		p.hasErrors = true
+		errors.NewFatalError("0640",
+			fmt.Sprintf("Expected '{' after 'IknowIdo', got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
+	}
+
+	body := p.parseBlock()
+	if body == nil {
+		return nil
+	}
+
+	return &IknowIdoBlock{
+		Position: pos,
+		Body:     body,
 	}
 }
 

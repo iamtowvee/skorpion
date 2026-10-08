@@ -277,6 +277,7 @@ func (l *Lexer) readIdent() Token {
 		"catch":    TOKEN_KEYWORD,
 		"as":       TOKEN_KEYWORD,
 		"includeC": TOKEN_INCLUDE_C,
+		"IknowIdo": TOKEN_KEYWORD,
 	}
 	if kwType, ok := keywords[literal]; ok {
 		tokType = kwType

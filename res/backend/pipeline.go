@@ -146,6 +146,10 @@ func (p *Pipeline) processNode(node front.Node, irFn *IRFunction) {
 		p.processBinary(n, irFn)
 	case *front.UnaryExpr:
 		p.processUnary(n, irFn)
+	case *front.IknowIdoBlock:
+		if n.Body != nil {
+			p.processBlock(n.Body, irFn)
+		}
 	case *front.ThrowStmt:
 		p.processThrow(n, irFn)
 	case *front.TryStmt:

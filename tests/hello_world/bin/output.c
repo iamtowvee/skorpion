@@ -705,26 +705,6 @@ void sk_array_deep_free(sk_array* a) {
     free(a);
 }
 
-typedef struct SkError {
-    const char* __type;
-    sk_string msg;
-} SkError;
-
-typedef struct ArrayError {
-    const char* __type;
-    sk_string msg;
-} ArrayError;
-
-typedef struct ArrayIdNotFoundError {
-    const char* __type;
-    sk_string msg;
-} ArrayIdNotFoundError;
-
-typedef struct HeteroArrayRemoveError {
-    const char* __type;
-    sk_string msg;
-} HeteroArrayRemoveError;
-
 typedef struct SkCleanup {
     void** ptr;
     int type;
@@ -825,47 +805,7 @@ int sk_error_type_match(const char* actual, const char* expected) {
     return actual[len] == '\0' || actual[len] == '.';
 }
 
-// Inline C code
-// Копирует sk_array с полным deep-copy элементов.
-// Тип элементов сохраняется (elem_size, elem_type).
-sk_array* __sk__arrays_copy(sk_array* src) {
-    if (!src) return NULL;
-    return sk_array_deep_copy(src);
-}
-
-// Извлекает sk_any из элемента по индексу, независимо от elem_type.
-// Используется для универсальных операций (find, set, insert, proem, add).
-sk_any __sk__arrays_get_any(sk_array* a, int idx) {
-    if (!a || idx < 0 || idx >= a->length) return any_null();
-    void* p = sk_array_get(a, idx);
-    if (!p) return any_null();
-    switch (a->elem_type) {
-        case 0: { sk_int* v = (sk_int*)p; return v->__is_null ? any_null() : any_int(*v); }
-        case 1: { sk_string* v = (sk_string*)p; return v->__is_null ? any_null() : any_string(*v); }
-        case 2: { sk_float* v = (sk_float*)p; return v->__is_null ? any_null() : any_float(*v); }
-        case 3: { sk_double* v = (sk_double*)p; return v->__is_null ? any_null() : any_double(*v); }
-        case 4: { sk_bool* v = (sk_bool*)p; return v->__is_null ? any_null() : any_bool(*v); }
-        case 5: { sk_any* v = (sk_any*)p; return *v; }
-        case 6: { sk_arr* v = (sk_arr*)p; return v->__is_null ? any_null() : any_arr(*v); }
-    }
-    return any_null();
-}
-
-
-
 // Function prototypes
-sk_int __sk__len(sk_arr source);
-sk_int __sk__find(sk_arr source, sk_any pattern);
-sk_arr __sk__add(sk_arr source, sk_any value);
-sk_arr __sk__proem(sk_arr source, sk_any value);
-sk_arr __sk__insert(sk_arr source, sk_int id, sk_any value);
-sk_arr __sk__set(sk_arr source, sk_int id, sk_any value);
-sk_arr __sk__pop(sk_arr source);
-sk_arr __sk__erase(sk_arr source, sk_int id);
-sk_arr __sk__remove(sk_arr source, sk_int id);
-sk_arr __sk__cut(sk_arr source, sk_int start, sk_int end);
-sk_arr __sk__combine(sk_arr first, sk_arr second);
-sk_arr __sk__slice(sk_arr source, sk_int id);
 void __sk__std_io_send(sk_string line);
 sk_string __sk__std_io_input(sk_string prompt);
 void __sk__sendln(sk_any msg);
@@ -884,287 +824,15 @@ int main(int argc, char** argv) {
     }
     sk_arr args = sk_arr_new(args__arr);
 
-    sk_string t1;
+    sk_char t1;
     sk_any t2;
-    sk_string t3;
-    sk_any t4;
-    sk_int t5;
-    sk_int t6;
-    sk_int t7;
-    sk_string t8;
-    sk_any t9;
 
-    t1 = sk_string_new("char");
-    t2 = any_string(t1);
-    free(t1.value);
-    sk_call_push("main.sk", 5, 3);
+    t1 = sk_int_to_char(sk_int_new(127));
+    t2 = any_char(t1);
+    sk_call_push("main.sk", 4, 3);
     __sk__sendln(t2);
     sk_call_pop();
-    t3 = sk_string_new("string");
-    t4 = any_string(t3);
-    free(t3.value);
-    sk_call_push("main.sk", 6, 3);
-    __sk__sendln(t4);
-    sk_call_pop();
-    t5 = sk_char_to_int(sk_char_new(99));
-    t6 = sk_char_to_int(sk_char_new(97));
-    t7 = sk_int_mul(t5, t6);
-    t8 = sk_string_new("int");
-    t9 = any_string(t8);
-    free(t8.value);
-    sk_call_push("main.sk", 7, 3);
-    __sk__sendln(t9);
-    sk_call_pop();
     return 0;
-}
-
-sk_int __sk__len(sk_arr source) {
-    if (source.__is_null || !source.value) return sk_int_new(0);
-        return sk_int_new(sk_array_len(source.value));
-    return sk_int_new(0);
-}
-
-sk_int __sk__find(sk_arr source, sk_any pattern) {
-    if (source.__is_null || !source.value) return sk_int_new(-1);
-        if (pattern.type == 6) return sk_int_new(-1);
-        int n = source.value->length;
-        for (int i = 0; i < n; i++) {
-            sk_any cur = __sk__arrays_get_any(source.value, i);
-            if (cur.type != pattern.type) continue;
-            switch (pattern.type) {
-                case 0: if (cur.data.i == pattern.data.i) return sk_int_new(i); break;
-                case 1: if (cur.data.s && pattern.data.s && strcmp(cur.data.s, pattern.data.s) == 0) return sk_int_new(i); break;
-                case 2: if (cur.data.f == pattern.data.f) return sk_int_new(i); break;
-                case 3: if (cur.data.d == pattern.data.d) return sk_int_new(i); break;
-                case 4: if (cur.data.b == pattern.data.b) return sk_int_new(i); break;
-                case 5: break;
-            }
-        }
-        return sk_int_new(-1);
-    return sk_int_new(-1);
-}
-
-sk_arr __sk__add(sk_arr source, sk_any value) {
-    sk_arr t10;
-
-    // Результат всегда гетерогенный (any), как и все остальные функции.
-        sk_array* out = sk_array_new(sizeof(sk_any), 5);
-        if (!source.__is_null && source.value) {
-            int n = source.value->length;
-            for (int i = 0; i < n; i++) {
-                sk_array_push_any(out, __sk__arrays_get_any(source.value, i));
-            }
-        }
-        sk_array_push_any(out, value);
-        return sk_arr_new(out);
-    t10 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t10;
-}
-
-sk_arr __sk__proem(sk_arr source, sk_any value) {
-    sk_arr t11;
-
-    sk_array* src = source.__is_null ? NULL : source.value;
-        int n = src ? src->length : 0;
-        sk_array* out = sk_array_new(sizeof(sk_any), 5);
-        sk_array_push_any(out, value);
-        for (int i = 0; i < n; i++) {
-            sk_array_push_any(out, __sk__arrays_get_any(src, i));
-        }
-        return sk_arr_new(out);
-    t11 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t11;
-}
-
-sk_arr __sk__insert(sk_arr source, sk_int id, sk_any value) {
-    sk_arr t12;
-
-    sk_array* src = source.__is_null ? NULL : source.value;
-        int n = src ? src->length : 0;
-        int idx = id.value;
-        if (idx < 0 || idx > n) {
-            ArrayIdNotFoundError* err = malloc(sizeof(ArrayIdNotFoundError));
-            err->__type = "Error.ArrayError.ArrayIdNotFoundError";
-            err->msg = sk_string_new("Array index out of bounds in 'insert'.");
-            sk_throw(err, "<builtin:std/arrays>", 110, 5);
-        }
-        sk_array* out = sk_array_new(sizeof(sk_any), 5);
-        for (int i = 0; i < idx; i++) {
-            sk_array_push_any(out, __sk__arrays_get_any(src, i));
-        }
-        sk_array_push_any(out, value);
-        for (int i = idx; i < n; i++) {
-            sk_array_push_any(out, __sk__arrays_get_any(src, i));
-        }
-        return sk_arr_new(out);
-    t12 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t12;
-}
-
-sk_arr __sk__set(sk_arr source, sk_int id, sk_any value) {
-    sk_arr t13;
-
-    sk_array* src = source.__is_null ? NULL : source.value;
-        int n = src ? src->length : 0;
-        int idx = id.value;
-        if (idx < 0 || idx >= n) {
-            ArrayIdNotFoundError* err = malloc(sizeof(ArrayIdNotFoundError));
-            err->__type = "Error.ArrayError.ArrayIdNotFoundError";
-            err->msg = sk_string_new("Array index out of bounds in 'set'.");
-            sk_throw(err, "<builtin:std/arrays>", 130, 5);
-        }
-        sk_array* out = sk_array_new(sizeof(sk_any), 5);
-        for (int i = 0; i < n; i++) {
-            if (i == idx) {
-                sk_array_push_any(out, value);
-            } else {
-                sk_array_push_any(out, __sk__arrays_get_any(src, i));
-            }
-        }
-        return sk_arr_new(out);
-    t13 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t13;
-}
-
-sk_arr __sk__pop(sk_arr source) {
-    sk_arr t14;
-
-    sk_array* src = source.__is_null ? NULL : source.value;
-        int n = src ? src->length : 0;
-        sk_array* out = sk_array_new(sizeof(sk_any), 5);
-        for (int i = 0; i < n - 1; i++) {
-            sk_array_push_any(out, __sk__arrays_get_any(src, i));
-        }
-        return sk_arr_new(out);
-    t14 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t14;
-}
-
-sk_arr __sk__erase(sk_arr source, sk_int id) {
-    sk_arr t15;
-
-    sk_array* src = source.__is_null ? NULL : source.value;
-        int n = src ? src->length : 0;
-        int idx = id.value;
-        if (idx < 0 || idx >= n) {
-            ArrayIdNotFoundError* err = malloc(sizeof(ArrayIdNotFoundError));
-            err->__type = "Error.ArrayError.ArrayIdNotFoundError";
-            err->msg = sk_string_new("Array index out of bounds in 'erase'.");
-            sk_throw(err, "<builtin:std/arrays>", 165, 5);
-        }
-        sk_array* out = sk_array_new(sizeof(sk_any), 5);
-        for (int i = 0; i < n; i++) {
-            if (i == idx) continue;
-            sk_array_push_any(out, __sk__arrays_get_any(src, i));
-        }
-        return sk_arr_new(out);
-    t15 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t15;
-}
-
-sk_arr __sk__remove(sk_arr source, sk_int id) {
-    sk_arr t16;
-
-    sk_array* src = source.__is_null ? NULL : source.value;
-        int n = src ? src->length : 0;
-        int idx = id.value;
-        if (idx < 0 || idx >= n) {
-            ArrayIdNotFoundError* err = malloc(sizeof(ArrayIdNotFoundError));
-            err->__type = "Error.ArrayError.ArrayIdNotFoundError";
-            err->msg = sk_string_new("Array index out of bounds in 'remove'.");
-            sk_throw(err, "<builtin:std/arrays>", 185, 5);
-        }
-        if (src->elem_type == 5) {
-            HeteroArrayRemoveError* err = malloc(sizeof(HeteroArrayRemoveError));
-            err->__type = "Error.ArrayError.HeteroArrayRemoveError";
-            err->msg = sk_string_new("Try use 'remove' for heterogenius array");
-            sk_throw(err, "<builtin:std/arrays>", 192, 5);
-        }
-        sk_array* out = sk_array_deep_copy(src);
-        void* slot = (char*)out->data + idx * out->elem_size;
-        switch (out->elem_type) {
-            case 0: { sk_int nullv = SK_NULL_int; memcpy(slot, &nullv, sizeof(sk_int)); break; }
-            case 1: { sk_string nullv = SK_NULL_string; memcpy(slot, &nullv, sizeof(sk_string)); break; }
-            case 2: { sk_float nullv = SK_NULL_float; memcpy(slot, &nullv, sizeof(sk_float)); break; }
-            case 3: { sk_double nullv = SK_NULL_double; memcpy(slot, &nullv, sizeof(sk_double)); break; }
-            case 4: { sk_bool nullv = SK_NULL_bool; memcpy(slot, &nullv, sizeof(sk_bool)); break; }
-            case 6: { sk_arr nullv = SK_NULL_arr; memcpy(slot, &nullv, sizeof(sk_arr)); break; }
-        }
-        return sk_arr_new(out);
-    t16 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t16;
-}
-
-sk_arr __sk__cut(sk_arr source, sk_int start, sk_int end) {
-    sk_arr t17;
-
-    sk_array* src = source.__is_null ? NULL : source.value;
-        int n = src ? src->length : 0;
-        int s = start.value;
-        int e = end.value;
-        // ВКЛЮЧИТЕЛЬНО: e — индекс последнего элемента
-        if (s < 0 || e < 0 || s > n - 1 || e > n - 1 || s > e) {
-            ArrayIdNotFoundError* err = malloc(sizeof(ArrayIdNotFoundError));
-            err->__type = "Error.ArrayError.ArrayIdNotFoundError";
-            err->msg = sk_string_new("Invalid range in 'cut'.");
-            sk_throw(err, "<builtin:std/arrays>", 225, 5);
-        }
-        sk_array* out = sk_array_new(sizeof(sk_any), 5);
-        for (int i = s; i <= e; i++) {
-            sk_array_push_any(out, __sk__arrays_get_any(src, i));
-        }
-        return sk_arr_new(out);
-    t17 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t17;
-}
-
-sk_arr __sk__combine(sk_arr first, sk_arr second) {
-    sk_arr t18;
-
-    sk_array* out = sk_array_new(sizeof(sk_any), 5);
-        if (!first.__is_null && first.value) {
-            for (int i = 0; i < first.value->length; i++) {
-                sk_array_push_any(out, __sk__arrays_get_any(first.value, i));
-            }
-        }
-        if (!second.__is_null && second.value) {
-            for (int i = 0; i < second.value->length; i++) {
-                sk_array_push_any(out, __sk__arrays_get_any(second.value, i));
-            }
-        }
-        return sk_arr_new(out);
-    t18 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t18;
-}
-
-sk_arr __sk__slice(sk_arr source, sk_int id) {
-    sk_arr t19;
-
-    sk_array* src = source.__is_null ? NULL : source.value;
-        int n = src ? src->length : 0;
-        int idx = id.value;
-        if (idx < 0 || idx >= n) {
-            ArrayIdNotFoundError* err = malloc(sizeof(ArrayIdNotFoundError));
-            err->__type = "Error.ArrayError.ArrayIdNotFoundError";
-            err->msg = sk_string_new("Array index out of bounds in 'slice'.");
-            sk_throw(err, "<builtin:std/arrays>", 260, 5);
-        }
-        sk_array* left = sk_array_new(sizeof(sk_any), 5);
-        sk_array* right = sk_array_new(sizeof(sk_any), 5);
-        for (int i = 0; i <= idx; i++) {
-            sk_array_push_any(left, __sk__arrays_get_any(src, i));
-        }
-        for (int i = idx + 1; i < n; i++) {
-            sk_array_push_any(right, __sk__arrays_get_any(src, i));
-        }
-        sk_array* out = sk_array_new(sizeof(sk_arr), 6);
-        sk_arr l = sk_arr_new(left);
-        sk_arr r = sk_arr_new(right);
-        sk_array_push_arr(out, l);
-        sk_array_push_arr(out, r);
-        return sk_arr_new(out);
-    t19 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t19;
 }
 
 void __sk__std_io_send(sk_string line) {
@@ -1190,36 +858,36 @@ sk_string __sk__std_io_input(sk_string prompt) {
 }
 
 void __sk__sendln(sk_any msg) {
-    sk_string t20;
-    sk_string t21;
+    sk_string t3;
+    sk_string t4;
 
-    t20 = any_to_string(msg);
-    t21 = sk_string_concat(t20, sk_string_new("\n"));
-    free(t20.value);
+    t3 = any_to_string(msg);
+    t4 = sk_string_concat(t3, sk_string_new("\n"));
+    free(t3.value);
     sk_call_push("<builtin:std/io>", 34, 5);
-    __sk__std_io_send(t21);
+    __sk__std_io_send(t4);
     sk_call_pop();
-    free(t21.value);
+    free(t4.value);
     return;
 }
 
 void __sk__sendf(sk_any msg) {
-    sk_string t22;
+    sk_string t5;
 
-    t22 = any_to_string(msg);
+    t5 = any_to_string(msg);
     sk_call_push("<builtin:std/io>", 38, 5);
-    __sk__std_io_send(t22);
+    __sk__std_io_send(t5);
     sk_call_pop();
-    free(t22.value);
+    free(t5.value);
     return;
 }
 
 sk_string __sk__input(sk_string prefix) {
-    sk_string t23;
+    sk_string t6;
 
     sk_call_push("<builtin:std/io>", 42, 12);
-    t23 = __sk__std_io_input(prefix);
+    t6 = __sk__std_io_input(prefix);
     sk_call_pop();
-    return t23;
+    return t6;
 }
 

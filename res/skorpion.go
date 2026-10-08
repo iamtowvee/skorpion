@@ -575,6 +575,12 @@ func printAST(node front.Node, indent int) {
 			printAST(n.Body, indent+1)
 		}
 
+	case *front.IknowIdoBlock:
+		fmt.Println(prefix + cli.Colors.Magenta("IknowIdo"))
+		if n.Body != nil {
+			printAST(n.Body, indent+1)
+		}
+
 	case *front.CaseStmt:
 		fmt.Println(prefix + cli.Colors.Yellow("Case"))
 		for _, branch := range n.Branches {

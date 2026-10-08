@@ -480,6 +480,17 @@ type IncludeC struct {
 func (i *IncludeC) GetType() NodeType { return NODE_INCLUDE_C }
 
 // ============================================================================
+// IncludeC
+// ============================================================================
+
+type IknowIdoBlock struct {
+	Position
+	Body *Block
+}
+
+func (b *IknowIdoBlock) GetType() NodeType { return "IknowIdo" }
+
+// ============================================================================
 // ErrorDecl — объявление типа ошибки
 // const Name{field: type[default], ...} = new Parent
 // ============================================================================

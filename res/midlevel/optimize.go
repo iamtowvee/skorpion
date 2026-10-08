@@ -81,6 +81,10 @@ func (o *Optimizer) optimizeNode(node front.Node) front.Node {
 	case *front.IfStmt:
 		return o.optimizeIf(n)
 
+	case *front.IknowIdoBlock:
+		// Не трогаем содержимое — программист знает, что делает.
+		return n
+
 	case *front.WhileStmt:
 		return o.optimizeWhile(n)
 
