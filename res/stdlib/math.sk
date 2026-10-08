@@ -11,6 +11,11 @@ const ZeroDivError{} = new Error
 const ImpossibleOperationOverNullError{} = new Error
 const SqrtFromNumLessZeroError{} = new Error
 const BadRootDegreeError{} = new Error
+const DomainError{} = new Error
+
+/* ============================
+   Helpers
+   ============================ */
 
 void nullProc(any a, any b, string op) {
   if (a == null || b == null) {
@@ -25,6 +30,10 @@ void nullProcOne(any a, string op) {
     throw ImpossibleOperationOverNullError{msg: errline}
   }
 }
+
+/* ============================
+   Arithmetic
+   ============================ */
 
 T<int,float,double> add(T<int,float,double> a, T<int,float,double> b) {
   nullProc(a, b, "add()")
@@ -67,21 +76,408 @@ T<int,float,double> unsign(T<int,float,double> a) {
   return a
 }
 
+/* ============================
+   Roots
+   ============================ */
+
 T<int,float,double> sqrt(T<int,float,double> a, int n = 2) {
-  nullProcOne(a, "sqrt()")
-
-  if (n <= 0) {
-    throw BadRootDegreeError{msg: "Root degree must be positive, got " + n}
-  }
-
-  if (a < 0) {
-    if (n % 2 == 0) {
-      string errline = "It is impossible to get the " + n + "-th root of '" + a + "'"
-      throw SqrtFromNumLessZeroError{msg: errline}
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    if (n.value <= 0) {
+        BadRootDegreeError* err = malloc(sizeof(BadRootDegreeError));
+        err->__type = "Error.BadRootDegreeError";
+        err->msg = sk_string_new("Root degree must be positive.");
+        sk_throw(err, "<builtin:std/math>", 90, 5);
     }
-    // Нечётная степень и отрицательное a: корень от |a|, результат с минусом
-    return -((-a) ** (1.0 / to_double(n)))
-  }
+    double av = any_to_double(a).value;
+    if (av < 0.0) {
+        if (n.value % 2 == 0) {
+            SqrtFromNumLessZeroError* err = malloc(sizeof(SqrtFromNumLessZeroError));
+            err->__type = "Error.SqrtFromNumLessZeroError";
+            err->msg = sk_string_new("It is impossible to get the even root of a negative number.");
+            sk_throw(err, "<builtin:std/math>", 97, 5);
+        }
+        return any_double(sk_double_new(-pow(-av, 1.0 / (double)n.value)));
+    }
+    return any_double(sk_double_new(pow(av, 1.0 / (double)n.value)));
+  ~~~
+  return 0.0
+}
 
-  return a ** (1.0 / to_double(n))
+/* ============================
+   Trigonometry — direct
+   ============================ */
+
+T<int,float,double> sin(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    return any_double(sk_double_new(sin(any_to_double(a).value)));
+  ~~~
+  return 0.0
+}
+
+T<int,float,double> cos(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    return any_double(sk_double_new(cos(any_to_double(a).value)));
+  ~~~
+  return 0.0
+}
+
+T<int,float,double> tan(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    return any_double(sk_double_new(tan(any_to_double(a).value)));
+  ~~~
+  return 0.0
+}
+
+T<int,float,double> cot(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    double t = tan(any_to_double(a).value);
+    if (t == 0.0) return any_double(sk_double_new(INFINITY));
+    return any_double(sk_double_new(1.0 / t));
+  ~~~
+  return 0.0
+}
+
+T<int,float,double> sec(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    double c = cos(any_to_double(a).value);
+    if (c == 0.0) return any_double(sk_double_new(INFINITY));
+    return any_double(sk_double_new(1.0 / c));
+  ~~~
+  return 0.0
+}
+
+T<int,float,double> csc(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    double s = sin(any_to_double(a).value);
+    if (s == 0.0) return any_double(sk_double_new(INFINITY));
+    return any_double(sk_double_new(1.0 / s));
+  ~~~
+  return 0.0
+}
+
+/* ============================
+   Trigonometry — inverse
+   ============================ */
+
+T<int,float,double> asin(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    double v = any_to_double(a).value;
+    if (v < -1.0 || v > 1.0) {
+        DomainError* err = malloc(sizeof(DomainError));
+        err->__type = "Error.DomainError";
+        err->msg = sk_string_new("asin() domain is [-1, 1].");
+        sk_throw(err, "<builtin:std/math>", 160, 5);
+    }
+    return any_double(sk_double_new(asin(v)));
+  ~~~
+  return 0.0
+}
+
+T<int,float,double> acos(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    double v = any_to_double(a).value;
+    if (v < -1.0 || v > 1.0) {
+        DomainError* err = malloc(sizeof(DomainError));
+        err->__type = "Error.DomainError";
+        err->msg = sk_string_new("acos() domain is [-1, 1].");
+        sk_throw(err, "<builtin:std/math>", 172, 5);
+    }
+    return any_double(sk_double_new(acos(v)));
+  ~~~
+  return 0.0
+}
+
+T<int,float,double> atan(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    return any_double(sk_double_new(atan(any_to_double(a).value)));
+  ~~~
+  return 0.0
+}
+
+T<int,float,double> acot(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    return any_double(sk_double_new(atan2(1.0, any_to_double(a).value)));
+  ~~~
+  return 0.0
+}
+
+T<int,float,double> asec(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    double v = any_to_double(a).value;
+    if (v > -1.0 && v < 1.0) {
+        DomainError* err = malloc(sizeof(DomainError));
+        err->__type = "Error.DomainError";
+        err->msg = sk_string_new("asec() domain is (-inf, -1] U [1, +inf).");
+        sk_throw(err, "<builtin:std/math>", 196, 5);
+    }
+    return any_double(sk_double_new(acos(1.0 / v)));
+  ~~~
+  return 0.0
+}
+
+T<int,float,double> acsc(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    double v = any_to_double(a).value;
+    if (v > -1.0 && v < 1.0) {
+        DomainError* err = malloc(sizeof(DomainError));
+        err->__type = "Error.DomainError";
+        err->msg = sk_string_new("acsc() domain is (-inf, -1] U [1, +inf).");
+        sk_throw(err, "<builtin:std/math>", 208, 5);
+    }
+    return any_double(sk_double_new(asin(1.0 / v)));
+  ~~~
+  return 0.0
+}
+
+/* ============================
+   atan2 — special (2 args)
+   ============================ */
+
+T<int,float,double> atan2(T<int,float,double> y, T<int,float,double> x) {
+  includeC ~~~
+    if (y.type == 6 || x.type == 6) return any_null();
+    return any_double(sk_double_new(atan2(any_to_double(y).value, any_to_double(x).value)));
+  ~~~
+  return 0.0
+}
+
+/* ============================
+   Hyperbolic
+   ============================ */
+
+T<int,float,double> sinh(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    return any_double(sk_double_new(sinh(any_to_double(a).value)));
+  ~~~
+  return 0.0
+}
+
+T<int,float,double> cosh(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    return any_double(sk_double_new(cosh(any_to_double(a).value)));
+  ~~~
+  return 0.0
+}
+
+T<int,float,double> tanh(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    return any_double(sk_double_new(tanh(any_to_double(a).value)));
+  ~~~
+  return 0.0
+}
+
+T<int,float,double> coth(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    double t = tanh(any_to_double(a).value);
+    if (t == 0.0) return any_double(sk_double_new(INFINITY));
+    return any_double(sk_double_new(1.0 / t));
+  ~~~
+  return 0.0
+}
+
+T<int,float,double> sech(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    return any_double(sk_double_new(1.0 / cosh(any_to_double(a).value)));
+  ~~~
+  return 0.0
+}
+
+T<int,float,double> csch(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    double s = sinh(any_to_double(a).value);
+    if (s == 0.0) return any_double(sk_double_new(INFINITY));
+    return any_double(sk_double_new(1.0 / s));
+  ~~~
+  return 0.0
+}
+
+T<int,float,double> asinh(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    return any_double(sk_double_new(asinh(any_to_double(a).value)));
+  ~~~
+  return 0.0
+}
+
+T<int,float,double> acosh(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    double v = any_to_double(a).value;
+    if (v < 1.0) {
+        DomainError* err = malloc(sizeof(DomainError));
+        err->__type = "Error.DomainError";
+        err->msg = sk_string_new("acosh() domain is [1, +inf).");
+        sk_throw(err, "<builtin:std/math>", 290, 5);
+    }
+    return any_double(sk_double_new(acosh(v)));
+  ~~~
+  return 0.0
+}
+
+T<int,float,double> atanh(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    double v = any_to_double(a).value;
+    if (v <= -1.0 || v >= 1.0) {
+        DomainError* err = malloc(sizeof(DomainError));
+        err->__type = "Error.DomainError";
+        err->msg = sk_string_new("atanh() domain is (-1, 1).");
+        sk_throw(err, "<builtin:std/math>", 303, 5);
+    }
+    return any_double(sk_double_new(atanh(v)));
+  ~~~
+  return 0.0
+}
+
+/* ============================
+   Exp / Log
+   ============================ */
+
+T<int,float,double> exp(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    return any_double(sk_double_new(exp(any_to_double(a).value)));
+  ~~~
+  return 0.0
+}
+
+T<int,float,double> ln(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    double v = any_to_double(a).value;
+    if (v <= 0.0) {
+        DomainError* err = malloc(sizeof(DomainError));
+        err->__type = "Error.DomainError";
+        err->msg = sk_string_new("ln() domain is (0, +inf).");
+        sk_throw(err, "<builtin:std/math>", 325, 5);
+    }
+    return any_double(sk_double_new(log(v)));
+  ~~~
+  return 0.0
+}
+
+T<int,float,double> log10(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    double v = any_to_double(a).value;
+    if (v <= 0.0) {
+        DomainError* err = malloc(sizeof(DomainError));
+        err->__type = "Error.DomainError";
+        err->msg = sk_string_new("log10() domain is (0, +inf).");
+        sk_throw(err, "<builtin:std/math>", 338, 5);
+    }
+    return any_double(sk_double_new(log10(v)));
+  ~~~
+  return 0.0
+}
+
+T<int,float,double> log2(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    double v = any_to_double(a).value;
+    if (v <= 0.0) {
+        DomainError* err = malloc(sizeof(DomainError));
+        err->__type = "Error.DomainError";
+        err->msg = sk_string_new("log2() domain is (0, +inf).");
+        sk_throw(err, "<builtin:std/math>", 351, 5);
+    }
+    return any_double(sk_double_new(log2(v)));
+  ~~~
+  return 0.0
+}
+
+/* ============================
+   Rounding / abs
+   ============================ */
+
+T<int,float,double> abs(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    double v = any_to_double(a).value;
+    return any_double(sk_double_new(fabs(v)));
+  ~~~
+  return 0.0
+}
+
+T<int,float,double> floor(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    return any_double(sk_double_new(floor(any_to_double(a).value)));
+  ~~~
+  return 0.0
+}
+
+T<int,float,double> ceil(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    return any_double(sk_double_new(ceil(any_to_double(a).value)));
+  ~~~
+  return 0.0
+}
+
+T<int,float,double> round(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    return any_double(sk_double_new(round(any_to_double(a).value)));
+  ~~~
+  return 0.0
+}
+
+T<int,float,double> trunc(T<int,float,double> a) {
+  includeC ~~~
+    if (a.type == 6) return any_null();
+    return any_double(sk_double_new(trunc(any_to_double(a).value)));
+  ~~~
+  return 0.0
+}
+
+/* ============================
+   Constants
+   ============================ */
+
+double pi() {
+  includeC ~~~
+    return sk_double_new(3.14159265358979323846);
+  ~~~
+  return 0.0
+}
+
+double e() {
+  includeC ~~~
+    return sk_double_new(2.71828182845904523536);
+  ~~~
+  return 0.0
+}
+
+double inf() {
+  includeC ~~~
+    return sk_double_new(INFINITY);
+  ~~~
+  return 0.0
+}
+
+double nan() {
+  includeC ~~~
+    return sk_double_new(NAN);
+  ~~~
+  return 0.0
 }

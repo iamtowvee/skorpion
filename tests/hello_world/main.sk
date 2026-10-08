@@ -2,9 +2,20 @@ use #std/io
 use std/math
 
 void main(arr args) {
-    sendln(sqrt(16))       // 4.0  — квадратный корень
-    sendln(sqrt(16, 2))    // 4.0  — то же явно
-    sendln(sqrt(27, 3))    // 3.0  — кубический корень
-    sendln(sqrt(-8, 3))    // -2.0 — кубический корень из отрицательного
-    sendln(sqrt(16, 0))    // throw BadRootDegreeError
+  sendln(sqrt(16))          // 4.0
+  sendln(sqrt(27, 3))       // 3.0
+  sendln(sqrt(-8, 3))       // -2.0
+  sendln(sin(0))            // 0.0
+  sendln(cos(0))            // 1.0
+  sendln(tan(0))            // 0.0
+  sendln(cot(pi() / 4))     // ~1.0
+  sendln(sec(0))            // 1.0
+  sendln(csc(pi() / 2))     // 1.0
+  sendln(atan2(1, 1))       // ~0.785
+  sendln(ln(e()))           // 1.0
+  sendln(log10(1000))       // 3.0
+  sendln(abs(-15))          // 15.0
+  sendln(floor(2.7))        // 2.0
+  sendln(ceil(2.3))         // 3.0
+  sendln(round(2.5))        // 3.0
 }

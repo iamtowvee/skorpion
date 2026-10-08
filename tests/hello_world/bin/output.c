@@ -620,6 +620,11 @@ typedef struct BadRootDegreeError {
     sk_string msg;
 } BadRootDegreeError;
 
+typedef struct DomainError {
+    const char* __type;
+    sk_string msg;
+} DomainError;
+
 typedef struct VoidCasingError {
     const char* __type;
     sk_string msg;
@@ -926,6 +931,41 @@ sk_any __sk__pow(sk_any a, sk_any b);
 sk_any __sk__invert(sk_any a);
 sk_any __sk__unsign(sk_any a);
 sk_any __sk__sqrt(sk_any a, sk_int n);
+sk_any __sk__sin(sk_any a);
+sk_any __sk__cos(sk_any a);
+sk_any __sk__tan(sk_any a);
+sk_any __sk__cot(sk_any a);
+sk_any __sk__sec(sk_any a);
+sk_any __sk__csc(sk_any a);
+sk_any __sk__asin(sk_any a);
+sk_any __sk__acos(sk_any a);
+sk_any __sk__atan(sk_any a);
+sk_any __sk__acot(sk_any a);
+sk_any __sk__asec(sk_any a);
+sk_any __sk__acsc(sk_any a);
+sk_any __sk__atan2(sk_any y, sk_any x);
+sk_any __sk__sinh(sk_any a);
+sk_any __sk__cosh(sk_any a);
+sk_any __sk__tanh(sk_any a);
+sk_any __sk__coth(sk_any a);
+sk_any __sk__sech(sk_any a);
+sk_any __sk__csch(sk_any a);
+sk_any __sk__asinh(sk_any a);
+sk_any __sk__acosh(sk_any a);
+sk_any __sk__atanh(sk_any a);
+sk_any __sk__exp(sk_any a);
+sk_any __sk__ln(sk_any a);
+sk_any __sk__log10(sk_any a);
+sk_any __sk__log2(sk_any a);
+sk_any __sk__abs(sk_any a);
+sk_any __sk__floor(sk_any a);
+sk_any __sk__ceil(sk_any a);
+sk_any __sk__round(sk_any a);
+sk_any __sk__trunc(sk_any a);
+sk_double __sk__pi(void);
+sk_double __sk__e(void);
+sk_double __sk__inf(void);
+sk_double __sk__nan(void);
 
 int main(int argc, char** argv) {
     __sk__argc = argc;
@@ -949,41 +989,162 @@ int main(int argc, char** argv) {
     sk_any t8;
     sk_any t9;
     sk_any t10;
+    sk_any t11;
+    sk_any t12;
+    sk_double t13;
+    sk_double t14;
+    sk_double t15;
+    sk_any t16;
+    sk_any t17;
+    sk_any t18;
+    sk_any t19;
+    sk_double t20;
+    sk_double t21;
+    sk_double t22;
+    sk_any t23;
+    sk_any t24;
+    sk_any t25;
+    sk_any t26;
+    sk_any t27;
+    sk_double t28;
+    sk_any t29;
+    sk_any t30;
+    sk_any t31;
+    sk_any t32;
+    sk_any t33;
+    sk_any t34;
+    sk_any t35;
+    sk_any t36;
+    sk_any t37;
+    sk_any t38;
+    sk_any t39;
+    sk_any t40;
 
     t1 = any_int(sk_int_new(16));
-    sk_call_push("main.sk", 5, 12);
+    sk_call_push("main.sk", 5, 10);
     t2 = __sk__sqrt(t1, sk_int_new(2));
     sk_call_pop();
-    sk_call_push("main.sk", 5, 5);
+    sk_call_push("main.sk", 5, 3);
     __sk__sendln(t2);
     sk_call_pop();
-    t3 = any_int(sk_int_new(16));
-    sk_call_push("main.sk", 6, 12);
-    t4 = __sk__sqrt(t3, sk_int_new(2));
+    t3 = any_int(sk_int_new(27));
+    sk_call_push("main.sk", 6, 10);
+    t4 = __sk__sqrt(t3, sk_int_new(3));
     sk_call_pop();
-    sk_call_push("main.sk", 6, 5);
+    sk_call_push("main.sk", 6, 3);
     __sk__sendln(t4);
     sk_call_pop();
-    t5 = any_int(sk_int_new(27));
-    sk_call_push("main.sk", 7, 12);
+    t5 = any_int(sk_int_new(-8));
+    sk_call_push("main.sk", 7, 10);
     t6 = __sk__sqrt(t5, sk_int_new(3));
     sk_call_pop();
-    sk_call_push("main.sk", 7, 5);
+    sk_call_push("main.sk", 7, 3);
     __sk__sendln(t6);
     sk_call_pop();
-    t7 = any_int(sk_int_new(-8));
-    sk_call_push("main.sk", 8, 12);
-    t8 = __sk__sqrt(t7, sk_int_new(3));
+    t7 = any_int(sk_int_new(0));
+    sk_call_push("main.sk", 8, 10);
+    t8 = __sk__sin(t7);
     sk_call_pop();
-    sk_call_push("main.sk", 8, 5);
+    sk_call_push("main.sk", 8, 3);
     __sk__sendln(t8);
     sk_call_pop();
-    t9 = any_int(sk_int_new(16));
-    sk_call_push("main.sk", 9, 12);
-    t10 = __sk__sqrt(t9, sk_int_new(0));
+    t9 = any_int(sk_int_new(0));
+    sk_call_push("main.sk", 9, 10);
+    t10 = __sk__cos(t9);
     sk_call_pop();
-    sk_call_push("main.sk", 9, 5);
+    sk_call_push("main.sk", 9, 3);
     __sk__sendln(t10);
+    sk_call_pop();
+    t11 = any_int(sk_int_new(0));
+    sk_call_push("main.sk", 10, 10);
+    t12 = __sk__tan(t11);
+    sk_call_pop();
+    sk_call_push("main.sk", 10, 3);
+    __sk__sendln(t12);
+    sk_call_pop();
+    sk_call_push("main.sk", 11, 14);
+    t13 = __sk__pi();
+    sk_call_pop();
+    t14 = sk_double_new((double)sk_int_new(4).value);
+    t15 = sk_double_div(t13, t14);
+    t16 = any_double(t15);
+    sk_call_push("main.sk", 11, 10);
+    t17 = __sk__cot(t16);
+    sk_call_pop();
+    sk_call_push("main.sk", 11, 3);
+    __sk__sendln(t17);
+    sk_call_pop();
+    t18 = any_int(sk_int_new(0));
+    sk_call_push("main.sk", 12, 10);
+    t19 = __sk__sec(t18);
+    sk_call_pop();
+    sk_call_push("main.sk", 12, 3);
+    __sk__sendln(t19);
+    sk_call_pop();
+    sk_call_push("main.sk", 13, 14);
+    t20 = __sk__pi();
+    sk_call_pop();
+    t21 = sk_double_new((double)sk_int_new(2).value);
+    t22 = sk_double_div(t20, t21);
+    t23 = any_double(t22);
+    sk_call_push("main.sk", 13, 10);
+    t24 = __sk__csc(t23);
+    sk_call_pop();
+    sk_call_push("main.sk", 13, 3);
+    __sk__sendln(t24);
+    sk_call_pop();
+    t25 = any_int(sk_int_new(1));
+    t26 = any_int(sk_int_new(1));
+    sk_call_push("main.sk", 14, 10);
+    t27 = __sk__atan2(t25, t26);
+    sk_call_pop();
+    sk_call_push("main.sk", 14, 3);
+    __sk__sendln(t27);
+    sk_call_pop();
+    sk_call_push("main.sk", 15, 13);
+    t28 = __sk__e();
+    sk_call_pop();
+    t29 = any_double(t28);
+    sk_call_push("main.sk", 15, 10);
+    t30 = __sk__ln(t29);
+    sk_call_pop();
+    sk_call_push("main.sk", 15, 3);
+    __sk__sendln(t30);
+    sk_call_pop();
+    t31 = any_int(sk_int_new(1000));
+    sk_call_push("main.sk", 16, 10);
+    t32 = __sk__log10(t31);
+    sk_call_pop();
+    sk_call_push("main.sk", 16, 3);
+    __sk__sendln(t32);
+    sk_call_pop();
+    t33 = any_int(sk_int_new(-15));
+    sk_call_push("main.sk", 17, 10);
+    t34 = __sk__abs(t33);
+    sk_call_pop();
+    sk_call_push("main.sk", 17, 3);
+    __sk__sendln(t34);
+    sk_call_pop();
+    t35 = any_double(sk_double_new(2.7));
+    sk_call_push("main.sk", 18, 10);
+    t36 = __sk__floor(t35);
+    sk_call_pop();
+    sk_call_push("main.sk", 18, 3);
+    __sk__sendln(t36);
+    sk_call_pop();
+    t37 = any_double(sk_double_new(2.3));
+    sk_call_push("main.sk", 19, 10);
+    t38 = __sk__ceil(t37);
+    sk_call_pop();
+    sk_call_push("main.sk", 19, 3);
+    __sk__sendln(t38);
+    sk_call_pop();
+    t39 = any_double(sk_double_new(2.5));
+    sk_call_push("main.sk", 20, 10);
+    t40 = __sk__round(t39);
+    sk_call_pop();
+    sk_call_push("main.sk", 20, 3);
+    __sk__sendln(t40);
     sk_call_pop();
     return 0;
 }
@@ -1011,37 +1172,37 @@ sk_string __sk__std_io_input(sk_string prompt) {
 }
 
 void __sk__sendln(sk_any msg) {
-    sk_string t11;
-    sk_string t12;
+    sk_string t41;
+    sk_string t42;
 
-    t11 = any_to_string(msg);
-    t12 = sk_string_concat(t11, sk_string_new("\n"));
-    free(t11.value);
+    t41 = any_to_string(msg);
+    t42 = sk_string_concat(t41, sk_string_new("\n"));
+    free(t41.value);
     sk_call_push("<builtin:std/io>", 34, 5);
-    __sk__std_io_send(t12);
+    __sk__std_io_send(t42);
     sk_call_pop();
-    free(t12.value);
+    free(t42.value);
     return;
 }
 
 void __sk__sendf(sk_any msg) {
-    sk_string t13;
+    sk_string t43;
 
-    t13 = any_to_string(msg);
+    t43 = any_to_string(msg);
     sk_call_push("<builtin:std/io>", 38, 5);
-    __sk__std_io_send(t13);
+    __sk__std_io_send(t43);
     sk_call_pop();
-    free(t13.value);
+    free(t43.value);
     return;
 }
 
 sk_string __sk__input(sk_string prefix) {
-    sk_string t14;
+    sk_string t44;
 
     sk_call_push("<builtin:std/io>", 42, 12);
-    t14 = __sk__std_io_input(prefix);
+    t44 = __sk__std_io_input(prefix);
     sk_call_pop();
-    return t14;
+    return t44;
 }
 
 sk_int __sk__len(sk_string line) {
@@ -1151,31 +1312,31 @@ sk_bool __sk__endWith(sk_string line, sk_string pattern) {
 }
 
 void __sk__nullProc(sk_any a, sk_any b, sk_string op) {
-    sk_bool t15;
-    sk_bool t16;
-    sk_bool t17;
+    sk_bool t45;
+    sk_bool t46;
+    sk_bool t47;
     sk_string errline;
-    sk_string t18;
-    sk_string t19;
-    ImpossibleOperationOverNullError* t20;
+    sk_string t48;
+    sk_string t49;
+    ImpossibleOperationOverNullError* t50;
 
-    t15 = sk_bool_new(a.type == 6);
-    t16 = sk_bool_new(b.type == 6);
-    t17 = sk_bool_or(t15, t16);
-    if (t17.value) {
+    t45 = sk_bool_new(a.type == 6);
+    t46 = sk_bool_new(b.type == 6);
+    t47 = sk_bool_or(t45, t46);
+    if (t47.value) {
         goto L1;
     } else {
         goto L2;
     }
 L1:
-    t18 = sk_string_concat(sk_string_new("Cannot use 'null' in '"), op);
-    t19 = sk_string_concat(t18, sk_string_new("'"));
-    free(t18.value);
-    errline = t19;
-t20 = malloc(sizeof(ImpossibleOperationOverNullError));
-t20->__type = "Error.ImpossibleOperationOverNullError";
-t20->msg = errline;
-    sk_throw(t20, "<builtin:std/math>", 18, 5);
+    t48 = sk_string_concat(sk_string_new("Cannot use 'null' in '"), op);
+    t49 = sk_string_concat(t48, sk_string_new("'"));
+    free(t48.value);
+    errline = t49;
+t50 = malloc(sizeof(ImpossibleOperationOverNullError));
+t50->__type = "Error.ImpossibleOperationOverNullError";
+t50->msg = errline;
+    sk_throw(t50, "<builtin:std/math>", 23, 5);
     goto L3;
 L2:
 L3:
@@ -1183,27 +1344,27 @@ L3:
 }
 
 void __sk__nullProcOne(sk_any a, sk_string op) {
-    sk_bool t21;
+    sk_bool t51;
     sk_string errline;
-    sk_string t22;
-    sk_string t23;
-    ImpossibleOperationOverNullError* t24;
+    sk_string t52;
+    sk_string t53;
+    ImpossibleOperationOverNullError* t54;
 
-    t21 = sk_bool_new(a.type == 6);
-    if (t21.value) {
+    t51 = sk_bool_new(a.type == 6);
+    if (t51.value) {
         goto L4;
     } else {
         goto L5;
     }
 L4:
-    t22 = sk_string_concat(sk_string_new("Cannot use 'null' in '"), op);
-    t23 = sk_string_concat(t22, sk_string_new("'"));
-    free(t22.value);
-    errline = t23;
-t24 = malloc(sizeof(ImpossibleOperationOverNullError));
-t24->__type = "Error.ImpossibleOperationOverNullError";
-t24->msg = errline;
-    sk_throw(t24, "<builtin:std/math>", 25, 5);
+    t52 = sk_string_concat(sk_string_new("Cannot use 'null' in '"), op);
+    t53 = sk_string_concat(t52, sk_string_new("'"));
+    free(t52.value);
+    errline = t53;
+t54 = malloc(sizeof(ImpossibleOperationOverNullError));
+t54->__type = "Error.ImpossibleOperationOverNullError";
+t54->msg = errline;
+    sk_throw(t54, "<builtin:std/math>", 30, 5);
     goto L6;
 L5:
 L6:
@@ -1211,113 +1372,113 @@ L6:
 }
 
 sk_any __sk__add(sk_any a, sk_any b) {
-    sk_any t25;
+    sk_any t55;
 
-    sk_call_push("<builtin:std/math>", 30, 3);
+    sk_call_push("<builtin:std/math>", 39, 3);
     __sk__nullProc(a, b, sk_string_new("add()"));
     sk_call_pop();
-    t25 = sk_any_add(a, b);
-    return t25;
+    t55 = sk_any_add(a, b);
+    return t55;
 }
 
 sk_any __sk__minus(sk_any a, sk_any b) {
-    sk_any t26;
+    sk_any t56;
 
-    sk_call_push("<builtin:std/math>", 35, 3);
+    sk_call_push("<builtin:std/math>", 44, 3);
     __sk__nullProc(a, b, sk_string_new("minus()"));
     sk_call_pop();
-    t26 = sk_any_sub(a, b);
-    return t26;
+    t56 = sk_any_sub(a, b);
+    return t56;
 }
 
 sk_any __sk__mul(sk_any a, sk_any b) {
-    sk_any t27;
+    sk_any t57;
 
-    sk_call_push("<builtin:std/math>", 40, 3);
+    sk_call_push("<builtin:std/math>", 49, 3);
     __sk__nullProc(a, b, sk_string_new("mul()"));
     sk_call_pop();
-    t27 = sk_any_mul(a, b);
-    return t27;
+    t57 = sk_any_mul(a, b);
+    return t57;
 }
 
 sk_any __sk__div(sk_any a, sk_any b) {
-    sk_any t28;
-    sk_bool t29;
-    sk_any t30;
-    sk_bool t31;
-    sk_bool t32;
-    sk_any t33;
-    sk_bool t34;
-    sk_bool t35;
-    ZeroDivError* t36;
-    sk_any t37;
+    sk_any t58;
+    sk_bool t59;
+    sk_any t60;
+    sk_bool t61;
+    sk_bool t62;
+    sk_any t63;
+    sk_bool t64;
+    sk_bool t65;
+    ZeroDivError* t66;
+    sk_any t67;
 
-    sk_call_push("<builtin:std/math>", 45, 3);
+    sk_call_push("<builtin:std/math>", 54, 3);
     __sk__nullProc(a, b, sk_string_new("div()"));
     sk_call_pop();
-    t28 = any_int(sk_int_new(0));
-    t29 = sk_any_eq(b, t28);
-    t30 = any_double(sk_double_new(0.0));
-    t31 = sk_any_eq(b, t30);
-    t32 = sk_bool_or(t29, t31);
-    t33 = any_float(sk_float_new(0.0f));
-    t34 = sk_any_eq(b, t33);
-    t35 = sk_bool_or(t32, t34);
-    if (t35.value) {
+    t58 = any_int(sk_int_new(0));
+    t59 = sk_any_eq(b, t58);
+    t60 = any_double(sk_double_new(0.0));
+    t61 = sk_any_eq(b, t60);
+    t62 = sk_bool_or(t59, t61);
+    t63 = any_float(sk_float_new(0.0f));
+    t64 = sk_any_eq(b, t63);
+    t65 = sk_bool_or(t62, t64);
+    if (t65.value) {
         goto L7;
     } else {
         goto L8;
     }
 L7:
-t36 = malloc(sizeof(ZeroDivError));
-t36->__type = "Error.ZeroDivError";
-t36->msg = sk_string_new("You can't divide by zero.");
-    sk_throw(t36, "<builtin:std/math>", 47, 5);
+t66 = malloc(sizeof(ZeroDivError));
+t66->__type = "Error.ZeroDivError";
+t66->msg = sk_string_new("You can't divide by zero.");
+    sk_throw(t66, "<builtin:std/math>", 56, 5);
     goto L9;
 L8:
 L9:
-    t37 = sk_any_div(a, b);
-    return t37;
+    t67 = sk_any_div(a, b);
+    return t67;
 }
 
 sk_any __sk__pow(sk_any a, sk_any b) {
-    sk_any t38;
+    sk_any t68;
 
-    sk_call_push("<builtin:std/math>", 53, 3);
+    sk_call_push("<builtin:std/math>", 62, 3);
     __sk__nullProc(a, b, sk_string_new("pow()"));
     sk_call_pop();
-    t38 = sk_any_pow(a, b);
-    return t38;
+    t68 = sk_any_pow(a, b);
+    return t68;
 }
 
 sk_any __sk__invert(sk_any a) {
-    sk_any t39;
+    sk_any t69;
 
-    sk_call_push("<builtin:std/math>", 58, 3);
+    sk_call_push("<builtin:std/math>", 67, 3);
     __sk__nullProcOne(a, sk_string_new("invert()"));
     sk_call_pop();
-    t39 = sk_any_neg(a);
-    return t39;
+    t69 = sk_any_neg(a);
+    return t69;
 }
 
 sk_any __sk__unsign(sk_any a) {
-    sk_any t40;
-    sk_bool t41;
-    sk_any t42;
+    sk_any t70;
+    sk_bool t71;
+    sk_any t72;
 
-    sk_call_push("<builtin:std/math>", 63, 3);
+    sk_call_push("<builtin:std/math>", 72, 3);
     __sk__nullProcOne(a, sk_string_new("unsign()"));
     sk_call_pop();
-    t40 = any_int(sk_int_new(0));
-    t41 = sk_any_lt(a, t40);
-    if (t41.value) {
+    t70 = any_int(sk_int_new(0));
+    t71 = sk_any_lt(a, t70);
+    if (t71.value) {
         goto L10;
     } else {
         goto L11;
     }
 L10:
-    t42 = sk_any_neg(a);
-    return t42;
+    t72 = sk_any_neg(a);
+    return t72;
     goto L12;
 L11:
 L12:
@@ -1325,103 +1486,400 @@ L12:
 }
 
 sk_any __sk__sqrt(sk_any a, sk_int n) {
-    sk_bool t43;
-    BadRootDegreeError* t44;
-    sk_string t45;
-    sk_string t46;
-    sk_any t47;
-    sk_bool t48;
-    sk_int t49;
-    sk_bool t50;
-    sk_string errline;
-    sk_string t51;
-    sk_string t52;
-    sk_string t53;
-    sk_any t54;
-    sk_any t55;
-    sk_string t56;
-    sk_string t57;
-    SqrtFromNumLessZeroError* t58;
-    sk_any t59;
-    sk_double t60;
-    sk_double t61;
-    sk_any t62;
-    sk_any t63;
-    sk_any t64;
-    sk_double t65;
-    sk_double t66;
-    sk_any t67;
-    sk_any t68;
+    sk_any t73;
 
-    sk_call_push("<builtin:std/math>", 71, 3);
-    __sk__nullProcOne(a, sk_string_new("sqrt()"));
-    sk_call_pop();
-    t43 = sk_int_le(n, sk_int_new(0));
-    if (t43.value) {
-        goto L13;
-    } else {
-        goto L14;
-    }
-L13:
-t44 = malloc(sizeof(BadRootDegreeError));
-t44->__type = "Error.BadRootDegreeError";
-    t45 = sk_int_to_string(n);
-    t46 = sk_string_concat(sk_string_new("Root degree must be positive, got "), t45);
-    free(t45.value);
-t44->msg = t46;
-    sk_throw(t44, "<builtin:std/math>", 74, 5);
-    goto L15;
-L14:
-L15:
-    t47 = any_int(sk_int_new(0));
-    t48 = sk_any_lt(a, t47);
-    if (t48.value) {
-        goto L16;
-    } else {
-        goto L17;
-    }
-L16:
-    t49 = sk_int_mod(n, sk_int_new(2));
-    t50 = sk_int_eq(t49, sk_int_new(0));
-    if (t50.value) {
-        goto L18;
-    } else {
-        goto L19;
-    }
-L18:
-    t51 = sk_int_to_string(n);
-    t52 = sk_string_concat(sk_string_new("It is impossible to get the "), t51);
-    free(t51.value);
-    t53 = sk_string_concat(t52, sk_string_new("-th root of '"));
-    free(t52.value);
-    t54 = any_string(t53);
-    free(t53.value);
-    t55 = sk_any_add(t54, a);
-    t56 = any_to_string(t55);
-    t57 = sk_string_concat(t56, sk_string_new("'"));
-    free(t56.value);
-    errline = t57;
-t58 = malloc(sizeof(SqrtFromNumLessZeroError));
-t58->__type = "Error.SqrtFromNumLessZeroError";
-t58->msg = errline;
-    sk_throw(t58, "<builtin:std/math>", 80, 7);
-    goto L20;
-L19:
-L20:
-    t59 = sk_any_neg(a);
-    t60 = sk_double_new((double)n.value);
-    t61 = sk_double_div(sk_double_new(1.0), t60);
-    t62 = any_double(t61);
-    t63 = sk_any_pow(t59, t62);
-    t64 = sk_any_neg(t63);
-    return t64;
-    goto L21;
-L17:
-L21:
-    t65 = sk_double_new((double)n.value);
-    t66 = sk_double_div(sk_double_new(1.0), t65);
-    t67 = any_double(t66);
-    t68 = sk_any_pow(a, t67);
-    return t68;
+    if (a.type == 6) return any_null();
+        if (n.value <= 0) {
+            BadRootDegreeError* err = malloc(sizeof(BadRootDegreeError));
+            err->__type = "Error.BadRootDegreeError";
+            err->msg = sk_string_new("Root degree must be positive.");
+            sk_throw(err, "<builtin:std/math>", 90, 5);
+        }
+        double av = any_to_double(a).value;
+        if (av < 0.0) {
+            if (n.value % 2 == 0) {
+                SqrtFromNumLessZeroError* err = malloc(sizeof(SqrtFromNumLessZeroError));
+                err->__type = "Error.SqrtFromNumLessZeroError";
+                err->msg = sk_string_new("It is impossible to get the even root of a negative number.");
+                sk_throw(err, "<builtin:std/math>", 97, 5);
+            }
+            return any_double(sk_double_new(-pow(-av, 1.0 / (double)n.value)));
+        }
+        return any_double(sk_double_new(pow(av, 1.0 / (double)n.value)));
+    t73 = any_double(sk_double_new(0.0));
+    return t73;
+}
+
+sk_any __sk__sin(sk_any a) {
+    sk_any t74;
+
+    if (a.type == 6) return any_null();
+        return any_double(sk_double_new(sin(any_to_double(a).value)));
+    t74 = any_double(sk_double_new(0.0));
+    return t74;
+}
+
+sk_any __sk__cos(sk_any a) {
+    sk_any t75;
+
+    if (a.type == 6) return any_null();
+        return any_double(sk_double_new(cos(any_to_double(a).value)));
+    t75 = any_double(sk_double_new(0.0));
+    return t75;
+}
+
+sk_any __sk__tan(sk_any a) {
+    sk_any t76;
+
+    if (a.type == 6) return any_null();
+        return any_double(sk_double_new(tan(any_to_double(a).value)));
+    t76 = any_double(sk_double_new(0.0));
+    return t76;
+}
+
+sk_any __sk__cot(sk_any a) {
+    sk_any t77;
+
+    if (a.type == 6) return any_null();
+        double t = tan(any_to_double(a).value);
+        if (t == 0.0) return any_double(sk_double_new(INFINITY));
+        return any_double(sk_double_new(1.0 / t));
+    t77 = any_double(sk_double_new(0.0));
+    return t77;
+}
+
+sk_any __sk__sec(sk_any a) {
+    sk_any t78;
+
+    if (a.type == 6) return any_null();
+        double c = cos(any_to_double(a).value);
+        if (c == 0.0) return any_double(sk_double_new(INFINITY));
+        return any_double(sk_double_new(1.0 / c));
+    t78 = any_double(sk_double_new(0.0));
+    return t78;
+}
+
+sk_any __sk__csc(sk_any a) {
+    sk_any t79;
+
+    if (a.type == 6) return any_null();
+        double s = sin(any_to_double(a).value);
+        if (s == 0.0) return any_double(sk_double_new(INFINITY));
+        return any_double(sk_double_new(1.0 / s));
+    t79 = any_double(sk_double_new(0.0));
+    return t79;
+}
+
+sk_any __sk__asin(sk_any a) {
+    sk_any t80;
+
+    if (a.type == 6) return any_null();
+        double v = any_to_double(a).value;
+        if (v < -1.0 || v > 1.0) {
+            DomainError* err = malloc(sizeof(DomainError));
+            err->__type = "Error.DomainError";
+            err->msg = sk_string_new("asin() domain is [-1, 1].");
+            sk_throw(err, "<builtin:std/math>", 160, 5);
+        }
+        return any_double(sk_double_new(asin(v)));
+    t80 = any_double(sk_double_new(0.0));
+    return t80;
+}
+
+sk_any __sk__acos(sk_any a) {
+    sk_any t81;
+
+    if (a.type == 6) return any_null();
+        double v = any_to_double(a).value;
+        if (v < -1.0 || v > 1.0) {
+            DomainError* err = malloc(sizeof(DomainError));
+            err->__type = "Error.DomainError";
+            err->msg = sk_string_new("acos() domain is [-1, 1].");
+            sk_throw(err, "<builtin:std/math>", 172, 5);
+        }
+        return any_double(sk_double_new(acos(v)));
+    t81 = any_double(sk_double_new(0.0));
+    return t81;
+}
+
+sk_any __sk__atan(sk_any a) {
+    sk_any t82;
+
+    if (a.type == 6) return any_null();
+        return any_double(sk_double_new(atan(any_to_double(a).value)));
+    t82 = any_double(sk_double_new(0.0));
+    return t82;
+}
+
+sk_any __sk__acot(sk_any a) {
+    sk_any t83;
+
+    if (a.type == 6) return any_null();
+        return any_double(sk_double_new(atan2(1.0, any_to_double(a).value)));
+    t83 = any_double(sk_double_new(0.0));
+    return t83;
+}
+
+sk_any __sk__asec(sk_any a) {
+    sk_any t84;
+
+    if (a.type == 6) return any_null();
+        double v = any_to_double(a).value;
+        if (v > -1.0 && v < 1.0) {
+            DomainError* err = malloc(sizeof(DomainError));
+            err->__type = "Error.DomainError";
+            err->msg = sk_string_new("asec() domain is (-inf, -1] U [1, +inf).");
+            sk_throw(err, "<builtin:std/math>", 196, 5);
+        }
+        return any_double(sk_double_new(acos(1.0 / v)));
+    t84 = any_double(sk_double_new(0.0));
+    return t84;
+}
+
+sk_any __sk__acsc(sk_any a) {
+    sk_any t85;
+
+    if (a.type == 6) return any_null();
+        double v = any_to_double(a).value;
+        if (v > -1.0 && v < 1.0) {
+            DomainError* err = malloc(sizeof(DomainError));
+            err->__type = "Error.DomainError";
+            err->msg = sk_string_new("acsc() domain is (-inf, -1] U [1, +inf).");
+            sk_throw(err, "<builtin:std/math>", 208, 5);
+        }
+        return any_double(sk_double_new(asin(1.0 / v)));
+    t85 = any_double(sk_double_new(0.0));
+    return t85;
+}
+
+sk_any __sk__atan2(sk_any y, sk_any x) {
+    sk_any t86;
+
+    if (y.type == 6 || x.type == 6) return any_null();
+        return any_double(sk_double_new(atan2(any_to_double(y).value, any_to_double(x).value)));
+    t86 = any_double(sk_double_new(0.0));
+    return t86;
+}
+
+sk_any __sk__sinh(sk_any a) {
+    sk_any t87;
+
+    if (a.type == 6) return any_null();
+        return any_double(sk_double_new(sinh(any_to_double(a).value)));
+    t87 = any_double(sk_double_new(0.0));
+    return t87;
+}
+
+sk_any __sk__cosh(sk_any a) {
+    sk_any t88;
+
+    if (a.type == 6) return any_null();
+        return any_double(sk_double_new(cosh(any_to_double(a).value)));
+    t88 = any_double(sk_double_new(0.0));
+    return t88;
+}
+
+sk_any __sk__tanh(sk_any a) {
+    sk_any t89;
+
+    if (a.type == 6) return any_null();
+        return any_double(sk_double_new(tanh(any_to_double(a).value)));
+    t89 = any_double(sk_double_new(0.0));
+    return t89;
+}
+
+sk_any __sk__coth(sk_any a) {
+    sk_any t90;
+
+    if (a.type == 6) return any_null();
+        double t = tanh(any_to_double(a).value);
+        if (t == 0.0) return any_double(sk_double_new(INFINITY));
+        return any_double(sk_double_new(1.0 / t));
+    t90 = any_double(sk_double_new(0.0));
+    return t90;
+}
+
+sk_any __sk__sech(sk_any a) {
+    sk_any t91;
+
+    if (a.type == 6) return any_null();
+        return any_double(sk_double_new(1.0 / cosh(any_to_double(a).value)));
+    t91 = any_double(sk_double_new(0.0));
+    return t91;
+}
+
+sk_any __sk__csch(sk_any a) {
+    sk_any t92;
+
+    if (a.type == 6) return any_null();
+        double s = sinh(any_to_double(a).value);
+        if (s == 0.0) return any_double(sk_double_new(INFINITY));
+        return any_double(sk_double_new(1.0 / s));
+    t92 = any_double(sk_double_new(0.0));
+    return t92;
+}
+
+sk_any __sk__asinh(sk_any a) {
+    sk_any t93;
+
+    if (a.type == 6) return any_null();
+        return any_double(sk_double_new(asinh(any_to_double(a).value)));
+    t93 = any_double(sk_double_new(0.0));
+    return t93;
+}
+
+sk_any __sk__acosh(sk_any a) {
+    sk_any t94;
+
+    if (a.type == 6) return any_null();
+        double v = any_to_double(a).value;
+        if (v < 1.0) {
+            DomainError* err = malloc(sizeof(DomainError));
+            err->__type = "Error.DomainError";
+            err->msg = sk_string_new("acosh() domain is [1, +inf).");
+            sk_throw(err, "<builtin:std/math>", 290, 5);
+        }
+        return any_double(sk_double_new(acosh(v)));
+    t94 = any_double(sk_double_new(0.0));
+    return t94;
+}
+
+sk_any __sk__atanh(sk_any a) {
+    sk_any t95;
+
+    if (a.type == 6) return any_null();
+        double v = any_to_double(a).value;
+        if (v <= -1.0 || v >= 1.0) {
+            DomainError* err = malloc(sizeof(DomainError));
+            err->__type = "Error.DomainError";
+            err->msg = sk_string_new("atanh() domain is (-1, 1).");
+            sk_throw(err, "<builtin:std/math>", 303, 5);
+        }
+        return any_double(sk_double_new(atanh(v)));
+    t95 = any_double(sk_double_new(0.0));
+    return t95;
+}
+
+sk_any __sk__exp(sk_any a) {
+    sk_any t96;
+
+    if (a.type == 6) return any_null();
+        return any_double(sk_double_new(exp(any_to_double(a).value)));
+    t96 = any_double(sk_double_new(0.0));
+    return t96;
+}
+
+sk_any __sk__ln(sk_any a) {
+    sk_any t97;
+
+    if (a.type == 6) return any_null();
+        double v = any_to_double(a).value;
+        if (v <= 0.0) {
+            DomainError* err = malloc(sizeof(DomainError));
+            err->__type = "Error.DomainError";
+            err->msg = sk_string_new("ln() domain is (0, +inf).");
+            sk_throw(err, "<builtin:std/math>", 325, 5);
+        }
+        return any_double(sk_double_new(log(v)));
+    t97 = any_double(sk_double_new(0.0));
+    return t97;
+}
+
+sk_any __sk__log10(sk_any a) {
+    sk_any t98;
+
+    if (a.type == 6) return any_null();
+        double v = any_to_double(a).value;
+        if (v <= 0.0) {
+            DomainError* err = malloc(sizeof(DomainError));
+            err->__type = "Error.DomainError";
+            err->msg = sk_string_new("log10() domain is (0, +inf).");
+            sk_throw(err, "<builtin:std/math>", 338, 5);
+        }
+        return any_double(sk_double_new(log10(v)));
+    t98 = any_double(sk_double_new(0.0));
+    return t98;
+}
+
+sk_any __sk__log2(sk_any a) {
+    sk_any t99;
+
+    if (a.type == 6) return any_null();
+        double v = any_to_double(a).value;
+        if (v <= 0.0) {
+            DomainError* err = malloc(sizeof(DomainError));
+            err->__type = "Error.DomainError";
+            err->msg = sk_string_new("log2() domain is (0, +inf).");
+            sk_throw(err, "<builtin:std/math>", 351, 5);
+        }
+        return any_double(sk_double_new(log2(v)));
+    t99 = any_double(sk_double_new(0.0));
+    return t99;
+}
+
+sk_any __sk__abs(sk_any a) {
+    sk_any t100;
+
+    if (a.type == 6) return any_null();
+        double v = any_to_double(a).value;
+        return any_double(sk_double_new(fabs(v)));
+    t100 = any_double(sk_double_new(0.0));
+    return t100;
+}
+
+sk_any __sk__floor(sk_any a) {
+    sk_any t101;
+
+    if (a.type == 6) return any_null();
+        return any_double(sk_double_new(floor(any_to_double(a).value)));
+    t101 = any_double(sk_double_new(0.0));
+    return t101;
+}
+
+sk_any __sk__ceil(sk_any a) {
+    sk_any t102;
+
+    if (a.type == 6) return any_null();
+        return any_double(sk_double_new(ceil(any_to_double(a).value)));
+    t102 = any_double(sk_double_new(0.0));
+    return t102;
+}
+
+sk_any __sk__round(sk_any a) {
+    sk_any t103;
+
+    if (a.type == 6) return any_null();
+        return any_double(sk_double_new(round(any_to_double(a).value)));
+    t103 = any_double(sk_double_new(0.0));
+    return t103;
+}
+
+sk_any __sk__trunc(sk_any a) {
+    sk_any t104;
+
+    if (a.type == 6) return any_null();
+        return any_double(sk_double_new(trunc(any_to_double(a).value)));
+    t104 = any_double(sk_double_new(0.0));
+    return t104;
+}
+
+sk_double __sk__pi(void) {
+    return sk_double_new(3.14159265358979323846);
+    return sk_double_new(0.0);
+}
+
+sk_double __sk__e(void) {
+    return sk_double_new(2.71828182845904523536);
+    return sk_double_new(0.0);
+}
+
+sk_double __sk__inf(void) {
+    return sk_double_new(INFINITY);
+    return sk_double_new(0.0);
+}
+
+sk_double __sk__nan(void) {
+    return sk_double_new(NAN);
+    return sk_double_new(0.0);
 }
 
