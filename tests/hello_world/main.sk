@@ -1,6 +1,4 @@
 use #std/io
+use std/terminal
 
-void main(arr args) {
-  sendln(67.to_char())
-  sendln(Unicode["11FFFF"])
-}
+void main(arr args) { sendln("Привет"); terminal.setUTF8(); sendln("Привет"); }

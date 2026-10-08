@@ -725,6 +725,121 @@ void sk_array_deep_free(sk_array* a) {
     free(a);
 }
 
+typedef struct SkError {
+    const char* __type;
+    sk_string msg;
+} SkError;
+
+typedef struct TerminalError {
+    const char* __type;
+    sk_string msg;
+} TerminalError;
+
+typedef struct NullCommandError {
+    const char* __type;
+    sk_string msg;
+} NullCommandError;
+
+typedef struct NullTextError {
+    const char* __type;
+    sk_string msg;
+} NullTextError;
+
+typedef struct CommandFailedError {
+    const char* __type;
+    sk_string msg;
+} CommandFailedError;
+
+typedef struct BadColorCodeError {
+    const char* __type;
+    sk_string msg;
+} BadColorCodeError;
+
+typedef struct VoidCasingError {
+    const char* __type;
+    sk_string msg;
+} VoidCasingError;
+
+typedef struct VoidMeasurementError {
+    const char* __type;
+    sk_string msg;
+} VoidMeasurementError;
+
+typedef struct VoidLengthMeasurementError {
+    const char* __type;
+    sk_string msg;
+} VoidLengthMeasurementError;
+
+typedef struct VoidBytesMeasurementError {
+    const char* __type;
+    sk_string msg;
+} VoidBytesMeasurementError;
+
+typedef struct VoidActionsError {
+    const char* __type;
+    sk_string msg;
+} VoidActionsError;
+
+typedef struct VoidConcatError {
+    const char* __type;
+    sk_string msg;
+} VoidConcatError;
+
+typedef struct VoidLowerizeError {
+    const char* __type;
+    sk_string msg;
+} VoidLowerizeError;
+
+typedef struct VoidUpperizeError {
+    const char* __type;
+    sk_string msg;
+} VoidUpperizeError;
+
+typedef struct VoidCapitalizeError {
+    const char* __type;
+    sk_string msg;
+} VoidCapitalizeError;
+
+typedef struct VoidSearchError {
+    const char* __type;
+    sk_string msg;
+} VoidSearchError;
+
+typedef struct VoidHasError {
+    const char* __type;
+    sk_string msg;
+} VoidHasError;
+
+typedef struct VoidStartWithError {
+    const char* __type;
+    sk_string msg;
+} VoidStartWithError;
+
+typedef struct VoidEndWithError {
+    const char* __type;
+    sk_string msg;
+} VoidEndWithError;
+
+typedef struct VoidSliceError {
+    const char* __type;
+    sk_string msg;
+} VoidSliceError;
+
+typedef struct OutOfRangeSliceError {
+    const char* __type;
+    sk_string msg;
+} OutOfRangeSliceError;
+
+typedef struct EmptySeparatorError {
+    const char* __type;
+    sk_string msg;
+} EmptySeparatorError;
+
+typedef struct VoidCrashError {
+    const char* __type;
+    sk_string msg;
+} VoidCrashError;
+
 typedef struct SkCleanup {
     void** ptr;
     int type;
@@ -825,7 +940,184 @@ int sk_error_type_match(const char* actual, const char* expected) {
     return actual[len] == '\0' || actual[len] == '.';
 }
 
+// Inline C code
+// UTF-8: кодирование codepoint в буфер
+// Возвращает длину в байтах
+int __sk__utf8__encode(unsigned int cp, char *out) {
+    if (cp < 0x80) {
+        out[0] = (char)cp;
+        return 1;
+    }
+    if (cp < 0x800) {
+        out[0] = (char)(0xC0 | (cp >> 6));
+        out[1] = (char)(0x80 | (cp & 0x3F));
+        return 2;
+    }
+    if (cp < 0x10000) {
+        out[0] = (char)(0xE0 | (cp >> 12));
+        out[1] = (char)(0x80 | ((cp >> 6) & 0x3F));
+        out[2] = (char)(0x80 | (cp & 0x3F));
+        return 3;
+    }
+    out[0] = (char)(0xF0 | (cp >> 18));
+    out[1] = (char)(0x80 | ((cp >> 12) & 0x3F));
+    out[2] = (char)(0x80 | ((cp >> 6) & 0x3F));
+    out[3] = (char)(0x80 | (cp & 0x3F));
+    return 4;
+}
+
+// Приведение одного codepoint к верхнему регистру
+unsigned int __sk__utf8__to_upper(unsigned int cp) {
+    if (cp < 0x80) return (unsigned int)toupper((int)cp);
+    if (cp >= 0x430 && cp <= 0x44F) return cp - 0x20;
+    if (cp == 0x451) return 0x401;
+    if (cp >= 0xE0 && cp <= 0xFE && cp != 0xF7) return cp - 0x20;
+    if (cp == 0xFF) return 0x178;
+    if (cp >= 0x3B1 && cp <= 0x3C9 && cp != 0x3C2) return cp - 0x20;
+    if (cp == 0x3C2) return 0x3A3;
+    return cp;
+}
+
+// Приведение одного codepoint к нижнему регистру
+unsigned int __sk__utf8__to_lower(unsigned int cp) {
+    if (cp < 0x80) return (unsigned int)tolower((int)cp);
+    if (cp >= 0x410 && cp <= 0x42F) return cp + 0x20;
+    if (cp == 0x401) return 0x451;
+    if (cp >= 0xC0 && cp <= 0xDE && cp != 0xD7) return cp + 0x20;
+    if (cp == 0x178) return 0xFF;
+    if (cp >= 0x391 && cp <= 0x3A9) return cp + 0x20;
+    return cp;
+}
+
+// Общая функция изменения регистра
+char* __sk__utf8__change_case(const char *src, int mode) {
+    size_t src_len = strlen(src);
+    char *out = malloc(src_len * 4 + 1);
+    if (!out) return NULL;
+
+    size_t i = 0, o = 0;
+    int word_start = 1;
+
+    while (src[i]) {
+        int char_len = 0;
+        unsigned int cp = __sk__utf8__decode(&src[i], &char_len);
+
+        unsigned int new_cp = cp;
+        switch (mode) {
+            case 0: new_cp = __sk__utf8__to_lower(cp); break;
+            case 1: new_cp = __sk__utf8__to_upper(cp); break;
+            case 2:
+                if (word_start) new_cp = __sk__utf8__to_upper(cp);
+                else new_cp = __sk__utf8__to_lower(cp);
+                word_start = (cp == ' ' || cp == '\t' || cp == '\n' ||
+                              cp == '\r' || cp == '.' || cp == ',' ||
+                              cp == '!' || cp == '?' || cp == ';' ||
+                              cp == ':' || cp == '-' || cp == '(' ||
+                              cp == ')' || cp == '[' || cp == ']');
+                break;
+        }
+
+        o += __sk__utf8__encode(new_cp, &out[o]);
+        i += char_len;
+    }
+
+    out[o] = '\0';
+    return out;
+}
+
+// Поиск подстроки (байтовый, но для UTF-8 корректный,
+// т.к. границы codepoint в UTF-8 не пересекаются)
+int __sk__str_find(const char *haystack, const char *needle) {
+    const char *p = strstr(haystack, needle);
+    if (!p) return -1;
+    return (int)(p - haystack);
+}
+
+
+
 // Function prototypes
+sk_int __sk__len(sk_string line);
+sk_int __sk__bytes(sk_string line);
+sk_string __sk__concat(sk_string a, sk_string b);
+sk_string __sk__toLowerCase(sk_string line);
+sk_string __sk__toUpperCase(sk_string line);
+sk_string __sk__toCapitalCase(sk_string line);
+sk_bool __sk__has(sk_string line, sk_string pattern);
+sk_bool __sk__startWith(sk_string line, sk_string pattern);
+sk_bool __sk__endWith(sk_string line, sk_string pattern);
+sk_arr __sk__slice(sk_string line, sk_int pos);
+sk_arr __sk__crash(sk_string line, sk_string symbol);
+sk_arr __sk__crashAll(sk_string line, sk_string symbol);
+sk_arr __sk__chars(sk_string line);
+sk_string __sk__repeat(sk_string line, sk_int n);
+sk_string __sk__replace(sk_string line, sk_string from, sk_string to);
+sk_string __sk__trim(sk_string line);
+void __sk__setConsoleCode(sk_int code);
+void __sk__setUTF8(void);
+sk_string __sk__run(sk_string cmd);
+sk_string __sk__Reset(void);
+sk_string __sk__Bold(void);
+sk_string __sk__Dim(void);
+sk_string __sk__Italic(void);
+sk_string __sk__Underline(void);
+sk_string __sk__Blink(void);
+sk_string __sk__Reverse(void);
+sk_string __sk__Hidden(void);
+sk_string __sk__Strike(void);
+sk_string __sk__FgBlack(void);
+sk_string __sk__FgRed(void);
+sk_string __sk__FgGreen(void);
+sk_string __sk__FgYellow(void);
+sk_string __sk__FgBlue(void);
+sk_string __sk__FgMagenta(void);
+sk_string __sk__FgCyan(void);
+sk_string __sk__FgWhite(void);
+sk_string __sk__FgDefault(void);
+sk_string __sk__FgBrightBlack(void);
+sk_string __sk__FgBrightRed(void);
+sk_string __sk__FgBrightGreen(void);
+sk_string __sk__FgBrightYellow(void);
+sk_string __sk__FgBrightBlue(void);
+sk_string __sk__FgBrightMagenta(void);
+sk_string __sk__FgBrightCyan(void);
+sk_string __sk__FgBrightWhite(void);
+sk_string __sk__BgBlack(void);
+sk_string __sk__BgRed(void);
+sk_string __sk__BgGreen(void);
+sk_string __sk__BgYellow(void);
+sk_string __sk__BgBlue(void);
+sk_string __sk__BgMagenta(void);
+sk_string __sk__BgCyan(void);
+sk_string __sk__BgWhite(void);
+sk_string __sk__BgDefault(void);
+sk_string __sk__BgBrightBlack(void);
+sk_string __sk__BgBrightRed(void);
+sk_string __sk__BgBrightGreen(void);
+sk_string __sk__BgBrightYellow(void);
+sk_string __sk__BgBrightBlue(void);
+sk_string __sk__BgBrightMagenta(void);
+sk_string __sk__BgBrightCyan(void);
+sk_string __sk__BgBrightWhite(void);
+sk_string __sk__Clear(void);
+sk_string __sk__ClearLine(void);
+sk_string __sk__MoveHome(void);
+sk_string __sk__MoveTo(sk_int row, sk_int col);
+sk_string __sk__CursorUp(sk_int n);
+sk_string __sk__CursorDown(sk_int n);
+sk_string __sk__CursorRight(sk_int n);
+sk_string __sk__CursorLeft(sk_int n);
+sk_string __sk__CursorHide(void);
+sk_string __sk__CursorShow(void);
+sk_string __sk__Fg256(sk_int code, sk_string text);
+sk_string __sk__Bg256(sk_int code, sk_string text);
+sk_string __sk__FgRGB(sk_int r, sk_int g, sk_int b, sk_string text);
+sk_string __sk__BgRGB(sk_int r, sk_int g, sk_int b, sk_string text);
+sk_string __sk__Link(sk_string text, sk_string url);
+sk_string __sk__Title(sk_string text);
+sk_string __sk__Bell(void);
+sk_string __sk__SaveCursor(void);
+sk_string __sk__RestoreCursor(void);
+sk_bool __sk__isAnsiSupported(void);
 void __sk__std_io_send(sk_string line);
 sk_string __sk__std_io_input(sk_string prompt);
 void __sk__sendln(sk_any msg);
@@ -844,20 +1136,858 @@ int main(int argc, char** argv) {
     }
     sk_arr args = sk_arr_new(args__arr);
 
-    sk_char t1;
+    sk_any t1;
     sk_any t2;
-    sk_any t3;
 
-    t1 = sk_int_to_char(sk_int_new(67));
-    t2 = any_char(t1);
-    sk_call_push("main.sk", 4, 3);
+    t1 = any_string(sk_string_new("Привет"));
+    sk_call_push("main.sk", 4, 23);
+    __sk__sendln(t1);
+    sk_call_pop();
+    sk_call_push("main.sk", 4, 47);
+    __sk__setUTF8();
+    sk_call_pop();
+    t2 = any_string(sk_string_new("Привет"));
+    sk_call_push("main.sk", 4, 67);
     __sk__sendln(t2);
     sk_call_pop();
-    t3 = any_char(sk_char_new(128512));
-    sk_call_push("main.sk", 5, 3);
-    __sk__sendln(t3);
-    sk_call_pop();
     return 0;
+}
+
+sk_int __sk__len(sk_string line) {
+    if (line.__is_null) {
+            VoidLengthMeasurementError* err = malloc(sizeof(VoidLengthMeasurementError));
+            err->__type = "Error.VoidMeasurementError.VoidLengthMeasurementError";
+            err->msg = sk_string_new("Cannot get length 'null'.");
+            sk_throw(err, "<builtin:std/strings>", 162, 5);
+        }
+        size_t len = __sk__utf8__strlen(line.value);
+        int n = (len > INT_MAX) ? -1 : (int)len;
+        return sk_int_new(n);
+    return sk_int_new(0);
+}
+
+sk_int __sk__bytes(sk_string line) {
+    if (line.__is_null) {
+            VoidBytesMeasurementError* err = malloc(sizeof(VoidBytesMeasurementError));
+            err->__type = "Error.VoidMeasurementError.VoidBytesMeasurementError";
+            err->msg = sk_string_new("Cannot get byte length 'null'.");
+            sk_throw(err, "<builtin:std/strings>", 174, 5);
+        }
+        return sk_int_new((int)strlen(line.value));
+    return sk_int_new(0);
+}
+
+sk_string __sk__concat(sk_string a, sk_string b) {
+    if (a.__is_null || b.__is_null) {
+            VoidConcatError* err = malloc(sizeof(VoidConcatError));
+            err->__type = "Error.VoidActionsError.VoidConcatError";
+            err->msg = sk_string_new("Cannot concatenate 'null' with string or 'null'.");
+            sk_throw(err, "<builtin:std/strings>", 186, 5);
+        }
+        return sk_string_concat(a, b);
+    return sk_string_new("");
+}
+
+sk_string __sk__toLowerCase(sk_string line) {
+    if (line.__is_null) {
+            VoidLowerizeError* err = malloc(sizeof(VoidLowerizeError));
+            err->__type = "Error.VoidCasingError.VoidLowerizeError";
+            err->msg = sk_string_new("Unable to convert 'null' to lower case.");
+            sk_throw(err, "<builtin:std/strings>", 195, 5);
+        }
+        return sk_string_new_take(__sk__utf8__change_case(line.value, 0));
+    return sk_string_new("");
+}
+
+sk_string __sk__toUpperCase(sk_string line) {
+    if (line.__is_null) {
+            VoidUpperizeError* err = malloc(sizeof(VoidUpperizeError));
+            err->__type = "Error.VoidCasingError.VoidUpperizeError";
+            err->msg = sk_string_new("Unable to convert 'null' to UPPER CASE.");
+            sk_throw(err, "<builtin:std/strings>", 205, 5);
+        }
+        return sk_string_new_take(__sk__utf8__change_case(line.value, 1));
+    return sk_string_new("");
+}
+
+sk_string __sk__toCapitalCase(sk_string line) {
+    if (line.__is_null) {
+            VoidCapitalizeError* err = malloc(sizeof(VoidCapitalizeError));
+            err->__type = "Error.VoidCasingError.VoidCapitalizeError";
+            err->msg = sk_string_new("Unable to convert 'null' to Capital Case.");
+            sk_throw(err, "<builtin:std/strings>", 215, 5);
+        }
+        return sk_string_new_take(__sk__utf8__change_case(line.value, 2));
+    return sk_string_new("");
+}
+
+sk_bool __sk__has(sk_string line, sk_string pattern) {
+    if (line.__is_null || pattern.__is_null) {
+            VoidHasError* err = malloc(sizeof(VoidHasError));
+            err->__type = "Error.VoidSearchError.VoidHasError";
+            err->msg = sk_string_new("Cannot search in 'null' string or with 'null' pattern.");
+            sk_throw(err, "<builtin:std/strings>", 230, 5);
+        }
+        return sk_bool_new(__sk__str_find(line.value, pattern.value) >= 0);
+    return sk_bool_new(0);
+}
+
+sk_bool __sk__startWith(sk_string line, sk_string pattern) {
+    if (line.__is_null || pattern.__is_null) {
+            VoidStartWithError* err = malloc(sizeof(VoidStartWithError));
+            err->__type = "Error.VoidSearchError.VoidStartWithError";
+            err->msg = sk_string_new("Cannot check prefix of 'null' string or with 'null' pattern.");
+            sk_throw(err, "<builtin:std/strings>", 245, 5);
+        }
+        size_t plen = strlen(pattern.value);
+        if (plen > strlen(line.value)) return sk_bool_new(0);
+        return sk_bool_new(strncmp(line.value, pattern.value, plen) == 0);
+    return sk_bool_new(0);
+}
+
+sk_bool __sk__endWith(sk_string line, sk_string pattern) {
+    if (line.__is_null || pattern.__is_null) {
+            VoidEndWithError* err = malloc(sizeof(VoidEndWithError));
+            err->__type = "Error.VoidSearchError.VoidEndWithError";
+            err->msg = sk_string_new("Cannot check suffix of 'null' string or with 'null' pattern.");
+            sk_throw(err, "<builtin:std/strings>", 260, 5);
+        }
+        size_t llen = strlen(line.value);
+        size_t plen = strlen(pattern.value);
+        if (plen > llen) return sk_bool_new(0);
+        return sk_bool_new(strcmp(line.value + llen - plen, pattern.value) == 0);
+    return sk_bool_new(0);
+}
+
+sk_arr __sk__slice(sk_string line, sk_int pos) {
+    sk_arr t3;
+
+    if (line.__is_null) {
+            VoidSliceError* err = malloc(sizeof(VoidSliceError));
+            err->__type = "Error.VoidMeasurementError.VoidSliceError";
+            err->msg = sk_string_new("Cannot slice 'null'.");
+            sk_throw(err, "<builtin:std/strings>", 280, 5);
+        }
+        int total = (int)__sk__utf8__strlen(line.value);
+        if (pos.value < 0 || pos.value > total) {
+            OutOfRangeSliceError* err = malloc(sizeof(OutOfRangeSliceError));
+            err->__type = "Error.OutOfRangeSliceError";
+            err->msg = sk_string_new("Slice position out of range.");
+            sk_throw(err, "<builtin:std/strings>", 287, 5);
+        }
+        // Находим байтовую позицию pos-го codepoint
+        const char* s = line.value;
+        int i = 0;
+        int byte_pos = 0;
+        while (i < pos.value && s[byte_pos]) {
+            int len = 0;
+            __sk__utf8__decode(&s[byte_pos], &len);
+            byte_pos += len;
+            i++;
+        }
+        sk_array* arr = sk_array_new(sizeof(sk_string), 1);
+        // Первая часть: [0, byte_pos)
+        char* left = malloc(byte_pos + 1);
+        memcpy(left, s, byte_pos);
+        left[byte_pos] = '\0';
+        sk_string s_left = sk_string_new_take(left);
+        sk_array_push_string(arr, s_left);
+        // Вторая часть: [byte_pos, конец)
+        sk_string s_right = sk_string_new(s + byte_pos);
+        sk_array_push_string(arr, s_right);
+        return sk_arr_new(arr);
+    t3 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    return t3;
+}
+
+sk_arr __sk__crash(sk_string line, sk_string symbol) {
+    sk_arr t4;
+
+    if (line.__is_null || symbol.__is_null) {
+            VoidCrashError* err = malloc(sizeof(VoidCrashError));
+            err->__type = "Error.VoidMeasurementError.VoidCrashError";
+            err->msg = sk_string_new("Cannot crash 'null' string or with 'null' symbol.");
+            sk_throw(err, "<builtin:std/strings>", 320, 5);
+        }
+        if (strlen(symbol.value) == 0) {
+            EmptySeparatorError* err = malloc(sizeof(EmptySeparatorError));
+            err->__type = "Error.EmptySeparatorError";
+            err->msg = sk_string_new("Separator cannot be empty.");
+            sk_throw(err, "<builtin:std/strings>", 326, 5);
+        }
+        sk_array* arr = sk_array_new(sizeof(sk_string), 1);
+        const char* found = strstr(line.value, symbol.value);
+        if (found == NULL) {
+            // Разделитель не найден — возвращаем [line]
+            sk_string s_all = sk_string_new(line.value);
+            sk_array_push_string(arr, s_all);
+            return sk_arr_new(arr);
+        }
+        // Часть перед разделителем
+        size_t part_len = (size_t)(found - line.value);
+        char* part = malloc(part_len + 1);
+        memcpy(part, line.value, part_len);
+        part[part_len] = '\0';
+        sk_string s_part = sk_string_new_take(part);
+        sk_array_push_string(arr, s_part);
+        // Сам разделитель
+        sk_string s_sep = sk_string_new(symbol.value);
+        sk_array_push_string(arr, s_sep);
+        // Весь хвост после разделителя — одной строкой
+        const char* tail = found + strlen(symbol.value);
+        if (*tail != '\0') {
+            sk_string s_tail = sk_string_new(tail);
+            sk_array_push_string(arr, s_tail);
+        }
+        return sk_arr_new(arr);
+    t4 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    return t4;
+}
+
+sk_arr __sk__crashAll(sk_string line, sk_string symbol) {
+    sk_arr t5;
+
+    if (line.__is_null || symbol.__is_null) {
+            VoidCrashError* err = malloc(sizeof(VoidCrashError));
+            err->__type = "Error.VoidMeasurementError.VoidCrashError";
+            err->msg = sk_string_new("Cannot crash 'null' string or with 'null' symbol.");
+            sk_throw(err, "<builtin:std/strings>", 370, 5);
+        }
+        if (strlen(symbol.value) == 0) {
+            EmptySeparatorError* err = malloc(sizeof(EmptySeparatorError));
+            err->__type = "Error.EmptySeparatorError";
+            err->msg = sk_string_new("Separator cannot be empty.");
+            sk_throw(err, "<builtin:std/strings>", 376, 5);
+        }
+        sk_array* arr = sk_array_new(sizeof(sk_string), 1);
+        const char* s = line.value;
+        size_t sep_len = strlen(symbol.value);
+        const char* cur = s;
+        const char* found;
+        while ((found = strstr(cur, symbol.value)) != NULL) {
+            // Часть перед разделителем
+            size_t part_len = (size_t)(found - cur);
+            char* part = malloc(part_len + 1);
+            memcpy(part, cur, part_len);
+            part[part_len] = '\0';
+            sk_string s_part = sk_string_new_take(part);
+            sk_array_push_string(arr, s_part);
+            // Сам разделитель
+            sk_string s_sep = sk_string_new(symbol.value);
+            sk_array_push_string(arr, s_sep);
+            cur = found + sep_len;
+        }
+        // Хвост после последнего разделителя
+        if (*cur != '\0') {
+            sk_string s_tail = sk_string_new(cur);
+            sk_array_push_string(arr, s_tail);
+        }
+        return sk_arr_new(arr);
+    t5 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    return t5;
+}
+
+sk_arr __sk__chars(sk_string line) {
+    sk_arr t6;
+
+    if (line.__is_null) {
+            VoidSliceError* err = malloc(sizeof(VoidSliceError));
+            err->__type = "Error.VoidMeasurementError.VoidSliceError";
+            err->msg = sk_string_new("Cannot split 'null' into chars.");
+            sk_throw(err, "<builtin:std/strings>", 370, 5);
+        }
+        sk_array* arr = sk_array_new(sizeof(sk_string), 1);
+        const char* s = line.value;
+        int i = 0;
+        while (s[i]) {
+            int len = 0;
+            __sk__utf8__decode(&s[i], &len);
+            char* buf = malloc(len + 1);
+            memcpy(buf, &s[i], len);
+            buf[len] = '\0';
+            sk_string c = sk_string_new_take(buf);
+            sk_array_push_string(arr, c);
+            i += len;
+        }
+        return sk_arr_new(arr);
+    t6 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    return t6;
+}
+
+sk_string __sk__repeat(sk_string line, sk_int n) {
+    if (line.__is_null) {
+            VoidConcatError* err = malloc(sizeof(VoidConcatError));
+            err->__type = "Error.VoidActionsError.VoidConcatError";
+            err->msg = sk_string_new("Cannot repeat 'null'.");
+            sk_throw(err, "<builtin:std/strings>", 390, 5);
+        }
+        if (n.value <= 0) return sk_string_new("");
+        size_t llen = strlen(line.value);
+        size_t total = llen * (size_t)n.value;
+        char* buf = malloc(total + 1);
+        buf[0] = '\0';
+        for (int i = 0; i < n.value; i++) {
+            memcpy(buf + i * llen, line.value, llen);
+        }
+        buf[total] = '\0';
+        return sk_string_new_take(buf);
+    return sk_string_new("");
+}
+
+sk_string __sk__replace(sk_string line, sk_string from, sk_string to) {
+    if (line.__is_null || from.__is_null || to.__is_null) {
+            VoidConcatError* err = malloc(sizeof(VoidConcatError));
+            err->__type = "Error.VoidActionsError.VoidConcatError";
+            err->msg = sk_string_new("Cannot replace with 'null'.");
+            sk_throw(err, "<builtin:std/strings>", 410, 5);
+        }
+        size_t from_len = strlen(from.value);
+        if (from_len == 0) return sk_string_new(line.value);
+        size_t to_len = strlen(to.value);
+        size_t line_len = strlen(line.value);
+        // Считаем количество вхождений
+        size_t count = 0;
+        const char* p = line.value;
+        while ((p = strstr(p, from.value)) != NULL) {
+            count++;
+            p += from_len;
+        }
+        if (count == 0) return sk_string_new(line.value);
+        size_t new_len = line_len + count * (to_len - from_len);
+        char* buf = malloc(new_len + 1);
+        char* out = buf;
+        const char* cur = line.value;
+        const char* found;
+        while ((found = strstr(cur, from.value)) != NULL) {
+            size_t part_len = (size_t)(found - cur);
+            memcpy(out, cur, part_len);
+            out += part_len;
+            memcpy(out, to.value, to_len);
+            out += to_len;
+            cur = found + from_len;
+        }
+        strcpy(out, cur);
+        return sk_string_new_take(buf);
+    return sk_string_new("");
+}
+
+sk_string __sk__trim(sk_string line) {
+    if (line.__is_null) {
+            VoidConcatError* err = malloc(sizeof(VoidConcatError));
+            err->__type = "Error.VoidActionsError.VoidConcatError";
+            err->msg = sk_string_new("Cannot trim 'null'.");
+            sk_throw(err, "<builtin:std/strings>", 440, 5);
+        }
+        const char* s = line.value;
+        while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r') s++;
+        size_t len = strlen(s);
+        while (len > 0) {
+            char c = s[len - 1];
+            if (c == ' ' || c == '\t' || c == '\n' || c == '\r') len--;
+            else break;
+        }
+        char* buf = malloc(len + 1);
+        memcpy(buf, s, len);
+        buf[len] = '\0';
+        return sk_string_new_take(buf);
+    return sk_string_new("");
+}
+
+void __sk__setConsoleCode(sk_int code) {
+    #ifdef _WIN32
+            char buf[32];
+            snprintf(buf, sizeof(buf), "chcp %d > nul", code.value);
+            system(buf);
+        #else
+            (void)code;
+        #endif
+    return;
+}
+
+void __sk__setUTF8(void) {
+    sk_call_push("<builtin:std/terminal>", 34, 18);
+    __sk__setConsoleCode(sk_int_new(65001));
+    sk_call_pop();
+    return;
+}
+
+sk_string __sk__run(sk_string cmd) {
+    if (cmd.__is_null) {
+            NullCommandError* err = malloc(sizeof(NullCommandError));
+            err->__type = "Error.TerminalError.NullCommandError";
+            err->msg = sk_string_new("Command is 'null'.");
+            sk_throw(err, "<builtin:std/terminal>", 40, 5);
+        }
+        FILE* pipe;
+        #ifdef _WIN32
+            pipe = _popen(cmd.value, "r");
+        #else
+            pipe = popen(cmd.value, "r");
+        #endif
+        if (!pipe) {
+            CommandFailedError* err = malloc(sizeof(CommandFailedError));
+            err->__type = "Error.TerminalError.CommandFailedError";
+            err->msg = sk_string_new("Failed to open pipe for command.");
+            sk_throw(err, "<builtin:std/terminal>", 55, 5);
+        }
+        size_t cap = 4096;
+        size_t len = 0;
+        char* buf = malloc(cap);
+        if (!buf) {
+            #ifdef _WIN32
+                _pclose(pipe);
+            #else
+                pclose(pipe);
+            #endif
+            return sk_string_new("");
+        }
+        size_t n;
+        while ((n = fread(buf + len, 1, cap - len - 1, pipe)) > 0) {
+            len += n;
+            if (len + 1 >= cap) {
+                cap *= 2;
+                buf = realloc(buf, cap);
+                if (!buf) break;
+            }
+        }
+        buf[len] = '\0';
+        #ifdef _WIN32
+            _pclose(pipe);
+        #else
+            pclose(pipe);
+        #endif
+        return sk_string_new_take(buf);
+    return sk_string_new("");
+}
+
+sk_string __sk__Reset(void) {
+    return sk_string_new("\033[0m");
+    return sk_string_new("");
+}
+
+sk_string __sk__Bold(void) {
+    return sk_string_new("\033[1m");
+    return sk_string_new("");
+}
+
+sk_string __sk__Dim(void) {
+    return sk_string_new("\033[2m");
+    return sk_string_new("");
+}
+
+sk_string __sk__Italic(void) {
+    return sk_string_new("\033[3m");
+    return sk_string_new("");
+}
+
+sk_string __sk__Underline(void) {
+    return sk_string_new("\033[4m");
+    return sk_string_new("");
+}
+
+sk_string __sk__Blink(void) {
+    return sk_string_new("\033[5m");
+    return sk_string_new("");
+}
+
+sk_string __sk__Reverse(void) {
+    return sk_string_new("\033[7m");
+    return sk_string_new("");
+}
+
+sk_string __sk__Hidden(void) {
+    return sk_string_new("\033[8m");
+    return sk_string_new("");
+}
+
+sk_string __sk__Strike(void) {
+    return sk_string_new("\033[9m");
+    return sk_string_new("");
+}
+
+sk_string __sk__FgBlack(void) {
+    return sk_string_new("\033[30m");
+    return sk_string_new("");
+}
+
+sk_string __sk__FgRed(void) {
+    return sk_string_new("\033[31m");
+    return sk_string_new("");
+}
+
+sk_string __sk__FgGreen(void) {
+    return sk_string_new("\033[32m");
+    return sk_string_new("");
+}
+
+sk_string __sk__FgYellow(void) {
+    return sk_string_new("\033[33m");
+    return sk_string_new("");
+}
+
+sk_string __sk__FgBlue(void) {
+    return sk_string_new("\033[34m");
+    return sk_string_new("");
+}
+
+sk_string __sk__FgMagenta(void) {
+    return sk_string_new("\033[35m");
+    return sk_string_new("");
+}
+
+sk_string __sk__FgCyan(void) {
+    return sk_string_new("\033[36m");
+    return sk_string_new("");
+}
+
+sk_string __sk__FgWhite(void) {
+    return sk_string_new("\033[37m");
+    return sk_string_new("");
+}
+
+sk_string __sk__FgDefault(void) {
+    return sk_string_new("\033[39m");
+    return sk_string_new("");
+}
+
+sk_string __sk__FgBrightBlack(void) {
+    return sk_string_new("\033[90m");
+    return sk_string_new("");
+}
+
+sk_string __sk__FgBrightRed(void) {
+    return sk_string_new("\033[91m");
+    return sk_string_new("");
+}
+
+sk_string __sk__FgBrightGreen(void) {
+    return sk_string_new("\033[92m");
+    return sk_string_new("");
+}
+
+sk_string __sk__FgBrightYellow(void) {
+    return sk_string_new("\033[93m");
+    return sk_string_new("");
+}
+
+sk_string __sk__FgBrightBlue(void) {
+    return sk_string_new("\033[94m");
+    return sk_string_new("");
+}
+
+sk_string __sk__FgBrightMagenta(void) {
+    return sk_string_new("\033[95m");
+    return sk_string_new("");
+}
+
+sk_string __sk__FgBrightCyan(void) {
+    return sk_string_new("\033[96m");
+    return sk_string_new("");
+}
+
+sk_string __sk__FgBrightWhite(void) {
+    return sk_string_new("\033[97m");
+    return sk_string_new("");
+}
+
+sk_string __sk__BgBlack(void) {
+    return sk_string_new("\033[40m");
+    return sk_string_new("");
+}
+
+sk_string __sk__BgRed(void) {
+    return sk_string_new("\033[41m");
+    return sk_string_new("");
+}
+
+sk_string __sk__BgGreen(void) {
+    return sk_string_new("\033[42m");
+    return sk_string_new("");
+}
+
+sk_string __sk__BgYellow(void) {
+    return sk_string_new("\033[43m");
+    return sk_string_new("");
+}
+
+sk_string __sk__BgBlue(void) {
+    return sk_string_new("\033[44m");
+    return sk_string_new("");
+}
+
+sk_string __sk__BgMagenta(void) {
+    return sk_string_new("\033[45m");
+    return sk_string_new("");
+}
+
+sk_string __sk__BgCyan(void) {
+    return sk_string_new("\033[46m");
+    return sk_string_new("");
+}
+
+sk_string __sk__BgWhite(void) {
+    return sk_string_new("\033[47m");
+    return sk_string_new("");
+}
+
+sk_string __sk__BgDefault(void) {
+    return sk_string_new("\033[49m");
+    return sk_string_new("");
+}
+
+sk_string __sk__BgBrightBlack(void) {
+    return sk_string_new("\033[100m");
+    return sk_string_new("");
+}
+
+sk_string __sk__BgBrightRed(void) {
+    return sk_string_new("\033[101m");
+    return sk_string_new("");
+}
+
+sk_string __sk__BgBrightGreen(void) {
+    return sk_string_new("\033[102m");
+    return sk_string_new("");
+}
+
+sk_string __sk__BgBrightYellow(void) {
+    return sk_string_new("\033[103m");
+    return sk_string_new("");
+}
+
+sk_string __sk__BgBrightBlue(void) {
+    return sk_string_new("\033[104m");
+    return sk_string_new("");
+}
+
+sk_string __sk__BgBrightMagenta(void) {
+    return sk_string_new("\033[105m");
+    return sk_string_new("");
+}
+
+sk_string __sk__BgBrightCyan(void) {
+    return sk_string_new("\033[106m");
+    return sk_string_new("");
+}
+
+sk_string __sk__BgBrightWhite(void) {
+    return sk_string_new("\033[107m");
+    return sk_string_new("");
+}
+
+sk_string __sk__Clear(void) {
+    return sk_string_new("\033[2J");
+    return sk_string_new("");
+}
+
+sk_string __sk__ClearLine(void) {
+    return sk_string_new("\033[2K");
+    return sk_string_new("");
+}
+
+sk_string __sk__MoveHome(void) {
+    return sk_string_new("\033[H");
+    return sk_string_new("");
+}
+
+sk_string __sk__MoveTo(sk_int row, sk_int col) {
+    char buf[32];
+        snprintf(buf, sizeof(buf), "\033[%d;%dH", row.value, col.value);
+        return sk_string_new(buf);
+    return sk_string_new("");
+}
+
+sk_string __sk__CursorUp(sk_int n) {
+    char buf[16]; snprintf(buf, 16, "\033[%dA", n.value); return sk_string_new(buf);
+    return sk_string_new("");
+}
+
+sk_string __sk__CursorDown(sk_int n) {
+    char buf[16]; snprintf(buf, 16, "\033[%dB", n.value); return sk_string_new(buf);
+    return sk_string_new("");
+}
+
+sk_string __sk__CursorRight(sk_int n) {
+    char buf[16]; snprintf(buf, 16, "\033[%dC", n.value); return sk_string_new(buf);
+    return sk_string_new("");
+}
+
+sk_string __sk__CursorLeft(sk_int n) {
+    char buf[16]; snprintf(buf, 16, "\033[%dD", n.value); return sk_string_new(buf);
+    return sk_string_new("");
+}
+
+sk_string __sk__CursorHide(void) {
+    return sk_string_new("\033[?25l");
+    return sk_string_new("");
+}
+
+sk_string __sk__CursorShow(void) {
+    return sk_string_new("\033[?25h");
+    return sk_string_new("");
+}
+
+sk_string __sk__Fg256(sk_int code, sk_string text) {
+    if (text.__is_null) {
+            NullTextError* err = malloc(sizeof(NullTextError));
+            err->__type = "Error.TerminalError.NullTextError";
+            err->msg = sk_string_new("Cannot color 'null' text.");
+            sk_throw(err, "<builtin:std/terminal>", 300, 5);
+        }
+        char code_buf[32];
+        snprintf(code_buf, sizeof(code_buf), "\033[38;5;%dm", code.value);
+        size_t clen = strlen(code_buf);
+        size_t tlen = strlen(text.value);
+        char* buf = malloc(clen + tlen + 4 + 1);
+        memcpy(buf, code_buf, clen);
+        memcpy(buf + clen, text.value, tlen);
+        memcpy(buf + clen + tlen, "\033[0m", 4);
+        buf[clen + tlen + 4] = '\0';
+        return sk_string_new_take(buf);
+    return sk_string_new("");
+}
+
+sk_string __sk__Bg256(sk_int code, sk_string text) {
+    if (text.__is_null) {
+            NullTextError* err = malloc(sizeof(NullTextError));
+            err->__type = "Error.TerminalError.NullTextError";
+            err->msg = sk_string_new("Cannot color 'null' text.");
+            sk_throw(err, "<builtin:std/terminal>", 320, 5);
+        }
+        char code_buf[32];
+        snprintf(code_buf, sizeof(code_buf), "\033[48;5;%dm", code.value);
+        size_t clen = strlen(code_buf);
+        size_t tlen = strlen(text.value);
+        char* buf = malloc(clen + tlen + 4 + 1);
+        memcpy(buf, code_buf, clen);
+        memcpy(buf + clen, text.value, tlen);
+        memcpy(buf + clen + tlen, "\033[0m", 4);
+        buf[clen + tlen + 4] = '\0';
+        return sk_string_new_take(buf);
+    return sk_string_new("");
+}
+
+sk_string __sk__FgRGB(sk_int r, sk_int g, sk_int b, sk_string text) {
+    if (text.__is_null) {
+            NullTextError* err = malloc(sizeof(NullTextError));
+            err->__type = "Error.TerminalError.NullTextError";
+            err->msg = sk_string_new("Cannot color 'null' text.");
+            sk_throw(err, "<builtin:std/terminal>", 350, 5);
+        }
+        char code_buf[32];
+        snprintf(code_buf, sizeof(code_buf), "\033[38;2;%d;%d;%dm", r.value, g.value, b.value);
+        size_t clen = strlen(code_buf);
+        size_t tlen = strlen(text.value);
+        char* buf = malloc(clen + tlen + 4 + 1);
+        memcpy(buf, code_buf, clen);
+        memcpy(buf + clen, text.value, tlen);
+        memcpy(buf + clen + tlen, "\033[0m", 4);
+        buf[clen + tlen + 4] = '\0';
+        return sk_string_new_take(buf);
+    return sk_string_new("");
+}
+
+sk_string __sk__BgRGB(sk_int r, sk_int g, sk_int b, sk_string text) {
+    if (text.__is_null) {
+            NullTextError* err = malloc(sizeof(NullTextError));
+            err->__type = "Error.TerminalError.NullTextError";
+            err->msg = sk_string_new("Cannot color 'null' text.");
+            sk_throw(err, "<builtin:std/terminal>", 375, 5);
+        }
+        char code_buf[32];
+        snprintf(code_buf, sizeof(code_buf), "\033[48;2;%d;%d;%dm", r.value, g.value, b.value);
+        size_t clen = strlen(code_buf);
+        size_t tlen = strlen(text.value);
+        char* buf = malloc(clen + tlen + 4 + 1);
+        memcpy(buf, code_buf, clen);
+        memcpy(buf + clen, text.value, tlen);
+        memcpy(buf + clen + tlen, "\033[0m", 4);
+        buf[clen + tlen + 4] = '\0';
+        return sk_string_new_take(buf);
+    return sk_string_new("");
+}
+
+sk_string __sk__Link(sk_string text, sk_string url) {
+    if (text.__is_null || url.__is_null) {
+            NullTextError* err = malloc(sizeof(NullTextError));
+            err->__type = "Error.TerminalError.NullTextError";
+            err->msg = sk_string_new("Cannot link 'null'.");
+            sk_throw(err, "<builtin:std/terminal>", 400, 5);
+        }
+        // ESC]8;;URL ESC\ TEXT ESC]8;; ESC
+        const char* pre_open = "\033]8;;";
+        const char* post_open = "\033\\";
+        const char* close = "\033]8;;\033\\";
+        size_t plen = strlen(pre_open);
+        size_t ulen = strlen(url.value);
+        size_t olen = strlen(post_open);
+        size_t tlen = strlen(text.value);
+        size_t clen = strlen(close);
+        char* buf = malloc(plen + ulen + olen + tlen + clen + 1);
+        char* p = buf;
+        memcpy(p, pre_open, plen); p += plen;
+        memcpy(p, url.value, ulen); p += ulen;
+        memcpy(p, post_open, olen); p += olen;
+        memcpy(p, text.value, tlen); p += tlen;
+        memcpy(p, close, clen); p += clen;
+        *p = '\0';
+        return sk_string_new_take(buf);
+    return sk_string_new("");
+}
+
+sk_string __sk__Title(sk_string text) {
+    if (text.__is_null) {
+            NullTextError* err = malloc(sizeof(NullTextError));
+            err->__type = "Error.TerminalError.NullTextError";
+            err->msg = sk_string_new("Cannot set title to 'null'.");
+            sk_throw(err, "<builtin:std/terminal>", 430, 5);
+        }
+        // ESC]0;TEXT BEL
+        size_t tlen = strlen(text.value);
+        char* buf = malloc(5 + tlen + 2);
+        memcpy(buf, "\033]0;", 4);
+        memcpy(buf + 4, text.value, tlen);
+        buf[4 + tlen] = '\a';
+        buf[4 + tlen + 1] = '\0';
+        return sk_string_new_take(buf);
+    return sk_string_new("");
+}
+
+sk_string __sk__Bell(void) {
+    return sk_string_new("\a");
+    return sk_string_new("");
+}
+
+sk_string __sk__SaveCursor(void) {
+    return sk_string_new("\033[s");
+    return sk_string_new("");
+}
+
+sk_string __sk__RestoreCursor(void) {
+    return sk_string_new("\033[u");
+    return sk_string_new("");
+}
+
+sk_bool __sk__isAnsiSupported(void) {
+    // Явный отказ от цвета
+        if (getenv("NO_COLOR")) return sk_bool_new(0);
+        // Windows Terminal
+        if (getenv("WT_SESSION")) return sk_bool_new(1);
+        // VS Code integrated terminal
+        const char* term_program = getenv("TERM_PROGRAM");
+        if (term_program && strcmp(term_program, "vscode") == 0) return sk_bool_new(1);
+        // ConEmu
+        const char* conemu = getenv("ConEmuANSI");
+        if (conemu && strcmp(conemu, "ON") == 0) return sk_bool_new(1);
+        // ANSICON
+        if (getenv("ANSICON")) return sk_bool_new(1);
+        // MinTTY / Cygwin / MSYS2 / Git Bash
+        const char* term = getenv("TERM");
+        if (term && strcmp(term, "dumb") != 0) return sk_bool_new(1);
+        // Неизвестный терминал — считаем, что ANSI работает
+        // (современные Windows 10+ conhost и так поддерживают ANSI)
+        return sk_bool_new(1);
+    return sk_bool_new(0);
 }
 
 void __sk__std_io_send(sk_string line) {
@@ -883,36 +2013,36 @@ sk_string __sk__std_io_input(sk_string prompt) {
 }
 
 void __sk__sendln(sk_any msg) {
-    sk_string t4;
-    sk_string t5;
+    sk_string t7;
+    sk_string t8;
 
-    t4 = any_to_string(msg);
-    t5 = sk_string_concat(t4, sk_string_new("\n"));
-    free(t4.value);
+    t7 = any_to_string(msg);
+    t8 = sk_string_concat(t7, sk_string_new("\n"));
+    free(t7.value);
     sk_call_push("<builtin:std/io>", 34, 5);
-    __sk__std_io_send(t5);
+    __sk__std_io_send(t8);
     sk_call_pop();
-    free(t5.value);
+    free(t8.value);
     return;
 }
 
 void __sk__sendf(sk_any msg) {
-    sk_string t6;
+    sk_string t9;
 
-    t6 = any_to_string(msg);
+    t9 = any_to_string(msg);
     sk_call_push("<builtin:std/io>", 38, 5);
-    __sk__std_io_send(t6);
+    __sk__std_io_send(t9);
     sk_call_pop();
-    free(t6.value);
+    free(t9.value);
     return;
 }
 
 sk_string __sk__input(sk_string prefix) {
-    sk_string t7;
+    sk_string t10;
 
     sk_call_push("<builtin:std/io>", 42, 12);
-    t7 = __sk__std_io_input(prefix);
+    t10 = __sk__std_io_input(prefix);
     sk_call_pop();
-    return t7;
+    return t10;
 }
 

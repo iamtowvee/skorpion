@@ -406,6 +406,10 @@ func (p *Parser) parseBlock() *Block {
 		if stmt != nil {
 			block.Statements = append(block.Statements, stmt)
 		}
+		// Опциональная ';' после statement'а (после выражений, вызовов, etc.)
+		if p.peek.Type == TOKEN_SEMICOLON {
+			p.advance()
+		}
 	}
 
 	if p.peek.Type == TOKEN_EOF {

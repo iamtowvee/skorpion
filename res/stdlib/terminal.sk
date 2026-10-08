@@ -31,6 +31,8 @@ void setConsoleCode(int code) {
   ~~~
 }
 
+void setUTF8() { setConsoleCode(65001); }
+
 /* ============================
    Run shell command, return output
    ============================ */
