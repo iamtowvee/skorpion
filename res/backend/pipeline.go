@@ -46,6 +46,7 @@ func (p *Pipeline) Process() *IRProgram {
 		irDecl := IRErrorDecl{
 			Name:   decl.Name,
 			Parent: decl.Parent,
+			Module: decl.Module,
 			Fields: []IRErrorField{},
 		}
 		for _, field := range decl.Fields {
@@ -266,9 +267,24 @@ func (p *Pipeline) processFieldAccess(fa *front.FieldAccess, irFn *IRFunction) s
 func (p *Pipeline) collectErrorFields(typeName string) map[string]string {
 	fields := make(map[string]string)
 
+	// Разрезаем возможный "strings.Foo" или "strings.Parent.Child"
+	modulePrefix := ""
+	simpleName := typeName
+	if idx := strings.Index(typeName, "."); idx >= 0 {
+		parts := strings.SplitN(typeName, ".", 2)
+		modulePrefix = parts[0]
+		simpleName = parts[1]
+		if idx2 := strings.LastIndex(simpleName, "."); idx2 >= 0 {
+			simpleName = simpleName[idx2+1:]
+		}
+	}
+
 	var decl *front.ErrorDecl
 	for _, d := range p.Program.ErrorDecls {
-		if d.Name == typeName {
+		if d.Name == simpleName {
+			if modulePrefix != "" && d.Module != modulePrefix {
+				continue
+			}
 			decl = d
 			break
 		}
@@ -526,27 +542,47 @@ func (p *Pipeline) fullErrorTypePath(typeName string) string {
 		return "Error"
 	}
 
-	// Строим путь от корня
+	// Разбираем возможный "strings.FooError" или "strings.Parent.Child"
+	modulePrefix := ""
+	simpleName := typeName
+	if idx := strings.Index(typeName, "."); idx >= 0 {
+		parts := strings.SplitN(typeName, ".", 2)
+		modulePrefix = parts[0]
+		simpleName = parts[1]
+		// Если после модуля ещё цепочка "Parent.Child" — берём последний
+		if idx2 := strings.LastIndex(simpleName, "."); idx2 >= 0 {
+			simpleName = simpleName[idx2+1:]
+		}
+	}
+
+	// Ищем decl
 	var decl *front.ErrorDecl
 	for _, d := range p.Program.ErrorDecls {
-		if d.Name == typeName {
+		if d.Name == simpleName {
+			if modulePrefix != "" && d.Module != modulePrefix {
+				continue
+			}
 			decl = d
 			break
 		}
 	}
 	if decl == nil {
-		return "Error." + typeName
+		// Не нашли — конкатенируем как есть
+		if modulePrefix != "" {
+			return modulePrefix + ".Error." + simpleName
+		}
+		return "Error." + simpleName
 	}
 
-	// Собираем цепочку имён
-	path := []string{typeName}
+	// Собираем цепочку от корня
+	path := []string{simpleName}
 	parent := decl.Parent
 	for parent != "" && parent != "Error" {
 		path = append([]string{parent}, path...)
 
 		var parentDecl *front.ErrorDecl
 		for _, d := range p.Program.ErrorDecls {
-			if d.Name == parent {
+			if d.Name == parent && d.Module == decl.Module {
 				parentDecl = d
 				break
 			}
@@ -557,7 +593,12 @@ func (p *Pipeline) fullErrorTypePath(typeName string) string {
 		parent = parentDecl.Parent
 	}
 
-	return "Error." + strings.Join(path, ".")
+	// Формат: <module>.<ErrorChain>
+	chain := "Error." + strings.Join(path, ".")
+	if decl.Module != "" {
+		return decl.Module + "." + chain
+	}
+	return chain
 }
 
 func (p *Pipeline) processThrow(throw *front.ThrowStmt, irFn *IRFunction) {

@@ -478,6 +478,7 @@ type ErrorDecl struct {
 	Fields []*ErrorField
 	Parent string // "Error" или имя другого типа
 	IsNew  bool   // true = new Parent, false = Parent (мутация)
+	Module string
 }
 
 func (e *ErrorDecl) GetType() NodeType { return NODE_ERROR_DECL }

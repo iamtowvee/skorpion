@@ -23,6 +23,11 @@ const VoidHasError{} = new VoidSearchError
 const VoidStartWithError{} = new VoidSearchError
 const VoidEndWithError{} = new VoidSearchError
 
+const VoidSliceError{} = new VoidMeasurementError
+const OutOfRangeSliceError{} = new Error
+const EmptySeparatorError{} = new Error
+const VoidCrashError{} = new VoidMeasurementError
+
 includeC ~~~
 // UTF-8: декодирование одного символа
 // Возвращает codepoint, а через *len — длину в байтах
@@ -264,4 +269,267 @@ bool endWith(string line, string pattern) {
     return sk_bool_new(strcmp(line.value + llen - plen, pattern.value) == 0);
   ~~~
   return false
+}
+
+/* === Split === */
+
+arr[string] slice(string line, int pos) {
+  includeC ~~~
+    if (line.__is_null) {
+        VoidSliceError* err = malloc(sizeof(VoidSliceError));
+        err->__type = "Error.VoidMeasurementError.VoidSliceError";
+        err->msg = sk_string_new("Cannot slice 'null'.");
+        sk_throw(err, "<builtin:std/strings>", 280, 5);
+    }
+
+    int total = (int)__sk__utf8__strlen(line.value);
+    if (pos.value < 0 || pos.value > total) {
+        OutOfRangeSliceError* err = malloc(sizeof(OutOfRangeSliceError));
+        err->__type = "Error.OutOfRangeSliceError";
+        err->msg = sk_string_new("Slice position out of range.");
+        sk_throw(err, "<builtin:std/strings>", 287, 5);
+    }
+
+    // Находим байтовую позицию pos-го codepoint
+    const char* s = line.value;
+    int i = 0;
+    int byte_pos = 0;
+    while (i < pos.value && s[byte_pos]) {
+        int len = 0;
+        __sk__utf8__decode(&s[byte_pos], &len);
+        byte_pos += len;
+        i++;
+    }
+
+    sk_array* arr = sk_array_new(sizeof(sk_string), 1);
+
+    // Первая часть: [0, byte_pos)
+    char* left = malloc(byte_pos + 1);
+    memcpy(left, s, byte_pos);
+    left[byte_pos] = '\0';
+    sk_string s_left = sk_string_new_take(left);
+    sk_array_push_string(arr, s_left);
+
+    // Вторая часть: [byte_pos, конец)
+    sk_string s_right = sk_string_new(s + byte_pos);
+    sk_array_push_string(arr, s_right);
+
+    return sk_arr_new(arr);
+  ~~~
+  return []
+}
+
+arr[string] crash(string line, string symbol) {
+  includeC ~~~
+    if (line.__is_null || symbol.__is_null) {
+        VoidCrashError* err = malloc(sizeof(VoidCrashError));
+        err->__type = "Error.VoidMeasurementError.VoidCrashError";
+        err->msg = sk_string_new("Cannot crash 'null' string or with 'null' symbol.");
+        sk_throw(err, "<builtin:std/strings>", 320, 5);
+    }
+    if (strlen(symbol.value) == 0) {
+        EmptySeparatorError* err = malloc(sizeof(EmptySeparatorError));
+        err->__type = "Error.EmptySeparatorError";
+        err->msg = sk_string_new("Separator cannot be empty.");
+        sk_throw(err, "<builtin:std/strings>", 326, 5);
+    }
+
+    sk_array* arr = sk_array_new(sizeof(sk_string), 1);
+
+    const char* found = strstr(line.value, symbol.value);
+    if (found == NULL) {
+        // Разделитель не найден — возвращаем [line]
+        sk_string s_all = sk_string_new(line.value);
+        sk_array_push_string(arr, s_all);
+        return sk_arr_new(arr);
+    }
+
+    // Часть перед разделителем
+    size_t part_len = (size_t)(found - line.value);
+    char* part = malloc(part_len + 1);
+    memcpy(part, line.value, part_len);
+    part[part_len] = '\0';
+    sk_string s_part = sk_string_new_take(part);
+    sk_array_push_string(arr, s_part);
+
+    // Сам разделитель
+    sk_string s_sep = sk_string_new(symbol.value);
+    sk_array_push_string(arr, s_sep);
+
+    // Весь хвост после разделителя — одной строкой
+    const char* tail = found + strlen(symbol.value);
+    if (*tail != '\0') {
+        sk_string s_tail = sk_string_new(tail);
+        sk_array_push_string(arr, s_tail);
+    }
+
+    return sk_arr_new(arr);
+  ~~~
+  return []
+}
+
+arr[string] crashAll(string line, string symbol) {
+  includeC ~~~
+    if (line.__is_null || symbol.__is_null) {
+        VoidCrashError* err = malloc(sizeof(VoidCrashError));
+        err->__type = "Error.VoidMeasurementError.VoidCrashError";
+        err->msg = sk_string_new("Cannot crash 'null' string or with 'null' symbol.");
+        sk_throw(err, "<builtin:std/strings>", 370, 5);
+    }
+    if (strlen(symbol.value) == 0) {
+        EmptySeparatorError* err = malloc(sizeof(EmptySeparatorError));
+        err->__type = "Error.EmptySeparatorError";
+        err->msg = sk_string_new("Separator cannot be empty.");
+        sk_throw(err, "<builtin:std/strings>", 376, 5);
+    }
+
+    sk_array* arr = sk_array_new(sizeof(sk_string), 1);
+
+    const char* s = line.value;
+    size_t sep_len = strlen(symbol.value);
+    const char* cur = s;
+    const char* found;
+
+    while ((found = strstr(cur, symbol.value)) != NULL) {
+        // Часть перед разделителем
+        size_t part_len = (size_t)(found - cur);
+        char* part = malloc(part_len + 1);
+        memcpy(part, cur, part_len);
+        part[part_len] = '\0';
+        sk_string s_part = sk_string_new_take(part);
+        sk_array_push_string(arr, s_part);
+
+        // Сам разделитель
+        sk_string s_sep = sk_string_new(symbol.value);
+        sk_array_push_string(arr, s_sep);
+
+        cur = found + sep_len;
+    }
+
+    // Хвост после последнего разделителя
+    if (*cur != '\0') {
+        sk_string s_tail = sk_string_new(cur);
+        sk_array_push_string(arr, s_tail);
+    }
+
+    return sk_arr_new(arr);
+  ~~~
+  return []
+}
+
+arr[string] chars(string line) {
+  includeC ~~~
+    if (line.__is_null) {
+        VoidSliceError* err = malloc(sizeof(VoidSliceError));
+        err->__type = "Error.VoidMeasurementError.VoidSliceError";
+        err->msg = sk_string_new("Cannot split 'null' into chars.");
+        sk_throw(err, "<builtin:std/strings>", 370, 5);
+    }
+    sk_array* arr = sk_array_new(sizeof(sk_string), 1);
+    const char* s = line.value;
+    int i = 0;
+    while (s[i]) {
+        int len = 0;
+        __sk__utf8__decode(&s[i], &len);
+        char* buf = malloc(len + 1);
+        memcpy(buf, &s[i], len);
+        buf[len] = '\0';
+        sk_string c = sk_string_new_take(buf);
+        sk_array_push_string(arr, c);
+        i += len;
+    }
+    return sk_arr_new(arr);
+  ~~~
+  return []
+}
+
+string repeat(string line, int n) {
+  includeC ~~~
+    if (line.__is_null) {
+        VoidConcatError* err = malloc(sizeof(VoidConcatError));
+        err->__type = "Error.VoidActionsError.VoidConcatError";
+        err->msg = sk_string_new("Cannot repeat 'null'.");
+        sk_throw(err, "<builtin:std/strings>", 390, 5);
+    }
+    if (n.value <= 0) return sk_string_new("");
+    size_t llen = strlen(line.value);
+    size_t total = llen * (size_t)n.value;
+    char* buf = malloc(total + 1);
+    buf[0] = '\0';
+    for (int i = 0; i < n.value; i++) {
+        memcpy(buf + i * llen, line.value, llen);
+    }
+    buf[total] = '\0';
+    return sk_string_new_take(buf);
+  ~~~
+  return ""
+}
+
+string replace(string line, string from, string to) {
+  includeC ~~~
+    if (line.__is_null || from.__is_null || to.__is_null) {
+        VoidConcatError* err = malloc(sizeof(VoidConcatError));
+        err->__type = "Error.VoidActionsError.VoidConcatError";
+        err->msg = sk_string_new("Cannot replace with 'null'.");
+        sk_throw(err, "<builtin:std/strings>", 410, 5);
+    }
+    size_t from_len = strlen(from.value);
+    if (from_len == 0) return sk_string_new(line.value);
+
+    size_t to_len = strlen(to.value);
+    size_t line_len = strlen(line.value);
+
+    // Считаем количество вхождений
+    size_t count = 0;
+    const char* p = line.value;
+    while ((p = strstr(p, from.value)) != NULL) {
+        count++;
+        p += from_len;
+    }
+
+    if (count == 0) return sk_string_new(line.value);
+
+    size_t new_len = line_len + count * (to_len - from_len);
+    char* buf = malloc(new_len + 1);
+    char* out = buf;
+
+    const char* cur = line.value;
+    const char* found;
+    while ((found = strstr(cur, from.value)) != NULL) {
+        size_t part_len = (size_t)(found - cur);
+        memcpy(out, cur, part_len);
+        out += part_len;
+        memcpy(out, to.value, to_len);
+        out += to_len;
+        cur = found + from_len;
+    }
+    strcpy(out, cur);
+
+    return sk_string_new_take(buf);
+  ~~~
+  return ""
+}
+
+string trim(string line) {
+  includeC ~~~
+    if (line.__is_null) {
+        VoidConcatError* err = malloc(sizeof(VoidConcatError));
+        err->__type = "Error.VoidActionsError.VoidConcatError";
+        err->msg = sk_string_new("Cannot trim 'null'.");
+        sk_throw(err, "<builtin:std/strings>", 440, 5);
+    }
+    const char* s = line.value;
+    while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r') s++;
+    size_t len = strlen(s);
+    while (len > 0) {
+        char c = s[len - 1];
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') len--;
+        else break;
+    }
+    char* buf = malloc(len + 1);
+    memcpy(buf, s, len);
+    buf[len] = '\0';
+    return sk_string_new_take(buf);
+  ~~~
+  return ""
 }

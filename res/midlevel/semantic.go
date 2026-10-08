@@ -501,7 +501,12 @@ func (sa *SemanticAnalyzer) analyzeTry(try *front.TryStmt) front.Node {
 	for _, clause := range try.Catches {
 		// Проверка типа
 		if clause.TypeName != "" && clause.TypeName != "Error" {
-			if _, ok := sa.ErrorTypes[clause.TypeName]; !ok {
+			// Разрезаем возможный "strings.Foo" или "strings.Parent.Child"
+			simpleName := clause.TypeName
+			if idx := strings.LastIndex(simpleName, "."); idx >= 0 {
+				simpleName = simpleName[idx+1:]
+			}
+			if _, ok := sa.ErrorTypes[simpleName]; !ok {
 				sa.addError("1560",
 					fmt.Sprintf("Unknown error type '%s' in catch", clause.TypeName),
 					clause.GetLine(), clause.GetColumn(), sa.CurrentFile)

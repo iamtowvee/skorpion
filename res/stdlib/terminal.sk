@@ -1,0 +1,370 @@
+/* ------------------------------------
+                std/terminal
+    ---------------------------------
+      SPDX-License-Identifier: MIT
+      Copyrights (c) 2026 iamtowvee
+  ------------------------------------- */
+
+use std/strings
+
+/* === Errors === */
+
+const TerminalError{} = new Error
+const NullCommandError{} = new TerminalError
+const NullTextError{} = new TerminalError
+const CommandFailedError{} = new TerminalError
+const BadColorCodeError{} = new TerminalError
+
+/* ============================
+   Console codepage (Windows only)
+   ============================ */
+
+void setConsoleCode(int code) {
+  includeC ~~~
+    #ifdef _WIN32
+        char buf[32];
+        snprintf(buf, sizeof(buf), "chcp %d > nul", code.value);
+        system(buf);
+    #else
+        (void)code;
+    #endif
+  ~~~
+}
+
+/* ============================
+   Run shell command, return output
+   ============================ */
+
+string run(string cmd) {
+  includeC ~~~
+    if (cmd.__is_null) {
+        NullCommandError* err = malloc(sizeof(NullCommandError));
+        err->__type = "Error.TerminalError.NullCommandError";
+        err->msg = sk_string_new("Command is 'null'.");
+        sk_throw(err, "<builtin:std/terminal>", 40, 5);
+    }
+
+    FILE* pipe;
+    #ifdef _WIN32
+        pipe = _popen(cmd.value, "r");
+    #else
+        pipe = popen(cmd.value, "r");
+    #endif
+
+    if (!pipe) {
+        CommandFailedError* err = malloc(sizeof(CommandFailedError));
+        err->__type = "Error.TerminalError.CommandFailedError";
+        err->msg = sk_string_new("Failed to open pipe for command.");
+        sk_throw(err, "<builtin:std/terminal>", 55, 5);
+    }
+
+    size_t cap = 4096;
+    size_t len = 0;
+    char* buf = malloc(cap);
+    if (!buf) {
+        #ifdef _WIN32
+            _pclose(pipe);
+        #else
+            pclose(pipe);
+        #endif
+        return sk_string_new("");
+    }
+
+    size_t n;
+    while ((n = fread(buf + len, 1, cap - len - 1, pipe)) > 0) {
+        len += n;
+        if (len + 1 >= cap) {
+            cap *= 2;
+            buf = realloc(buf, cap);
+            if (!buf) break;
+        }
+    }
+    buf[len] = '\0';
+
+    #ifdef _WIN32
+        _pclose(pipe);
+    #else
+        pclose(pipe);
+    #endif
+
+    return sk_string_new_take(buf);
+  ~~~
+  return ""
+}
+
+/* ============================
+   ANSI styles — basic
+   ============================ */
+
+string Reset()       { includeC ~~~ return sk_string_new("\033[0m");  ~~~ return "" }
+string Bold()        { includeC ~~~ return sk_string_new("\033[1m");  ~~~ return "" }
+string Dim()         { includeC ~~~ return sk_string_new("\033[2m");  ~~~ return "" }
+string Italic()      { includeC ~~~ return sk_string_new("\033[3m");  ~~~ return "" }
+string Underline()   { includeC ~~~ return sk_string_new("\033[4m");  ~~~ return "" }
+string Blink()       { includeC ~~~ return sk_string_new("\033[5m");  ~~~ return "" }
+string Reverse()     { includeC ~~~ return sk_string_new("\033[7m");  ~~~ return "" }
+string Hidden()      { includeC ~~~ return sk_string_new("\033[8m");  ~~~ return "" }
+string Strike()      { includeC ~~~ return sk_string_new("\033[9m");  ~~~ return "" }
+
+/* ============================
+   Foreground colors
+   ============================ */
+
+string FgBlack()     { includeC ~~~ return sk_string_new("\033[30m"); ~~~ return "" }
+string FgRed()       { includeC ~~~ return sk_string_new("\033[31m"); ~~~ return "" }
+string FgGreen()     { includeC ~~~ return sk_string_new("\033[32m"); ~~~ return "" }
+string FgYellow()    { includeC ~~~ return sk_string_new("\033[33m"); ~~~ return "" }
+string FgBlue()      { includeC ~~~ return sk_string_new("\033[34m"); ~~~ return "" }
+string FgMagenta()   { includeC ~~~ return sk_string_new("\033[35m"); ~~~ return "" }
+string FgCyan()      { includeC ~~~ return sk_string_new("\033[36m"); ~~~ return "" }
+string FgWhite()     { includeC ~~~ return sk_string_new("\033[37m"); ~~~ return "" }
+string FgDefault()   { includeC ~~~ return sk_string_new("\033[39m"); ~~~ return "" }
+
+/* Bright foreground */
+
+string FgBrightBlack()   { includeC ~~~ return sk_string_new("\033[90m"); ~~~ return "" }
+string FgBrightRed()     { includeC ~~~ return sk_string_new("\033[91m"); ~~~ return "" }
+string FgBrightGreen()   { includeC ~~~ return sk_string_new("\033[92m"); ~~~ return "" }
+string FgBrightYellow()  { includeC ~~~ return sk_string_new("\033[93m"); ~~~ return "" }
+string FgBrightBlue()    { includeC ~~~ return sk_string_new("\033[94m"); ~~~ return "" }
+string FgBrightMagenta() { includeC ~~~ return sk_string_new("\033[95m"); ~~~ return "" }
+string FgBrightCyan()    { includeC ~~~ return sk_string_new("\033[96m"); ~~~ return "" }
+string FgBrightWhite()   { includeC ~~~ return sk_string_new("\033[97m"); ~~~ return "" }
+
+/* ============================
+   Background colors
+   ============================ */
+
+string BgBlack()     { includeC ~~~ return sk_string_new("\033[40m"); ~~~ return "" }
+string BgRed()       { includeC ~~~ return sk_string_new("\033[41m"); ~~~ return "" }
+string BgGreen()     { includeC ~~~ return sk_string_new("\033[42m"); ~~~ return "" }
+string BgYellow()    { includeC ~~~ return sk_string_new("\033[43m"); ~~~ return "" }
+string BgBlue()      { includeC ~~~ return sk_string_new("\033[44m"); ~~~ return "" }
+string BgMagenta()   { includeC ~~~ return sk_string_new("\033[45m"); ~~~ return "" }
+string BgCyan()      { includeC ~~~ return sk_string_new("\033[46m"); ~~~ return "" }
+string BgWhite()     { includeC ~~~ return sk_string_new("\033[47m"); ~~~ return "" }
+string BgDefault()   { includeC ~~~ return sk_string_new("\033[49m"); ~~~ return "" }
+
+/* Bright background */
+
+string BgBrightBlack()   { includeC ~~~ return sk_string_new("\033[100m"); ~~~ return "" }
+string BgBrightRed()     { includeC ~~~ return sk_string_new("\033[101m"); ~~~ return "" }
+string BgBrightGreen()   { includeC ~~~ return sk_string_new("\033[102m"); ~~~ return "" }
+string BgBrightYellow()  { includeC ~~~ return sk_string_new("\033[103m"); ~~~ return "" }
+string BgBrightBlue()    { includeC ~~~ return sk_string_new("\033[104m"); ~~~ return "" }
+string BgBrightMagenta() { includeC ~~~ return sk_string_new("\033[105m"); ~~~ return "" }
+string BgBrightCyan()    { includeC ~~~ return sk_string_new("\033[106m"); ~~~ return "" }
+string BgBrightWhite()   { includeC ~~~ return sk_string_new("\033[107m"); ~~~ return "" }
+
+/* ============================
+   Screen settings
+   ============================ */
+
+string Clear()          { includeC ~~~ return sk_string_new("\033[2J");  ~~~ return "" }
+string ClearLine()      { includeC ~~~ return sk_string_new("\033[2K");  ~~~ return "" }
+string MoveHome()       { includeC ~~~ return sk_string_new("\033[H");   ~~~ return "" }
+
+string MoveTo(int row, int col) {
+  includeC ~~~
+    char buf[32];
+    snprintf(buf, sizeof(buf), "\033[%d;%dH", row.value, col.value);
+    return sk_string_new(buf);
+  ~~~
+  return ""
+}
+
+string CursorUp(int n)    {
+  includeC ~~~ char buf[16]; snprintf(buf, 16, "\033[%dA", n.value); return sk_string_new(buf); ~~~ return ""
+}
+string CursorDown(int n)  {
+  includeC ~~~ char buf[16]; snprintf(buf, 16, "\033[%dB", n.value); return sk_string_new(buf); ~~~ return ""
+}
+string CursorRight(int n) {
+  includeC ~~~ char buf[16]; snprintf(buf, 16, "\033[%dC", n.value); return sk_string_new(buf); ~~~ return ""
+}
+string CursorLeft(int n)  {
+  includeC ~~~ char buf[16]; snprintf(buf, 16, "\033[%dD", n.value); return sk_string_new(buf); ~~~ return ""
+}
+string CursorHide()    { includeC ~~~ return sk_string_new("\033[?25l"); ~~~ return "" }
+string CursorShow()    { includeC ~~~ return sk_string_new("\033[?25h"); ~~~ return "" }
+
+/* ============================
+   Colors 256
+   ============================ */
+
+string Fg256(int code, string text) {
+  includeC ~~~
+    if (text.__is_null) {
+        NullTextError* err = malloc(sizeof(NullTextError));
+        err->__type = "Error.TerminalError.NullTextError";
+        err->msg = sk_string_new("Cannot color 'null' text.");
+        sk_throw(err, "<builtin:std/terminal>", 300, 5);
+    }
+    char code_buf[32];
+    snprintf(code_buf, sizeof(code_buf), "\033[38;5;%dm", code.value);
+    size_t clen = strlen(code_buf);
+    size_t tlen = strlen(text.value);
+    char* buf = malloc(clen + tlen + 4 + 1);
+    memcpy(buf, code_buf, clen);
+    memcpy(buf + clen, text.value, tlen);
+    memcpy(buf + clen + tlen, "\033[0m", 4);
+    buf[clen + tlen + 4] = '\0';
+    return sk_string_new_take(buf);
+  ~~~
+  return ""
+}
+
+string Bg256(int code, string text) {
+  includeC ~~~
+    if (text.__is_null) {
+        NullTextError* err = malloc(sizeof(NullTextError));
+        err->__type = "Error.TerminalError.NullTextError";
+        err->msg = sk_string_new("Cannot color 'null' text.");
+        sk_throw(err, "<builtin:std/terminal>", 320, 5);
+    }
+    char code_buf[32];
+    snprintf(code_buf, sizeof(code_buf), "\033[48;5;%dm", code.value);
+    size_t clen = strlen(code_buf);
+    size_t tlen = strlen(text.value);
+    char* buf = malloc(clen + tlen + 4 + 1);
+    memcpy(buf, code_buf, clen);
+    memcpy(buf + clen, text.value, tlen);
+    memcpy(buf + clen + tlen, "\033[0m", 4);
+    buf[clen + tlen + 4] = '\0';
+    return sk_string_new_take(buf);
+  ~~~
+  return ""
+}
+
+/* ============================
+   Colors RGB
+   ============================ */
+
+string FgRGB(int r, int g, int b, string text) {
+  includeC ~~~
+    if (text.__is_null) {
+        NullTextError* err = malloc(sizeof(NullTextError));
+        err->__type = "Error.TerminalError.NullTextError";
+        err->msg = sk_string_new("Cannot color 'null' text.");
+        sk_throw(err, "<builtin:std/terminal>", 350, 5);
+    }
+    char code_buf[32];
+    snprintf(code_buf, sizeof(code_buf), "\033[38;2;%d;%d;%dm", r.value, g.value, b.value);
+    size_t clen = strlen(code_buf);
+    size_t tlen = strlen(text.value);
+    char* buf = malloc(clen + tlen + 4 + 1);
+    memcpy(buf, code_buf, clen);
+    memcpy(buf + clen, text.value, tlen);
+    memcpy(buf + clen + tlen, "\033[0m", 4);
+    buf[clen + tlen + 4] = '\0';
+    return sk_string_new_take(buf);
+  ~~~
+  return ""
+}
+
+string BgRGB(int r, int g, int b, string text) {
+  includeC ~~~
+    if (text.__is_null) {
+        NullTextError* err = malloc(sizeof(NullTextError));
+        err->__type = "Error.TerminalError.NullTextError";
+        err->msg = sk_string_new("Cannot color 'null' text.");
+        sk_throw(err, "<builtin:std/terminal>", 375, 5);
+    }
+    char code_buf[32];
+    snprintf(code_buf, sizeof(code_buf), "\033[48;2;%d;%d;%dm", r.value, g.value, b.value);
+    size_t clen = strlen(code_buf);
+    size_t tlen = strlen(text.value);
+    char* buf = malloc(clen + tlen + 4 + 1);
+    memcpy(buf, code_buf, clen);
+    memcpy(buf + clen, text.value, tlen);
+    memcpy(buf + clen + tlen, "\033[0m", 4);
+    buf[clen + tlen + 4] = '\0';
+    return sk_string_new_take(buf);
+  ~~~
+  return ""
+}
+
+string Link(string text, string url) {
+  includeC ~~~
+    if (text.__is_null || url.__is_null) {
+        NullTextError* err = malloc(sizeof(NullTextError));
+        err->__type = "Error.TerminalError.NullTextError";
+        err->msg = sk_string_new("Cannot link 'null'.");
+        sk_throw(err, "<builtin:std/terminal>", 400, 5);
+    }
+    // ESC]8;;URL ESC\ TEXT ESC]8;; ESC
+    const char* pre_open = "\033]8;;";
+    const char* post_open = "\033\\";
+    const char* close = "\033]8;;\033\\";
+    size_t plen = strlen(pre_open);
+    size_t ulen = strlen(url.value);
+    size_t olen = strlen(post_open);
+    size_t tlen = strlen(text.value);
+    size_t clen = strlen(close);
+    char* buf = malloc(plen + ulen + olen + tlen + clen + 1);
+    char* p = buf;
+    memcpy(p, pre_open, plen); p += plen;
+    memcpy(p, url.value, ulen); p += ulen;
+    memcpy(p, post_open, olen); p += olen;
+    memcpy(p, text.value, tlen); p += tlen;
+    memcpy(p, close, clen); p += clen;
+    *p = '\0';
+    return sk_string_new_take(buf);
+  ~~~
+  return ""
+}
+
+string Title(string text) {
+  includeC ~~~
+    if (text.__is_null) {
+        NullTextError* err = malloc(sizeof(NullTextError));
+        err->__type = "Error.TerminalError.NullTextError";
+        err->msg = sk_string_new("Cannot set title to 'null'.");
+        sk_throw(err, "<builtin:std/terminal>", 430, 5);
+    }
+    // ESC]0;TEXT BEL
+    size_t tlen = strlen(text.value);
+    char* buf = malloc(5 + tlen + 2);
+    memcpy(buf, "\033]0;", 4);
+    memcpy(buf + 4, text.value, tlen);
+    buf[4 + tlen] = '\a';
+    buf[4 + tlen + 1] = '\0';
+    return sk_string_new_take(buf);
+  ~~~
+  return ""
+}
+
+string Bell() { includeC ~~~ return sk_string_new("\a"); ~~~ return "" }
+
+string SaveCursor()    { includeC ~~~ return sk_string_new("\033[s"); ~~~ return "" }
+string RestoreCursor() { includeC ~~~ return sk_string_new("\033[u"); ~~~ return "" }
+
+bool isAnsiSupported() {
+  includeC ~~~
+    // Явный отказ от цвета
+    if (getenv("NO_COLOR")) return sk_bool_new(0);
+
+    // Windows Terminal
+    if (getenv("WT_SESSION")) return sk_bool_new(1);
+
+    // VS Code integrated terminal
+    const char* term_program = getenv("TERM_PROGRAM");
+    if (term_program && strcmp(term_program, "vscode") == 0) return sk_bool_new(1);
+
+    // ConEmu
+    const char* conemu = getenv("ConEmuANSI");
+    if (conemu && strcmp(conemu, "ON") == 0) return sk_bool_new(1);
+
+    // ANSICON
+    if (getenv("ANSICON")) return sk_bool_new(1);
+
+    // MinTTY / Cygwin / MSYS2 / Git Bash
+    const char* term = getenv("TERM");
+    if (term && strcmp(term, "dumb") != 0) return sk_bool_new(1);
+
+    // Неизвестный терминал — считаем, что ANSI работает
+    // (современные Windows 10+ conhost и так поддерживают ANSI)
+    return sk_bool_new(1);
+  ~~~
+  return false
+}

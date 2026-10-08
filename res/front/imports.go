@@ -46,7 +46,7 @@ func (im *ImportManager) LoadMain(path string) (*Program, error) {
 		return nil, fmt.Errorf("cannot read main file %s: %v", path, err)
 	}
 
-	// Парсим главный файл С ИМЕНЕМ ФАЙЛА!
+	// Парсим главный файл С ИМЕНЕМ ФАЙЛА
 	parser := NewParserWithFile(string(content), path)
 	mainProg := parser.Parse()
 
@@ -62,11 +62,11 @@ func (im *ImportManager) LoadMain(path string) (*Program, error) {
 			return nil, err
 		}
 
-		// Переносим global includeC из модуля в main
-		mainProg.GlobalIncludeC = append(mainProg.GlobalIncludeC, subProg.GlobalIncludeC...)
+		// Переносим global includeC из модуля в main (с дедупликацией)
+		mainProg.GlobalIncludeC = appendUniqueStrings(mainProg.GlobalIncludeC, subProg.GlobalIncludeC)
 
-		// Переносим ErrorDecls из модуля в main
-		mainProg.ErrorDecls = append(mainProg.ErrorDecls, subProg.ErrorDecls...)
+		// Переносим ErrorDecls из модуля в main (с дедупликацией)
+		mainProg.ErrorDecls = appendUniqueErrors(mainProg.ErrorDecls, subProg.ErrorDecls)
 
 		// Добавляем ТОЛЬКО экспортируемые функции
 		for _, fn := range subProg.Functions {
@@ -132,15 +132,25 @@ func (im *ImportManager) loadModuleInternal(path string, visited map[string]bool
 			return nil, err
 		}
 
-		// Переносим global includeC из вложенных модулей
-		prog.GlobalIncludeC = append(prog.GlobalIncludeC, subProg.GlobalIncludeC...)
+		// Переносим global includeC из вложенных модулей (с дедупликацией)
+		prog.GlobalIncludeC = appendUniqueStrings(prog.GlobalIncludeC, subProg.GlobalIncludeC)
 
-		// Переносим ErrorDecls из вложенных модулей
-		prog.ErrorDecls = append(prog.ErrorDecls, subProg.ErrorDecls...)
+		// Переносим ErrorDecls из вложенных модулей (с дедупликацией)
+		prog.ErrorDecls = appendUniqueErrors(prog.ErrorDecls, subProg.ErrorDecls)
 
+		// Функции — как было
 		prog.Functions = append(prog.Functions, subProg.Functions...)
 	}
 	delete(visited, path)
+
+	// === Заполняем Module для СВОИХ ErrorDecl ===
+	// Вложенные уже заполнены, у них Module != ""
+	moduleName := GetModuleName(path) // "std/strings" → "strings"
+	for _, d := range prog.ErrorDecls {
+		if d.Module == "" {
+			d.Module = moduleName
+		}
+	}
 
 	im.loaded[path] = &LoadedModule{
 		Path:    fullPath,
@@ -202,4 +212,32 @@ func (im *ImportManager) GetAllFunctionsInternal() []*Function {
 		allFunctions = append(allFunctions, mod.Program.Functions...)
 	}
 	return allFunctions
+}
+
+func appendUniqueErrors(dst []*ErrorDecl, src []*ErrorDecl) []*ErrorDecl {
+	seen := make(map[string]bool, len(dst))
+	for _, d := range dst {
+		seen[d.Name] = true
+	}
+	for _, d := range src {
+		if !seen[d.Name] {
+			dst = append(dst, d)
+			seen[d.Name] = true
+		}
+	}
+	return dst
+}
+
+func appendUniqueStrings(dst []string, src []string) []string {
+	seen := make(map[string]bool, len(dst))
+	for _, s := range dst {
+		seen[s] = true
+	}
+	for _, s := range src {
+		if !seen[s] {
+			dst = append(dst, s)
+			seen[s] = true
+		}
+	}
+	return dst
 }

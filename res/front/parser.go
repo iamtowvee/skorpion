@@ -514,7 +514,7 @@ func (p *Parser) parseTry() Node {
 		if p.peek.Type == TOKEN_LPAREN {
 			p.advance()
 
-			// TypeName
+			// TypeName — Ident или Ident.Ident.Ident
 			if p.peek.Type != TOKEN_IDENT && !(p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "Error") {
 				p.hasErrors = true
 				errors.NewFatalError("0576",
@@ -524,6 +524,20 @@ func (p *Parser) parseTry() Node {
 			}
 			clause.TypeName = p.peek.Literal
 			p.advance()
+
+			// Цепочка .Ident
+			for p.peek.Type == TOKEN_DOT {
+				p.advance()
+				if p.peek.Type != TOKEN_IDENT {
+					p.hasErrors = true
+					errors.NewFatalError("0576",
+						fmt.Sprintf("Expected identifier after '.' in catch type, got '%s'", p.peek.Literal),
+						p.peek.Line, p.peek.Column, p.FileName)
+					return nil
+				}
+				clause.TypeName += "." + p.peek.Literal
+				p.advance()
+			}
 
 			// as e
 			if p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "as" {

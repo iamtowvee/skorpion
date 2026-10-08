@@ -48,6 +48,7 @@ type IRErrorDecl struct {
 	Name   string
 	Parent string
 	Fields []IRErrorField
+	Module string
 }
 
 type IRErrorField struct {

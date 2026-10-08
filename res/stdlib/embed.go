@@ -23,14 +23,18 @@ var MATH_SK string
 //go:embed arrays.sk
 var ARRAYS_SK string
 
+//go:embed terminal.sk
+var TERMINAL_SK string
+
 var StdLib = map[string]string{
-	"std/io":      IO_SK,
-	"std/os":      OS_SK,
-	"std/ref":     REF_SK,
-	"std/cfg":     CFG_SK,
-	"std/strings": STRINGS_SK,
-	"std/math":    MATH_SK,
-	"std/arrays":  ARRAYS_SK,
+	"std/io":       IO_SK,
+	"std/os":       OS_SK,
+	"std/ref":      REF_SK,
+	"std/cfg":      CFG_SK,
+	"std/strings":  STRINGS_SK,
+	"std/math":     MATH_SK,
+	"std/arrays":   ARRAYS_SK,
+	"std/terminal": TERMINAL_SK,
 }
 
 func GetModule(path string) (string, bool) {
