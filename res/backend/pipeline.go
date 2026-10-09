@@ -85,6 +85,7 @@ func (p *Pipeline) processFunction(fn *front.Function) {
 		Instructions:   []IRInstruction{},
 		ArrayElemTypes: make(map[string]string),
 		VarTypes:       make(map[string]string),
+		DictKeyTypes:   make(map[string]map[string]string),
 	}
 
 	for _, param := range fn.Params {
@@ -801,7 +802,6 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 			exprType := p.getExprType(decl.Expr, irFn)
 			exprResult := p.processExpression(decl.Expr, irFn)
 
-			// Если expr уже sk_any (any или union) — не оборачивать
 			if exprType == "any" || isUnionTypeP(exprType) {
 				irFn.Instructions = append(irFn.Instructions, IRInstruction{
 					Op:     "=",
@@ -842,6 +842,23 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 		irFn.Locals = append(irFn.Locals, "sk_dict_ref "+decl.Name)
 		if irFn.VarTypes != nil {
 			irFn.VarTypes[decl.Name] = "dict"
+		}
+		if irFn.DictKeyTypes == nil {
+			irFn.DictKeyTypes = make(map[string]map[string]string)
+		}
+		irFn.DictKeyTypes[decl.Name] = make(map[string]string)
+
+		// Заполняем типы ключей из литерала
+		if decl.Expr != nil {
+			if lit, ok := decl.Expr.(*front.DictLiteral); ok {
+				for _, elem := range lit.Elements {
+					keyType := p.getExprType(elem.Value, irFn)
+					if keyType == "" {
+						keyType = "any"
+					}
+					irFn.DictKeyTypes[decl.Name][elem.Key] = keyType
+				}
+			}
 		}
 
 		if decl.Expr != nil {
@@ -997,7 +1014,6 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 
 		exprResult := p.processExpression(decl.Expr, irFn)
 
-		// Неявные конверсии char ↔ int
 		if decl.Type == "int" && exprType == "char" {
 			tmp := p.newTemp()
 			irFn.Locals = append(irFn.Locals, "sk_int "+tmp)
@@ -1537,82 +1553,36 @@ func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string
 		return result
 	}
 
-	// Конкатенация строк
-	if bin.Op == "+" && (leftType == "string" || rightType == "string" || leftType == "any" || rightType == "any") {
+	// Конкатенация строк — только string + string, char + string, string + char, char + char
+	if bin.Op == "+" &&
+		(leftType == "string" || leftType == "char") &&
+		(rightType == "string" || rightType == "char") {
 		leftVal := left
-		if leftType == "any" {
+		if leftType == "char" {
 			tmp := p.newTemp()
 			irFn.Locals = append(irFn.Locals, "sk_string "+tmp)
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op:         "call",
 				Result:     tmp,
-				Arg1:       "any_to_string",
+				Arg1:       "sk_char_to_string",
 				Arg2:       left,
 				ReturnType: "sk_string",
 			})
 			leftVal = tmp
-		} else if leftType != "string" {
-			tmp := p.newTemp()
-			irFn.Locals = append(irFn.Locals, "sk_string "+tmp)
-			fnName := ""
-			switch leftType {
-			case "int":
-				fnName = "sk_int_to_string"
-			case "bool":
-				fnName = "sk_bool_to_string"
-			case "float":
-				fnName = "sk_float_to_string"
-			case "double":
-				fnName = "sk_double_to_string"
-			}
-			if fnName != "" {
-				irFn.Instructions = append(irFn.Instructions, IRInstruction{
-					Op:         "call",
-					Result:     tmp,
-					Arg1:       fnName,
-					Arg2:       left,
-					ReturnType: "sk_string",
-				})
-				leftVal = tmp
-			}
 		}
 
 		rightVal := right
-		if rightType == "any" {
+		if rightType == "char" {
 			tmp := p.newTemp()
 			irFn.Locals = append(irFn.Locals, "sk_string "+tmp)
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op:         "call",
 				Result:     tmp,
-				Arg1:       "any_to_string",
+				Arg1:       "sk_char_to_string",
 				Arg2:       right,
 				ReturnType: "sk_string",
 			})
 			rightVal = tmp
-		} else if rightType != "string" {
-			tmp := p.newTemp()
-			irFn.Locals = append(irFn.Locals, "sk_string "+tmp)
-			fnName := ""
-			switch rightType {
-			case "int":
-				fnName = "sk_int_to_string"
-			case "bool":
-				fnName = "sk_bool_to_string"
-			case "float":
-				fnName = "sk_float_to_string"
-			case "double":
-				fnName = "sk_double_to_string"
-			}
-			if fnName != "" {
-				irFn.Instructions = append(irFn.Instructions, IRInstruction{
-					Op:         "call",
-					Result:     tmp,
-					Arg1:       fnName,
-					Arg2:       right,
-					ReturnType: "sk_string",
-				})
-				rightVal = tmp
-			}
 		}
 
 		result := p.newTemp()
@@ -1908,8 +1878,19 @@ func (p *Pipeline) processExpression(expr front.Node, irFn *IRFunction) string {
 }
 
 func (p *Pipeline) processDictAccess(objName, key string, irFn *IRFunction) string {
-	result := p.newTemp()
-	irFn.Locals = append(irFn.Locals, "sk_any "+result)
+	// Определяем реальный тип ключа (если известен)
+	keyType := "any"
+	if irFn.DictKeyTypes != nil {
+		if keyTypes, ok := irFn.DictKeyTypes[objName]; ok {
+			if t, ok := keyTypes[key]; ok {
+				keyType = t
+			}
+		}
+	}
+
+	// Получаем sk_any из словаря
+	rawAny := p.newTemp()
+	irFn.Locals = append(irFn.Locals, "sk_any "+rawAny)
 	keyStr := p.newTemp()
 	irFn.Locals = append(irFn.Locals, "sk_string "+keyStr)
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
@@ -1919,10 +1900,32 @@ func (p *Pipeline) processDictAccess(objName, key string, irFn *IRFunction) stri
 	})
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:         "call",
-		Result:     result,
+		Result:     rawAny,
 		Arg1:       "sk_dict_get",
 		Arg2:       objName + ".value, " + keyStr,
 		ReturnType: "sk_any",
+	})
+
+	// Если тип any — возвращаем sk_any как есть
+	if keyType == "any" || keyType == "" {
+		return rawAny
+	}
+
+	// Иначе распаковываем через any_to_*
+	getter := p.getAnyGetterByType(keyType)
+	if getter == "" {
+		return rawAny
+	}
+
+	result := p.newTemp()
+	cType := p.typeToC(keyType)
+	irFn.Locals = append(irFn.Locals, cType+" "+result)
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:         "call",
+		Result:     result,
+		Arg1:       getter,
+		Arg2:       rawAny,
+		ReturnType: cType,
 	})
 	return result
 }
@@ -2754,19 +2757,18 @@ func (p *Pipeline) processForIn(forIn *front.ForInStmt, irFn *IRFunction) {
 func (p *Pipeline) processArrayIndex(idx *front.ArrayIndex, irFn *IRFunction) string {
 	if irFn.VarTypes != nil {
 		if objType, ok := irFn.VarTypes[idx.Name]; ok && objType == "dict" {
-			indexType := p.getExprType(idx.Index, irFn)
 			index := p.processExpression(idx.Index, irFn)
-			result := p.newTemp()
-			irFn.Locals = append(irFn.Locals, "sk_any "+result)
+			rawAny := p.newTemp()
+			irFn.Locals = append(irFn.Locals, "sk_any "+rawAny)
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op:         "call",
-				Result:     result,
+				Result:     rawAny,
 				Arg1:       "sk_dict_get",
 				Arg2:       fmt.Sprintf("%s.value, %s", idx.Name, index),
 				ReturnType: "sk_any",
 			})
-			_ = indexType
-			return result
+			// Тип ключа неизвестен (индекс — рантайм-выражение), возвращаем sk_any
+			return rawAny
 		}
 	}
 
@@ -3432,6 +3434,13 @@ func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 		if irFn.VarTypes != nil {
 			if objType, ok := irFn.VarTypes[n.Object]; ok {
 				if objType == "dict" {
+					if irFn.DictKeyTypes != nil {
+						if keyTypes, ok := irFn.DictKeyTypes[n.Object]; ok {
+							if t, ok := keyTypes[n.Field]; ok {
+								return t
+							}
+						}
+					}
 					return "any"
 				}
 				if objType == "Error" {

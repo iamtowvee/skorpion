@@ -1372,6 +1372,15 @@ func (p *Parser) parseUnary() Node {
 
 	pos := p.pos()
 
+	if p.peek.Type == TOKEN_DOLLAR {
+		p.advance()
+		expr := p.parseUnary()
+		if expr == nil {
+			return nil
+		}
+		return &UnaryExpr{Position: pos, Op: "$", Expr: expr}
+	}
+
 	if p.peek.Type == TOKEN_NOT {
 		p.advance()
 		expr := p.parseUnary()
@@ -1701,15 +1710,6 @@ func (p *Parser) parsePrimary() Node {
 			return nil
 		}
 		return &CharLiteral{Position: pos, Value: val[0]}
-
-	case TOKEN_DOLLAR:
-		pos := p.pos()
-		p.advance()
-		expr := p.parsePrimary()
-		if expr == nil {
-			return nil
-		}
-		return &UnaryExpr{Position: pos, Op: "$", Expr: expr}
 
 	case TOKEN_IDENT:
 		pos := p.pos()

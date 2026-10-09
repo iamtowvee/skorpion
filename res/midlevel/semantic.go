@@ -479,7 +479,12 @@ func (sa *SemanticAnalyzer) analyzeFieldAccess(fa *front.FieldAccess) front.Node
 		return fa
 	}
 
-	// 2. Объект должен быть error-типом
+	// 2. dict — доступ к ключу через точку
+	if sym.Type == "dict" {
+		return fa
+	}
+
+	// 3. Объект должен быть error-типом
 	decl, ok := sa.ErrorTypes[sym.Type]
 	if !ok {
 		sa.addError("1539",
@@ -488,7 +493,7 @@ func (sa *SemanticAnalyzer) analyzeFieldAccess(fa *front.FieldAccess) front.Node
 		return fa
 	}
 
-	// 3. Поле должно существовать
+	// 4. Поле должно существовать
 	allFields := sa.collectErrorFields(decl)
 	if _, exists := allFields[fa.Field]; !exists {
 		sa.addError("1539",
@@ -576,7 +581,6 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 	if isUnionType(decl.Type) {
 		types := parseUnionTypes(decl.Type)
 
-		// Запрет вложенных union и any
 		for _, t := range types {
 			if isUnionType(t) {
 				sa.addError("0611",
@@ -592,7 +596,6 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 			}
 		}
 
-		// Проверка Expr
 		if decl.Expr != nil {
 			exprType := sa.getNodeType(decl.Expr)
 			if exprType == "void" {
@@ -612,6 +615,24 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 
 		sym := sa.CurrentScope.Define(decl.Name, SYM_VARIABLE, decl.Type, false)
 		sym.CurrentType = decl.CurrentType
+		return decl
+	}
+
+	// === dict ===
+	if decl.Type == "dict" {
+		sym := sa.CurrentScope.Define(decl.Name, SYM_VARIABLE, "dict", false)
+		if decl.Expr != nil {
+			if lit, ok := decl.Expr.(*front.DictLiteral); ok {
+				sym.DictKeyTypes = make(map[string]string)
+				for _, elem := range lit.Elements {
+					keyType := sa.getNodeType(elem.Value)
+					if keyType != "" {
+						sym.DictKeyTypes[elem.Key] = keyType
+					}
+					sa.analyzeNode(elem.Value)
+				}
+			}
+		}
 		return decl
 	}
 
@@ -876,16 +897,26 @@ func (sa *SemanticAnalyzer) analyzeBinary(bin *front.BinaryExpr) front.Node {
 		}
 	}
 
+	// string + string → конкатенация
+	if bin.Op == "+" && leftType == "string" && rightType == "string" {
+		return bin
+	}
+
 	// char + char → string (конкатенация)
 	if bin.Op == "+" && leftType == "char" && rightType == "char" {
 		return bin
 	}
-	// char + string → string
+	// char + string / string + char → string
 	if bin.Op == "+" && (leftType == "char" && rightType == "string" || leftType == "string" && rightType == "char") {
 		return bin
 	}
-	// char + int → int (и наоборот)
+	// char + int / int + char → int
 	if bin.Op == "+" && ((leftType == "char" && rightType == "int") || (leftType == "int" && rightType == "char")) {
+		return bin
+	}
+
+	// any в арифметике — runtime dispatch, разрешено
+	if leftType == "any" || rightType == "any" {
 		return bin
 	}
 
@@ -895,6 +926,10 @@ func (sa *SemanticAnalyzer) analyzeBinary(bin *front.BinaryExpr) front.Node {
 			sa.addError("1553",
 				"Cannot use null in arithmetic operation",
 				bin.GetLine(), bin.GetColumn(), sa.CurrentFile)
+			return bin
+		}
+		// Строковая конкатенация: + со строкой допустим
+		if bin.Op == "+" && leftType == "string" && rightType == "string" {
 			return bin
 		}
 		if !sa.isNumericType(leftType) || !sa.isNumericType(rightType) {
@@ -1171,6 +1206,9 @@ func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
 	}
 
 	for i, arg := range args {
+		// Анализируем аргумент (чтобы поймать вложенные ошибки)
+		sa.analyzeNode(arg)
+
 		argType := sa.getNodeType(arg)
 		paramType := targetFunc.Params[i].Type
 
@@ -1513,24 +1551,30 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 		}
 		return ""
 	case *front.FieldAccess:
-		// Ищем объект в scope
 		sym := sa.CurrentScope.Resolve(n.Object)
 		if sym == nil {
 			return ""
 		}
 
-		// Ищем тип объекта среди error-типов
+		// dict — ищем реальный тип ключа
+		if sym.Type == "dict" {
+			if sym.DictKeyTypes != nil {
+				if t, ok := sym.DictKeyTypes[n.Field]; ok {
+					return t
+				}
+			}
+			return "any"
+		}
+
+		// error-тип
 		decl, ok := sa.ErrorTypes[sym.Type]
 		if !ok {
 			return ""
 		}
-
-		// Ищем поле (с учётом наследования)
 		allFields := sa.collectErrorFields(decl)
 		if field, exists := allFields[n.Field]; exists {
 			return field.Type
 		}
-
 		return ""
 	case *front.BinaryExpr:
 		debug.Debug("getNodeType BinaryExpr: op=%s\n", n.Op)
@@ -1547,6 +1591,15 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 			return "bool"
 		}
 
+		// any в операнде → any (тип неизвестен)
+		if leftType == "any" || rightType == "any" {
+			return "any"
+		}
+
+		// string + string → string
+		if n.Op == "+" && leftType == "string" && rightType == "string" {
+			return "string"
+		}
 		// char + char → string
 		if n.Op == "+" && leftType == "char" && rightType == "char" {
 			return "string"
@@ -1567,10 +1620,6 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 				return "float"
 			}
 			return "int"
-		}
-
-		if n.Op == "+" && (leftType == "string" || rightType == "string") {
-			return "string"
 		}
 
 		return "int"

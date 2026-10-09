@@ -1,4 +1,6 @@
 use #std/io
-use std/terminal
 
-void main(arr args) { sendln("Привет"); terminal.setUTF8(); sendln("Привет"); }
+void main(arr args) {
+    dict x = {x: 13, bla: true}
+    sendln(x.x + x.bla.to_int())
+}

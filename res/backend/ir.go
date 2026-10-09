@@ -28,6 +28,7 @@ type IRFunction struct {
 	Locals         []string
 	ArrayElemTypes map[string]string
 	VarTypes       map[string]string
+	DictKeyTypes   map[string]map[string]string
 	Instructions   []IRInstruction
 }
 
