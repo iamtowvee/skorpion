@@ -403,6 +403,8 @@ func (sa *SemanticAnalyzer) analyzeNode(node front.Node) front.Node {
 		return n
 	case *front.UnicodeLiteral:
 		return n
+	case *front.ArrayIndex:
+		return sa.analyzeArrayIndex(n)
 	case *front.IknowIdoBlock:
 		// Полностью пропускаем анализ — ни типов, ни объявлений, ни проверок.
 		return n
@@ -645,6 +647,9 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 			return decl
 		}
 
+		// Собираем типы элементов
+		elemTypes := []string{}
+
 		if decl.Expr != nil {
 			if arrLit, ok := decl.Expr.(*front.ArrayLiteral); ok {
 				expectedElemType := decl.ElemType
@@ -655,7 +660,10 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 							sa.addError("1542",
 								"Cannot use null in heterogeneous array — cannot infer its type",
 								elem.GetLine(), elem.GetColumn(), sa.CurrentFile)
+							elemTypes = append(elemTypes, "void")
+							continue
 						}
+						elemTypes = append(elemTypes, sa.getNodeType(elem))
 					}
 				} else {
 					for _, elem := range arrLit.Elements {
@@ -665,16 +673,21 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 									sa.addError("1542",
 										fmt.Sprintf("Cannot use null in array of type '%s'", expectedElemType),
 										elem.GetLine(), elem.GetColumn(), sa.CurrentFile)
+									elemTypes = append(elemTypes, "void")
 									continue
 								}
 								sa.addError("1534",
 									fmt.Sprintf("Array element type mismatch: expected '%s', got '%s'",
 										expectedElemType, sa.getNodeType(elem)),
 									elem.GetLine(), elem.GetColumn(), sa.CurrentFile)
+								elemTypes = append(elemTypes, sa.getNodeType(elem))
+							} else {
+								elemTypes = append(elemTypes, expectedElemType)
 							}
 						} else {
 							elemType := sa.getNodeType(elem)
 							if elemType == "void" {
+								elemTypes = append(elemTypes, "void")
 								continue
 							}
 							if elemType != expectedElemType && elemType != "" {
@@ -683,6 +696,7 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 										expectedElemType, elemType),
 									elem.GetLine(), elem.GetColumn(), sa.CurrentFile)
 							}
+							elemTypes = append(elemTypes, elemType)
 						}
 					}
 				}
@@ -698,7 +712,8 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 			elemType = "any"
 		}
 		fullType := "arr[" + elemType + "]"
-		sa.CurrentScope.Define(decl.Name, SYM_VARIABLE, fullType, false)
+		sym := sa.CurrentScope.Define(decl.Name, SYM_VARIABLE, fullType, false)
+		sym.ArrayElemTypes = elemTypes
 		return decl
 	}
 
@@ -1527,6 +1542,39 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 		return "int"
 	case *front.String:
 		return "string"
+	case *front.ArrayIndex:
+		sym := sa.CurrentScope.Resolve(n.Name)
+		if sym == nil {
+			return ""
+		}
+
+		// dict → any
+		if sym.Type == "dict" {
+			return "any"
+		}
+
+		// arr[T] или arr → тип элемента
+		if isArrayTypeSemantic(sym.Type) {
+			// Если индекс — константа и есть ArrayElemTypes → реальный тип
+			if len(sym.ArrayElemTypes) > 0 {
+				if num, ok := n.Index.(*front.Number); ok {
+					if i, err := strconv.Atoi(num.Value); err == nil {
+						if i >= 0 && i < len(sym.ArrayElemTypes) {
+							return sym.ArrayElemTypes[i]
+						}
+					}
+				}
+			}
+
+			// Иначе — тип из arr[T] или "any"
+			elemType := parseArrayElemTypeSemantic(sym.Type)
+			if elemType == "" {
+				elemType = "any"
+			}
+			return elemType
+		}
+
+		return ""
 	case *front.UnicodeLiteral:
 		return "char"
 	case *front.CharLiteral:
@@ -2338,4 +2386,38 @@ func (sa *SemanticAnalyzer) analyzeFormatExpr(fe *front.FormatExpr) front.Node {
 	}
 
 	return fe
+}
+
+func (sa *SemanticAnalyzer) analyzeArrayIndex(idx *front.ArrayIndex) front.Node {
+	sym := sa.CurrentScope.Resolve(idx.Name)
+	if sym == nil {
+		sa.addError("1514",
+			fmt.Sprintf("Undefined identifier '%s'", idx.Name),
+			idx.GetLine(), idx.GetColumn(), sa.CurrentFile)
+		return idx
+	}
+
+	if sym.Type == "dict" {
+		sa.analyzeNode(idx.Index)
+		return idx
+	}
+
+	if !isArrayTypeSemantic(sym.Type) {
+		sa.addError("1539",
+			fmt.Sprintf("Cannot index non-array variable '%s' (type '%s')",
+				idx.Name, sym.Type),
+			idx.GetLine(), idx.GetColumn(), sa.CurrentFile)
+		return idx
+	}
+
+	// Индекс — int
+	indexType := sa.getNodeType(idx.Index)
+	if indexType != "int" && indexType != "" {
+		sa.addError("1520",
+			fmt.Sprintf("Array index must be int, got '%s'", indexType),
+			idx.Index.GetLine(), idx.Index.GetColumn(), sa.CurrentFile)
+	}
+
+	sa.analyzeNode(idx.Index)
+	return idx
 }

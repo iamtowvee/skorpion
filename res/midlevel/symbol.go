@@ -14,16 +14,17 @@ const (
 )
 
 type Symbol struct {
-	Name         string
-	Kind         SymbolKind
-	Type         string
-	CurrentType  string
-	RealType     string
-	IsExported   bool
-	IsConst      bool
-	Value        interface{}
-	Scope        *Scope
-	DictKeyTypes map[string]string
+	Name           string
+	Kind           SymbolKind
+	Type           string
+	CurrentType    string
+	RealType       string
+	IsExported     bool
+	IsConst        bool
+	Value          interface{}
+	Scope          *Scope
+	DictKeyTypes   map[string]string
+	ArrayElemTypes []string
 }
 
 type Scope struct {

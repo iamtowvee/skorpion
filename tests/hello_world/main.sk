@@ -1,6 +1,6 @@
 use #std/io
 
 void main(arr args) {
-    dict x = {x: 13, bla: true}
-    sendln(x.x + x.bla.to_int())
+    arr x = [1, true]
+    sendln(x[0] + x[1])
 }
