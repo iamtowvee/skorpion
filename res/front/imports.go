@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"skrp/res/debug"
 	"skrp/res/stdlib"
 	"strings"
 	"sync"
@@ -74,6 +75,17 @@ func (im *ImportManager) LoadMain(path string) (*Program, error) {
 				im.importedFuncs = append(im.importedFuncs, fn)
 			}
 		}
+	}
+
+	// NEW: собираем полный список функций (локальные + импортированные)
+	mainProg.AllFunctions = make([]*Function, 0, len(mainProg.Functions)+len(im.importedFuncs))
+	mainProg.AllFunctions = append(mainProg.AllFunctions, mainProg.Functions...)
+	mainProg.AllFunctions = append(mainProg.AllFunctions, im.importedFuncs...)
+
+	debug.Debug("LoadMain: Functions=%d ImportedFuncs=%d AllFunctions=%d",
+		len(mainProg.Functions), len(im.importedFuncs), len(mainProg.AllFunctions))
+	for _, fn := range mainProg.AllFunctions {
+		debug.Debug("  AllFunctions: %s -> %s", fn.Name, fn.ReturnType)
 	}
 
 	return mainProg, nil

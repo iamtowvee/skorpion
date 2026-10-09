@@ -269,6 +269,7 @@ func buildProject() {
 		Functions:      allFunctions,
 		ErrorDecls:     mainProg.ErrorDecls,
 		GlobalIncludeC: mainProg.GlobalIncludeC,
+		AllFunctions:   allFunctions,
 	}
 
 	// Оптимизация (можно отключить флагом --no-optimize)

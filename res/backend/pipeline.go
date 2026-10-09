@@ -2,6 +2,7 @@ package backend
 
 import (
 	"fmt"
+	"skrp/res/debug"
 	"skrp/res/front"
 	"strconv"
 	"strings"
@@ -1597,37 +1598,16 @@ func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string
 		return result
 	}
 
+	// === any в операнде — runtime dispatch через sk_any_* ===
+	if leftType == "any" || rightType == "any" {
+		return p.processAnyBinary(bin, left, right, leftType, rightType, irFn)
+	}
+
 	// Арифметика/сравнения — распаковываем any если надо
 	leftVal := left
 	leftT := leftType
-	if leftType == "any" {
-		tmp := p.newTemp()
-		irFn.Locals = append(irFn.Locals, "sk_int "+tmp)
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:         "call",
-			Result:     tmp,
-			Arg1:       "any_to_int",
-			Arg2:       left,
-			ReturnType: "sk_int",
-		})
-		leftVal = tmp
-		leftT = "int"
-	}
 	rightVal := right
 	rightT := rightType
-	if rightType == "any" {
-		tmp := p.newTemp()
-		irFn.Locals = append(irFn.Locals, "sk_int "+tmp)
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:         "call",
-			Result:     tmp,
-			Arg1:       "any_to_int",
-			Arg2:       right,
-			ReturnType: "sk_int",
-		})
-		rightVal = tmp
-		rightT = "int"
-	}
 
 	// Определяем тип результата
 	resultT := leftT
@@ -1797,6 +1777,158 @@ func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) string
 		ReturnType: "sk_" + resultT,
 	})
 
+	return result
+}
+
+// processAnyBinary обрабатывает арифметику/сравнения, когда хотя бы один
+// операнд — any (или union). Использует рантайм-функции sk_any_*.
+func (p *Pipeline) processAnyBinary(
+	bin *front.BinaryExpr,
+	left, right string,
+	leftType, rightType string,
+	irFn *IRFunction,
+) string {
+	// Оборачиваем не-any операнды в sk_any, чтобы передать в sk_any_*
+	leftAny := p.wrapToAny(leftType, left, irFn)
+	rightAny := p.wrapToAny(rightType, right, irFn)
+
+	// === Сравнения → sk_bool ===
+	if bin.Op == "<" || bin.Op == ">" || bin.Op == "<=" ||
+		bin.Op == ">=" || bin.Op == "==" || bin.Op == "!=" {
+
+		var fnName string
+		switch bin.Op {
+		case "<":
+			fnName = "sk_any_lt"
+		case ">":
+			fnName = "sk_any_gt"
+		case "<=":
+			fnName = "sk_any_le"
+		case ">=":
+			fnName = "sk_any_ge"
+		case "==":
+			fnName = "sk_any_eq"
+		case "!=":
+			fnName = "sk_any_ne"
+		}
+
+		result := p.newTemp()
+		irFn.Locals = append(irFn.Locals, "sk_bool "+result)
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "call",
+			Result:     result,
+			Arg1:       fnName,
+			Arg2:       leftAny + ", " + rightAny,
+			ReturnType: "sk_bool",
+		})
+		return result
+	}
+
+	// === Логические операции → sk_bool ===
+	if bin.Op == "&&" || bin.Op == "||" {
+		leftBool := p.anyToBool(leftAny, irFn)
+		rightBool := p.anyToBool(rightAny, irFn)
+
+		fnName := "sk_bool_and"
+		if bin.Op == "||" {
+			fnName = "sk_bool_or"
+		}
+
+		result := p.newTemp()
+		irFn.Locals = append(irFn.Locals, "sk_bool "+result)
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "call",
+			Result:     result,
+			Arg1:       fnName,
+			Arg2:       leftBool + ", " + rightBool,
+			ReturnType: "sk_bool",
+		})
+		return result
+	}
+
+	// === Конкатенация строк ===
+	if bin.Op == "+" &&
+		(leftType == "string" || rightType == "string" ||
+			leftType == "char" || rightType == "char") {
+		leftStr := p.anyToString(leftAny, irFn)
+		rightStr := p.anyToString(rightAny, irFn)
+
+		result := p.newTemp()
+		irFn.Locals = append(irFn.Locals, "sk_string "+result)
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "call",
+			Result:     result,
+			Arg1:       "sk_string_concat",
+			Arg2:       leftStr + ", " + rightStr,
+			ReturnType: "sk_string",
+		})
+		return result
+	}
+
+	// === Арифметика → sk_any ===
+	var fnName string
+	switch bin.Op {
+	case "+":
+		fnName = "sk_any_add"
+	case "-":
+		fnName = "sk_any_sub"
+	case "*":
+		fnName = "sk_any_mul"
+	case "/":
+		fnName = "sk_any_div"
+	case "%":
+		fnName = "sk_any_mod"
+	case "**":
+		fnName = "sk_any_pow"
+	default:
+		// Неизвестная операция — возвращаем null
+		result := p.newTemp()
+		irFn.Locals = append(irFn.Locals, "sk_any "+result)
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "=",
+			Result: result,
+			Arg1:   "any_null()",
+		})
+		return result
+	}
+
+	result := p.newTemp()
+	irFn.Locals = append(irFn.Locals, "sk_any "+result)
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:         "call",
+		Result:     result,
+		Arg1:       fnName,
+		Arg2:       leftAny + ", " + rightAny,
+		ReturnType: "sk_any",
+	})
+	return result
+}
+
+// anyToBool конвертирует sk_any в sk_bool через any_to_bool.
+func (p *Pipeline) anyToBool(anyVal string, irFn *IRFunction) string {
+	result := p.newTemp()
+	irFn.Locals = append(irFn.Locals, "sk_bool "+result)
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:         "call",
+		Result:     result,
+		Arg1:       "any_to_bool",
+		Arg2:       anyVal,
+		ReturnType: "sk_bool",
+	})
+	return result
+}
+
+// anyToString конвертирует sk_any в sk_string через any_to_string.
+func (p *Pipeline) anyToString(anyVal string, irFn *IRFunction) string {
+	result := p.newTemp()
+	irFn.Locals = append(irFn.Locals, "sk_string "+result)
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:         "call",
+		Result:     result,
+		Arg1:       "any_to_string",
+		Arg2:       anyVal,
+		ReturnType: "sk_string",
+	})
 	return result
 }
 
@@ -2047,6 +2179,7 @@ func (p *Pipeline) processReturn(ret *front.ReturnStmt, irFn *IRFunction) {
 
 func (p *Pipeline) processCall(call *front.CallExpr, irFn *IRFunction) {
 	targetFunc := p.findFunction(call.Name)
+	debug.Debug("processCall: targetFunc=%s, params=%d", targetFunc.Name, len(targetFunc.Params))
 
 	args := []string{}
 
@@ -2166,6 +2299,11 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 
 	// Ищем целевую функцию
 	targetFunc := p.findFunction(simpleName)
+	if targetFunc == nil {
+		debug.Debug("processCall: targetFunc is nil for %s — using fallback (NO wrapping)", simpleName)
+	} else {
+		debug.Debug("processCall: targetFunc=%s, params=%d", targetFunc.Name, len(targetFunc.Params))
+	}
 
 	argsStr := []string{}
 
@@ -2371,20 +2509,37 @@ func (p *Pipeline) prepareArg(argExpr front.Node, paramType string, irFn *IRFunc
 }
 
 func (p *Pipeline) findFunction(name string) *front.Function {
+	debug.Debug("Pipeline.findFunction: %s (Functions=%d, AllFunctions=%d)",
+		name, len(p.Program.Functions), len(p.Program.AllFunctions))
 	for _, fn := range p.Program.Functions {
 		if fn.Name == name {
 			return fn
 		}
 	}
+	// NEW: поиск среди импортированных / всех функций
+	for _, fn := range p.Program.AllFunctions {
+		if fn.Name == name {
+			return fn
+		}
+	}
+
 	if strings.Contains(name, ".") {
 		parts := strings.Split(name, ".")
 		simpleName := parts[len(parts)-1]
+
 		for _, fn := range p.Program.Functions {
 			if fn.Name == simpleName {
 				return fn
 			}
 		}
+		// NEW
+		for _, fn := range p.Program.AllFunctions {
+			if fn.Name == simpleName {
+				return fn
+			}
+		}
 	}
+	debug.Debug("Pipeline.findFunction: %s NOT FOUND", name)
 	return nil
 }
 
@@ -3512,7 +3667,15 @@ func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 			return "any"
 		}
 
-		if n.Op == "+" && (leftType == "string" || rightType == "string" || leftType == "any" || rightType == "any") {
+		// any в операнде → any
+		if leftType == "any" || rightType == "any" {
+			return "any"
+		}
+
+		// string + string / char + char / char + string → string
+		if n.Op == "+" &&
+			(leftType == "string" || leftType == "char") &&
+			(rightType == "string" || rightType == "char") {
 			return "string"
 		}
 
@@ -3563,6 +3726,12 @@ func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 		}
 
 		for _, fn := range p.Program.Functions {
+			if fn.Name == simpleName {
+				return fn.ReturnType
+			}
+		}
+		// NEW
+		for _, fn := range p.Program.AllFunctions {
 			if fn.Name == simpleName {
 				return fn.ReturnType
 			}
@@ -4093,7 +4262,12 @@ func (p *Pipeline) cNameForFunc(name string) string {
 			return computeCName(fn.Name)
 		}
 	}
-	// если это импортированная функция — тоже __sk__
+	// NEW: импортированные тоже резолвятся
+	for _, fn := range p.Program.AllFunctions {
+		if fn.Name == name {
+			return computeCName(fn.Name)
+		}
+	}
 	return computeCName(name)
 }
 

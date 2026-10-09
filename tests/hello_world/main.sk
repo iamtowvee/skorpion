@@ -1,6 +1,6 @@
 use #std/io
 
 void main(arr args) {
-    arr x = [1, true]
+    arr x = [1, 10]
     sendln(x[0] + x[1])
 }
