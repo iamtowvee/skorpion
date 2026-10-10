@@ -44,19 +44,29 @@ func (sa *SemanticAnalyzer) registerImportedFunctions() {
 
 	allFunctions := sa.ImportManager.GetAllFunctions()
 	for _, fn := range allFunctions {
-		if front.IsExportable(fn) {
-			for _, imp := range sa.Program.Imports {
-				var key string
+		if !front.IsExportable(fn) {
+			continue
+		}
 
-				if imp.Alias != "" {
-					key = imp.Alias + "." + fn.Name
-				} else if imp.All {
-					key = fn.Name
-				} else {
-					moduleName := front.GetModuleName(imp.Path)
-					key = moduleName + "." + fn.Name
-				}
+		// 1. Под простым именем (fallback для нормализованных вызовов)
+		if _, exists := sa.ImportedFuncs[fn.Name]; !exists {
+			sa.ImportedFuncs[fn.Name] = fn
+		}
 
+		// 2. Под полным ключом (alias/модуль/All)
+		for _, imp := range sa.Program.Imports {
+			// Для lib-импортов fn.Name — глобальное, регистрируем под любым ключом
+			// (потому что либа не имеет «модульного» пространства имён кроме алиаса)
+			var key string
+			if imp.Alias != "" {
+				key = imp.Alias + "." + fn.Name
+			} else if imp.All {
+				key = fn.Name
+			} else {
+				moduleName := front.GetModuleName(imp.Path)
+				key = moduleName + "." + fn.Name
+			}
+			if _, exists := sa.ImportedFuncs[key]; !exists {
 				sa.ImportedFuncs[key] = fn
 			}
 		}
@@ -66,6 +76,7 @@ func (sa *SemanticAnalyzer) registerImportedFunctions() {
 func (sa *SemanticAnalyzer) resolveFunction(name string) *front.Function {
 	debug.Debug("resolveFunction: %s", name)
 
+	// 1. Локальные
 	for _, fn := range sa.Program.Functions {
 		if fn.Name == name {
 			debug.Debug("Found in current file: %s\n", name)
@@ -73,25 +84,45 @@ func (sa *SemanticAnalyzer) resolveFunction(name string) *front.Function {
 		}
 	}
 
+	// 2. Импортированные по точному ключу ("mp.print")
 	if fn, ok := sa.ImportedFuncs[name]; ok {
-		debug.Debug("Found in imports: %s\n", name)
+		debug.Debug("Found in imports (exact): %s\n", name)
 		return fn
 	}
 
-	if strings.Contains(name, ".") {
-		parts := strings.Split(name, ".")
-		simpleName := parts[len(parts)-1]
-		debug.Debug("Trying simple name: %s\n", simpleName)
+	// 3. Нормализуем "mp.print" → "print"
+	simpleName := name
+	if idx := strings.LastIndex(simpleName, "."); idx >= 0 {
+		simpleName = simpleName[idx+1:]
+	}
 
-		for _, fn := range sa.Program.Functions {
-			if fn.Name == simpleName {
-				debug.Debug("Found in current file (simple): %s\n", simpleName)
-				return fn
-			}
+	// 4. Локальные по простому имени
+	for _, fn := range sa.Program.Functions {
+		if fn.Name == simpleName {
+			debug.Debug("Found in current file (simple): %s\n", simpleName)
+			return fn
 		}
+	}
 
-		if fn, ok := sa.ImportedFuncs[simpleName]; ok {
-			debug.Debug("Found in imports (simple): %s\n", simpleName)
+	// 5. Импортированные по простому имени
+	if fn, ok := sa.ImportedFuncs[simpleName]; ok {
+		debug.Debug("Found in imports (simple): %s\n", simpleName)
+		return fn
+	}
+
+	// 6. Скан всех ImportedFuncs по fn.Name (на случай, если register
+	//    не зарегистрировал под простым именем — например, старый код)
+	for _, fn := range sa.ImportedFuncs {
+		if fn.Name == simpleName {
+			debug.Debug("Found in imports (scan by fn.Name): %s\n", simpleName)
+			return fn
+		}
+	}
+
+	// 7. Скан Program.AllFunctions
+	for _, fn := range sa.Program.AllFunctions {
+		if fn.Name == simpleName {
+			debug.Debug("Found in AllFunctions: %s\n", simpleName)
 			return fn
 		}
 	}
@@ -1726,6 +1757,22 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 		if fn, ok := sa.ImportedFuncs[n.Name]; ok {
 			debug.Debug("  found in imports (full): %s -> %s\n", n.Name, fn.ReturnType)
 			return fn.ReturnType
+		}
+
+		// Fallback: скан по fn.Name
+		for _, fn := range sa.ImportedFuncs {
+			if fn.Name == simpleName {
+				debug.Debug("  found in imports (scan): %s -> %s\n", simpleName, fn.ReturnType)
+				return fn.ReturnType
+			}
+		}
+
+		// Fallback: AllFunctions
+		for _, fn := range sa.Program.AllFunctions {
+			if fn.Name == simpleName {
+				debug.Debug("  found in AllFunctions: %s -> %s\n", simpleName, fn.ReturnType)
+				return fn.ReturnType
+			}
 		}
 
 		debug.Debug("  function %s not found\n", n.Name)

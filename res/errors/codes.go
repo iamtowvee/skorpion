@@ -1260,4 +1260,73 @@ var ErrorCodes = map[string]ErrorCode{
 		Description: "The linker returned an error.",
 		Tip:         "Check the linker output above.",
 	},
+	// ============================================================================
+	// 3100-3199: Libraries
+	// ============================================================================
+	"3100": {
+		Code:        "3100",
+		Message:     "Cannot read library file",
+		Description: "The .sklib file could not be read. It might be corrupted or have wrong permissions.",
+		Tip:         "Re-copy the .sklib file, or rebuild it with 'skorpion build-lib'.",
+	},
+	"3101": {
+		Code:        "3101",
+		Message:     "Library not found",
+		Description: "The library was not found in the configured libs directory.",
+		Tip:         "Check the path and that libs[\"path/\"] in manifest.spc points to the right folder.",
+		Example:     "libs/\n  author/\n    name/\n      LIBRARY-name-1.0.0.sklib",
+	},
+	"3102": {
+		Code:        "3102",
+		Message:     "Multiple library versions",
+		Description: "Multiple .sklib files found in the library directory, but no @version was specified.",
+		Tip:         "Specify the version: 'use lib:author/name@1.0.0'.",
+	},
+	"3103": {
+		Code:        "3103",
+		Message:     "Library version mismatch",
+		Description: "The version in the import path doesn't match the version inside the .sklib file.",
+		Tip:         "Check the version in the import path and the file name.",
+	},
+	"3104": {
+		Code:        "3104",
+		Message:     "Cannot write .sklib",
+		Description: "Failed to write the library file. Check write permissions.",
+		Tip:         "Check write permissions for the output directory.",
+	},
+	"3105": {
+		Code:        "3105",
+		Message:     "Library has no exportable functions",
+		Description: "The library project has no functions marked as exportable.",
+		Tip:         "Remove '*' from function signatures to make them exportable.",
+		Example:     "// Non-exportable (has '*'):\nint* helper() { ... }\n\n// Exportable:\nint helper() { ... }",
+	},
+	"3106": {
+		Code:        "3106",
+		Message:     "Invalid library spec",
+		Description: "The library path is malformed. Expected format: 'lib:author/name[@version]'.",
+		Tip:         "Use: 'use lib:author/name@1.0.0'.",
+		Example:     "// Wrong:\nuse lib:name\nuse lib:author\n\n// Right:\nuse lib:author/name@1.0.0",
+	},
+	"3107": {
+		Code:        "3107",
+		Message:     "Library dependency not imported",
+		Description: "The library requires a dependency that is not imported in the current project.",
+		Tip:         "Add 'use lib:...' for the dependency BEFORE the library that needs it.",
+		Example:     "// Right order:\nuse lib:author/b@1.0.0\nuse lib:author/a@1.0.0  // a depends on b",
+	},
+	"3108": {
+		Code:        "3108",
+		Message:     "Library has no authors",
+		Description: "A library must declare at least one author in manifest.spc. The first author is used as the directory name in libs/.",
+		Tip:         "Add authors[(\"your-name\")] to manifest.spc.",
+		Example:     "authors[(\"iamtowvee\")]",
+	},
+	"3109": {
+		Code:        "3109",
+		Message:     "Library author mismatch",
+		Description: "The author in the import path doesn't match the author declared inside the .sklib file.",
+		Tip:         "Check that the library is placed in the correct author directory.",
+		Example:     "// If library was built by 'iamtowvee':\nlibs/iamtowvee/name/LIBRARY-name-1.0.0.sklib",
+	},
 }

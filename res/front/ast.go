@@ -89,6 +89,7 @@ type Import struct {
 	Path  string
 	Alias string
 	All   bool
+	IsLib bool
 }
 
 func (i *Import) GetType() NodeType { return NODE_IMPORT }

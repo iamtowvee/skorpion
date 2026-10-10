@@ -60,6 +60,23 @@ func GetAllFunctions(prog *Program, im *ImportManager) []*Function {
 	return allFunctions
 }
 
+// LoadProgramWithConfig — как LoadProgram, но с настройками библиотек.
+// Возвращает также ImportManager, чтобы передать его в SemanticAnalyzer.
+func LoadProgramWithConfig(
+	mainFile, projectDir, libsDir string,
+	deps []string,
+) (*Program, *ImportManager, error) {
+	baseDir := filepath.Dir(mainFile)
+	im := NewImportManager(baseDir)
+	im.SetLibraryConfig(projectDir, libsDir, deps)
+
+	prog, err := im.LoadMain(mainFile)
+	if err != nil {
+		return nil, im, err
+	}
+	return prog, im, nil
+}
+
 // Создание AST из нескольких файлов
 func BuildProgram(files map[string]string) *Program {
 	mainProg := &Program{Imports: []*Import{}, Functions: []*Function{}, ErrorDecls: []*ErrorDecl{}}

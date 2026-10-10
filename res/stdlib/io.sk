@@ -28,6 +28,8 @@ string *__sk__std_io_input(string prompt = "") {
         }
         return sk_string_new(buffer);
     ~~~
+    prompt = ""
+    return ""
 }
 
 void sendln(any msg) {

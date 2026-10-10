@@ -17,10 +17,19 @@ type Config struct {
 	TestOutName  string
 	TestOutPath  string
 
+	// LibsDir — папка с библиотеками, относительно manifest.spc.
+	// Дефолт: "libs/".
+	LibsDir string
+
+	// Dependencies — список зависимостей для build-lib.
+	// Формат элементов: "author/name@1.0.0".
+	// Игнорируется для обычных проектов.
+	Dependencies []string
+
 	// Env — переменные окружения вида "SOME=15"
 	Env []string
 
-	// Execute — дополнительные аргументы CLI, добавляемые в конец команды
+	// Execute — дополнительные аргументы CLI
 	Execute []string
 }
 
@@ -28,6 +37,7 @@ func ParseConfig(path string) *Config {
 	cfg := &Config{
 		BuildOutPath: "bin/",
 		TestOutPath:  "test/",
+		LibsDir:      "libs/",
 		Env:          []string{},
 		Execute:      []string{},
 	}
@@ -111,6 +121,23 @@ func ParseConfig(path string) *Config {
 				// Разбиваем по пробелам
 				parts := strings.Fields(value)
 				cfg.Execute = append(cfg.Execute, parts...)
+			case "libs":
+				// libs["path/"]
+				cfg.LibsDir = strings.Trim(value, `"`)
+
+			case "dependencies":
+				// dependencies[("author/name@1.0.0", "author2/name2@2.0.0")]
+				value = strings.TrimSpace(value)
+				value = strings.Trim(value, `()`)
+				parts := strings.Split(value, ",")
+				for _, p := range parts {
+					trimmed := strings.TrimSpace(p)
+					trimmed = strings.Trim(trimmed, `"`)
+					trimmed = strings.TrimSpace(trimmed)
+					if trimmed != "" {
+						cfg.Dependencies = append(cfg.Dependencies, trimmed)
+					}
+				}
 			}
 		}
 	}

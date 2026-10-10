@@ -242,6 +242,8 @@ func InitLang(args []string) {
 		buildProject()
 	case "test":
 		testProject()
+	case "build-lib":
+		buildLib(projectPath)
 	case "setup-zig":
 		setupZig(args[1:])
 	case "--explain", "-e":
@@ -455,7 +457,7 @@ func buildProject() {
 	}
 	sourceLines := strings.Split(string(content), "\n")
 
-	mainProg, err := front.LoadProgram(mainFile)
+	mainProg, im, err := front.LoadProgramWithConfig(mainFile, projectPath, cfg.LibsDir, cfg.Dependencies)
 	if err != nil {
 		errors.NewFatalError("0011", fmt.Sprintf("Import error: %v", err), 0, 0, mainFile)
 		printErrorReport(startTime, mainFile, sourceLines)
@@ -479,9 +481,6 @@ func buildProject() {
 			return
 		}
 	}
-
-	im := front.NewImportManager(projectPath)
-	im.LoadMain(mainFile)
 
 	fmt.Printf(cli.Colors.Info("Parsed %d functions\n"), len(mainProg.Functions))
 
@@ -593,6 +592,173 @@ func buildProject() {
 func testProject() {
 	fmt.Println(cli.Colors.Bold(cli.Colors.Cyan("Testing Skorpion project...")))
 	// TODO: Реализовать тестирование
+}
+
+// buildLib собирает .sklib из проекта.
+func buildLib(projectPath string) {
+	startTime := time.Now()
+
+	fmt.Println(cli.Colors.Bold(cli.Colors.Cyan("Building Skorpion library...")))
+
+	configPath := filepath.Join(projectPath, "manifest.spc")
+	cfg := front.ParseConfig(configPath)
+	if cfg == nil {
+		errors.NewFatalError("0010", "Cannot read manifest.spc", 0, 0, "manifest.spc")
+		printErrorReport(startTime, "manifest.spc", nil)
+		return
+	}
+
+	if cfg.Name == "" {
+		errors.NewFatalError("3105", "Library must have a name in manifest.spc", 0, 0, "")
+		printErrorReport(startTime, "", nil)
+		return
+	}
+	if len(cfg.Authors) == 0 {
+		errors.NewFatalError("3108",
+			"Library must declare at least one author: authors[(\"your-name\")]",
+			0, 0, "manifest.spc")
+		printErrorReport(startTime, "manifest.spc", nil)
+		os.Exit(1)
+		return
+	}
+	if cfg.Version == "" {
+		cfg.Version = "0.0.0"
+	}
+
+	mainFile := cfg.Main
+	if mainFile == "" {
+		mainFile = "main.sk"
+	}
+	mainFile = filepath.Join(projectPath, mainFile)
+
+	content, err := os.ReadFile(mainFile)
+	if err != nil {
+		errors.NewFatalError("0011", fmt.Sprintf("Cannot read %s", mainFile), 0, 0, mainFile)
+		printErrorReport(startTime, mainFile, nil)
+		return
+	}
+	sourceLines := strings.Split(string(content), "\n")
+
+	// Парсим с учётом импортов и настроек библиотек
+	mainProg, im, err := front.LoadProgramWithConfig(
+		mainFile, projectPath, cfg.LibsDir, cfg.Dependencies)
+	if err != nil {
+		errors.NewFatalError("0011", fmt.Sprintf("Import error: %v", err), 0, 0, mainFile)
+		printErrorReport(startTime, mainFile, sourceLines)
+		os.Exit(1)
+		return
+	}
+
+	// Семантический анализ — свои функции + импортированные
+	allFunctions := make([]*front.Function, len(mainProg.Functions))
+	copy(allFunctions, mainProg.Functions)
+
+	importedFuncs := im.GetAllFunctionsInternal()
+	allFunctions = append(allFunctions, importedFuncs...)
+
+	mergedProg := &front.Program{
+		Imports:        mainProg.Imports,
+		Functions:      allFunctions,
+		ErrorDecls:     mainProg.ErrorDecls,
+		GlobalIncludeC: mainProg.GlobalIncludeC,
+		AllFunctions:   allFunctions,
+	}
+
+	semantic := midlevel.NewSemanticAnalyzer(mergedProg)
+	semantic.SetImportManager(im)
+
+	if !semantic.Analyze() {
+		for _, e := range semantic.Errors {
+			code := e.Code
+			if code == "" {
+				code = "0000"
+			}
+			errors.NewError(code, e.Message, e.Line, e.Column, e.File)
+		}
+		printErrorReport(startTime, mainFile, sourceLines)
+		os.Exit(1)
+		return
+	}
+	fmt.Println(cli.Colors.Success("Semantic analysis passed"))
+
+	// Оптимизация
+	mid := midlevel.NewMidLevel(mergedProg)
+	optProg := mid.OptimizeIR()
+	fmt.Println(cli.Colors.Success("Optimization complete"))
+
+	// Фильтруем: экспортируемые + все системные (__sk__*).
+	// Системные нужны для работы либы (например, __sk__std_io_send,
+	// которую вызывает sendln из std/io).
+	exported := make([]*front.Function, 0, len(optProg.Functions))
+	for _, fn := range optProg.Functions {
+		if fn.Name == "main" {
+			continue
+		}
+		if fn.IsExport || strings.HasPrefix(fn.Name, "__sk__") {
+			exported = append(exported, fn)
+		}
+	}
+
+	if len(exported) == 0 {
+		errors.NewFatalError("3105",
+			"Library has no exportable functions (all functions are marked with '*')",
+			0, 0, mainFile)
+		printErrorReport(startTime, mainFile, sourceLines)
+		os.Exit(1)
+		return
+	}
+
+	// Формируем Program для .sklib
+	libProg := &front.Program{
+		Imports:        []*front.Import{}, // импорты не вшиваем
+		Functions:      exported,
+		ErrorDecls:     optProg.ErrorDecls,
+		GlobalIncludeC: optProg.GlobalIncludeC,
+		AllFunctions:   nil,
+	}
+
+	lib := &front.Library{
+		Name:         cfg.Name,
+		Author:       cfg.Authors[0],
+		Version:      cfg.Version,
+		Dependencies: cfg.Dependencies,
+		Program:      libProg,
+	}
+
+	// Пишем в bin/
+	outDir := cfg.BuildOutPath
+	if outDir == "" {
+		outDir = "bin/"
+	}
+	outDir = filepath.Join(projectPath, outDir)
+
+	if err := os.MkdirAll(outDir, 0755); err != nil {
+		errors.NewFatalError("0022",
+			fmt.Sprintf("Cannot create output directory: %v", err), 0, 0, "")
+		printErrorReport(startTime, mainFile, sourceLines)
+		os.Exit(1)
+		return
+	}
+
+	outName := fmt.Sprintf("LIBRARY-%s-%s.sklib", cfg.Name, cfg.Version)
+	outPath := filepath.Join(outDir, outName)
+
+	if err := front.WriteLibrary(outPath, lib); err != nil {
+		errors.NewFatalError("3104",
+			fmt.Sprintf("Cannot write .sklib: %v", err), 0, 0, outPath)
+		printErrorReport(startTime, mainFile, sourceLines)
+		os.Exit(1)
+		return
+	}
+
+	fmt.Printf(cli.Colors.Success("Library built: %s\n"), outPath)
+	fmt.Printf(cli.Colors.Info("Functions: %d, Errors: %d\n"),
+		len(exported), len(libProg.ErrorDecls))
+	fmt.Printf(cli.Colors.Info("To use in another project:\n"))
+	fmt.Printf(cli.Colors.Info("  1. Copy %s to {libs}/%s/%s/\n"),
+		outName, cfg.Authors[0], cfg.Name)
+	fmt.Printf(cli.Colors.Info("  2. Add 'use lib:%s/%s@%s' to your .sk file\n"),
+		cfg.Authors[0], cfg.Name, cfg.Version)
 }
 
 func printErrorReport(startTime time.Time, filePath string, sourceLines []string) {
@@ -1439,6 +1605,7 @@ func printHelp() {
 	fmt.Println("  build                 Build project from current directory")
 	fmt.Println("  build --path=\"DIR\"    Build project from specified directory")
 	fmt.Println("  test                  Run tests")
+	fmt.Println("  build-lib             Build library (.sklib) from current directory")
 	fmt.Println()
 	fmt.Println(cli.Colors.Bold("WINDOWS PROFILE MANAGEMENT:"))
 	fmt.Println("  add-win-profile NAME : PATH    Add new Windows compiler profile")

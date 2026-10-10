@@ -2179,7 +2179,11 @@ func (p *Pipeline) processReturn(ret *front.ReturnStmt, irFn *IRFunction) {
 
 func (p *Pipeline) processCall(call *front.CallExpr, irFn *IRFunction) {
 	targetFunc := p.findFunction(call.Name)
-	debug.Debug("processCall: targetFunc=%s, params=%d", targetFunc.Name, len(targetFunc.Params))
+	if targetFunc == nil {
+		debug.Debug("processCall: targetFunc NOT FOUND for %s — using fallback", call.Name)
+	} else {
+		debug.Debug("processCall: targetFunc=%s, params=%d", targetFunc.Name, len(targetFunc.Params))
+	}
 
 	args := []string{}
 
@@ -4254,15 +4258,12 @@ func computeCName(name string) string {
 	return "__sk__" + name
 }
 
-// cNameForFunc ищет функцию по имени и возвращает её C-имя.
-// Если не найдена — считает как пользовательскую (__sk__<name>).
 func (p *Pipeline) cNameForFunc(name string) string {
 	for _, fn := range p.Program.Functions {
 		if fn.Name == name {
 			return computeCName(fn.Name)
 		}
 	}
-	// NEW: импортированные тоже резолвятся
 	for _, fn := range p.Program.AllFunctions {
 		if fn.Name == name {
 			return computeCName(fn.Name)

@@ -24,17 +24,17 @@ const (
 	TOKEN_RBRACKET
 	TOKEN_SEMICOLON
 	TOKEN_COMMA
-	TOKEN_NEQ  // !=
-	TOKEN_EQEQ // ==
-	TOKEN_LTE  // <=
-	TOKEN_GTE  // >=
+	TOKEN_NEQ
+	TOKEN_EQEQ
+	TOKEN_LTE
+	TOKEN_GTE
 	TOKEN_PLUS
 	TOKEN_MINUS
 	TOKEN_STAR
 	TOKEN_SLASH
 	TOKEN_CARET
 	TOKEN_POW
-	TOKEN_UNICODE_LIT // Unicode["XXXX"]
+	TOKEN_UNICODE_LIT
 	TOKEN_EQUALS
 	TOKEN_LT
 	TOKEN_GT
@@ -54,6 +54,7 @@ const (
 	TOKEN_PERCENT
 	TOKEN_BACKTICK
 	TOKEN_TILDE
+	TOKEN_VERSION // @1.0.0
 )
 
 type Token struct {
@@ -227,12 +228,55 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_DOTDOT, Literal: "..", Line: l.line, Column: col}
 		}
 		return l.makeToken(TOKEN_DOT, ".")
+	case '@':
+		return l.readVersion()
 	default:
 		errors.NewError("0100", "Unknown character", l.line, l.col, "")
 		l.pos++
 		l.col++
 		return l.NextToken()
 	}
+}
+
+// readVersion читает @x.y.z (или @x.y, @x) как единый токен.
+// Формат: '@' + цифры + ('.' + цифры)*
+// Суффиксы вроде -dev.N игнорируются (читаются как отдельные токены,
+// но для версий библиотек мы их не поддерживаем — только x.y.z).
+func (l *Lexer) readVersion() Token {
+	startCol := l.col
+	start := l.pos
+
+	l.pos++ // '@'
+	l.col++
+
+	// Должна быть хотя бы одна цифра
+	if l.pos >= len(l.input) || !unicode.IsDigit(rune(l.input[l.pos])) {
+		errors.NewError("0127", "Expected version number after '@'", l.line, l.col, "")
+		return Token{Type: TOKEN_VERSION, Literal: "@", Line: l.line, Column: startCol}
+	}
+
+	// Читаем цифры и точки
+	for l.pos < len(l.input) {
+		ch := l.input[l.pos]
+		if unicode.IsDigit(rune(ch)) {
+			l.pos++
+			l.col++
+			continue
+		}
+		if ch == '.' {
+			// Точка допустима только если после неё цифра
+			if l.pos+1 < len(l.input) && unicode.IsDigit(rune(l.input[l.pos+1])) {
+				l.pos++
+				l.col++
+				continue
+			}
+			break
+		}
+		break
+	}
+
+	literal := l.input[start:l.pos]
+	return Token{Type: TOKEN_VERSION, Literal: literal, Line: l.line, Column: startCol}
 }
 
 func (l *Lexer) makeToken(tt TokenType, lit string) Token {
@@ -664,6 +708,8 @@ func (tt TokenType) String() string {
 		return "includeC"
 	case TOKEN_UNICODE_LIT:
 		return "UNICODE"
+	case TOKEN_VERSION:
+		return "VERSION"
 	default:
 		return "UNKNOWN"
 	}

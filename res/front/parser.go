@@ -207,6 +207,98 @@ func (p *Parser) parseImport() *Import {
 		imp.All = true
 	}
 
+	// lib:author/name@1.0.0
+	if p.peek.Type == TOKEN_IDENT && p.peek.Literal == "lib" {
+		// Смотрим следующий токен — должен быть ':'
+		// Но peek — это только один токен вперёд.
+		// Поэтому: съедаем "lib", проверяем ':'.
+		libPos := p.pos()
+		p.advance() // lib
+
+		if p.peek.Type != TOKEN_COLON {
+			p.hasErrors = true
+			errors.NewFatalError("0553",
+				fmt.Sprintf("Expected ':' after 'lib', got '%s'", p.peek.Literal),
+				p.peek.Line, p.peek.Column, p.FileName)
+			return nil
+		}
+		p.advance() // :
+
+		imp.IsLib = true
+
+		// author
+		if p.peek.Type != TOKEN_IDENT {
+			p.hasErrors = true
+			errors.NewFatalError("0554",
+				fmt.Sprintf("Expected library author, got '%s'", p.peek.Literal),
+				p.peek.Line, p.peek.Column, p.FileName)
+			return nil
+		}
+		author := p.peek.Literal
+		p.advance()
+
+		// '/'
+		if p.peek.Type != TOKEN_SLASH {
+			p.hasErrors = true
+			errors.NewFatalError("0554",
+				fmt.Sprintf("Expected '/' after library author, got '%s'", p.peek.Literal),
+				p.peek.Line, p.peek.Column, p.FileName)
+			return nil
+		}
+		p.advance()
+
+		// name — может содержать дефисы (my-lib)
+		if p.peek.Type != TOKEN_IDENT {
+			p.hasErrors = true
+			errors.NewFatalError("0554",
+				fmt.Sprintf("Expected library name, got '%s'", p.peek.Literal),
+				p.peek.Line, p.peek.Column, p.FileName)
+			return nil
+		}
+		name := p.peek.Literal
+		p.advance()
+
+		// Дефисы в имени: my-lib
+		for p.peek.Type == TOKEN_MINUS {
+			p.advance()
+			if p.peek.Type != TOKEN_IDENT {
+				p.hasErrors = true
+				errors.NewFatalError("0554",
+					fmt.Sprintf("Expected identifier after '-' in library name, got '%s'", p.peek.Literal),
+					p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			name += "-" + p.peek.Literal
+			p.advance()
+		}
+
+		// @version (опционально)
+		version := ""
+		if p.peek.Type == TOKEN_VERSION {
+			version = strings.TrimPrefix(p.peek.Literal, "@")
+			p.advance()
+		}
+
+		imp.Path = "lib:" + author + "/" + name
+		if version != "" {
+			imp.Path += "@" + version
+		}
+
+		_ = libPos
+
+		// alias
+		if p.peek.Type == TOKEN_AMPERSAND {
+			p.advance()
+			if p.peek.Type == TOKEN_IDENT {
+				imp.Alias = p.peek.Literal
+				p.advance()
+			}
+		}
+
+		return imp
+	}
+
+	// Обычный импорт (как было)
 	path := ""
 	for p.peek.Type == TOKEN_IDENT || p.peek.Literal == "/" {
 		if p.peek.Type == TOKEN_IDENT {
