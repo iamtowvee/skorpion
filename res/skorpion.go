@@ -1,17 +1,138 @@
 package res
 
 import (
+	"archive/zip"
+	"bufio"
 	"fmt"
+	"io"
+	"math/rand"
+	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"skrp/res/backend"
 	"skrp/res/cli"
 	"skrp/res/errors"
 	"skrp/res/front"
 	"skrp/res/midlevel"
 	"strings"
+	"sync/atomic"
 	"time"
 )
+
+// Braille-спиннер: 8 кадров, полный цикл за 0.5 сек
+var spinnerFrames = []string{"⠧", "⠏", "⠋", "⠽", "⠼", "⠓", "⠋", "⠏"}
+var spinnerInterval = 500 * time.Millisecond / time.Duration(len(spinnerFrames))
+
+type progressWriter struct {
+	total      int64
+	written    int64
+	barWidth   int
+	startTime  time.Time
+	stopChan   chan struct{}
+	doneChan   chan struct{}
+	lastRender atomic.Int64 // unix nano последнего рендера
+}
+
+func newProgressWriter(total int64) *progressWriter {
+	return &progressWriter{
+		total:     total,
+		barWidth:  10,
+		startTime: time.Now(),
+		stopChan:  make(chan struct{}),
+		doneChan:  make(chan struct{}),
+	}
+}
+
+func (pw *progressWriter) Write(p []byte) (int, error) {
+	n := len(p)
+	atomic.AddInt64(&pw.written, int64(n))
+	return n, nil
+}
+
+// Start запускает рендер в отдельной горутине.
+func (pw *progressWriter) Start() {
+	go pw.renderLoop()
+}
+
+// Stop останавливает рендер и рисует финальное 100%.
+func (pw *progressWriter) Stop() {
+	close(pw.stopChan)
+	<-pw.doneChan
+	pw.render(100)
+	fmt.Println()
+}
+
+func (pw *progressWriter) renderLoop() {
+	defer close(pw.doneChan)
+
+	ticker := time.NewTicker(spinnerInterval)
+	defer ticker.Stop()
+
+	frame := 0
+	for {
+		select {
+		case <-pw.stopChan:
+			return
+		case <-ticker.C:
+			written := atomic.LoadInt64(&pw.written)
+			var percent int
+			if pw.total > 0 {
+				percent = int(written * 100 / pw.total)
+			}
+			pw.renderWithSpinner(percent, spinnerFrames[frame])
+			frame = (frame + 1) % len(spinnerFrames)
+		}
+	}
+}
+
+func (pw *progressWriter) render(percent int) {
+	pw.renderWithSpinner(percent, " ")
+}
+
+func (pw *progressWriter) renderWithSpinner(percent int, spinner string) {
+	if percent > 100 {
+		percent = 100
+	}
+	if percent < 0 {
+		percent = 0
+	}
+
+	filled := percent * pw.barWidth / 100
+	bar := strings.Repeat("|", filled) + strings.Repeat(".", pw.barWidth-filled)
+
+	// \r — возврат каретки, чтобы перерисовать ту же строку
+	fmt.Printf("\r%s [%s] %d%%", spinner, bar, percent)
+}
+
+// downloadWithProgress — скачивает URL в dst с прогресс-баром.
+func downloadWithProgress(url, dst string) error {
+	client := &http.Client{Timeout: 60 * time.Second}
+
+	resp, err := client.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	pw := newProgressWriter(resp.ContentLength)
+	pw.Start()
+	defer pw.Stop()
+
+	_, err = io.Copy(out, io.TeeReader(resp.Body, pw))
+	return err
+}
 
 var (
 	showTokens bool
@@ -68,6 +189,8 @@ func InitLang(args []string) {
 		buildProject()
 	case "test":
 		testProject()
+	case "setup-zig":
+		setupZig(args[1:])
 	case "--explain", "-e":
 		if len(args) > 1 {
 			errors.ExplainError(args[1])
@@ -76,7 +199,7 @@ func InitLang(args []string) {
 			fmt.Println("Example: skorpion --explain Err+1043")
 		}
 
-		// Команды управления профилями для Windows
+	// Команды управления профилями для Windows
 	case "add-win-profile":
 		cli.HandleAddProfile(args, "windows")
 	case "edit-win-profile":
@@ -124,6 +247,51 @@ func InitLang(args []string) {
 		fmt.Printf(cli.Colors.Error("Unknown command: %s\n"), args[0])
 		fmt.Println(cli.Colors.Warning("Run 'skorpion --help' for usage"))
 	}
+}
+
+func setupZig(args []string) {
+	startTime := time.Now()
+
+	force := false
+	for _, a := range args {
+		if a == "--force" {
+			force = true
+		}
+	}
+
+	fmt.Println(cli.Colors.Bold(cli.Colors.Cyan("Setting up Zig...")))
+
+	// 1. Определяем папку для Zig
+	zigDir, err := zigInstallDir()
+	if err != nil {
+		errors.NewFatalError("3100", fmt.Sprintf("Cannot determine Zig install dir: %v", err), 0, 0, "")
+		printErrorReport(startTime, "", nil)
+		os.Exit(1)
+		return
+	}
+
+	zigPath := filepath.Join(zigDir, zigExeName())
+
+	// 2. Если уже есть и не --force — проверим версию
+	if !force {
+		if _, err := os.Stat(zigPath); err == nil {
+			version, _ := getZigVersion(zigPath)
+			fmt.Printf(cli.Colors.Success("Zig already installed: %s\n"), version)
+			fmt.Printf(cli.Colors.Info("Use --force to re-download.\n"))
+			return
+		}
+	}
+
+	// 3. Скачиваем с fallback-цепочкой
+	if err := downloadZigWithFallback(zigDir); err != nil {
+		errors.NewFatalError("3101", fmt.Sprintf("Failed to download Zig: %v", err), 0, 0, "")
+		printErrorReport(startTime, "", nil)
+		os.Exit(1)
+		return
+	}
+
+	fmt.Println(cli.Colors.Success("Zig installed successfully!"))
+	fmt.Println(cli.Colors.Info(fmt.Sprintf("Location: %s", zigDir)))
 }
 
 func parseFlags(args []string) []string {
@@ -700,10 +868,269 @@ func printHelp() {
 	fmt.Println(cli.Colors.Bold("OTHER:"))
 	fmt.Println("  --help, -h                Show this help")
 	fmt.Println("  --version, -v             Show version")
+	fmt.Println(cli.Colors.Bold("TOOLCHAIN:"))
+	fmt.Println("  setup-zig             Download and install Zig (C backend)")
+	fmt.Println("  setup-zig --force     Re-download Zig even if already installed")
+	fmt.Println()
 }
 
 func printVersion() {
 	fmt.Println(cli.Colors.Bold("Skorpion Compiler v1.0.0"))
 	fmt.Println(cli.Colors.Dim("Copyrights. (c) 2026 iamtowvee"))
 	fmt.Println(cli.Colors.Dim("Distributed under MIT License"))
+}
+
+// zigInstallDir — куда ставим Zig.
+// Windows: %LOCALAPPDATA%\Skorpion\zig
+// Linux/macOS: ~/.local/share/skorpion/zig
+func zigInstallDir() (string, error) {
+	var base string
+
+	switch runtime.GOOS {
+	case "windows":
+		base = os.Getenv("LOCALAPPDATA")
+		if base == "" {
+			return "", fmt.Errorf("LOCALAPPDATA is not set")
+		}
+		return filepath.Join(base, "Skorpion", "zig"), nil
+	default:
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(home, ".local", "share", "skorpion", "zig"), nil
+	}
+}
+
+// zigExeName — имя бинарника Zig для текущей ОС.
+func zigExeName() string {
+	if runtime.GOOS == "windows" {
+		return "zig.exe"
+	}
+	return "zig"
+}
+
+// getZigVersion — запускает `zig version` и возвращает строку.
+func getZigVersion(zigPath string) (string, error) {
+	cmd := exec.Command(zigPath, "version")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// zigDownloadPath — относительный путь к архиву Zig под текущую ОС/архитектуру.
+// Например: "/download/0.13.0/zig-windows-x86_64-0.13.0.zip"
+func zigDownloadPath() string {
+	version := "0.13.0"
+	osName := runtime.GOOS
+	arch := runtime.GOARCH
+
+	zigArch := arch
+	switch arch {
+	case "amd64":
+		zigArch = "x86_64"
+	case "arm64":
+		zigArch = "aarch64"
+	case "386":
+		zigArch = "x86"
+	}
+
+	zigOS := osName
+	switch osName {
+	case "windows":
+		zigOS = "windows"
+	case "darwin":
+		zigOS = "macos"
+	case "linux":
+		zigOS = "linux"
+	}
+
+	ext := ".tar.xz"
+	if osName == "windows" {
+		ext = ".zip"
+	}
+
+	filename := fmt.Sprintf("zig-%s-%s-%s%s", zigOS, zigArch, version, ext)
+	return "/download/" + version + "/" + filename
+}
+
+// fetchMirrorList — получает список зеркал с ziglang.org.
+// Возвращает nil, если не удалось.
+func fetchMirrorList() []string {
+	client := &http.Client{Timeout: 15 * time.Second}
+
+	resp, err := client.Get("https://ziglang.org/download/community-mirrors.txt")
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil
+	}
+
+	var mirrors []string
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" {
+			mirrors = append(mirrors, line)
+		}
+	}
+	return mirrors
+}
+
+// downloadZigWithFallback — пробует официальный сайт, потом зеркала.
+// Для каждого кандидата скачивает во временный файл и пытается распаковать.
+// Если не удалось — переходит к следующему.
+func downloadZigWithFallback(targetDir string) error {
+	path := zigDownloadPath()
+
+	// Собираем список кандидатов
+	candidates := []string{
+		"https://ziglang.org" + path, // официальный — первым
+	}
+
+	// Получаем зеркала (если доступен ziglang.org)
+	mirrors := fetchMirrorList()
+	if len(mirrors) > 0 {
+		// Перемешиваем, чтобы не долбить одно зеркало
+		rand.Seed(time.Now().UnixNano())
+		rand.Shuffle(len(mirrors), func(i, j int) {
+			mirrors[i], mirrors[j] = mirrors[j], mirrors[i]
+		})
+
+		for _, m := range mirrors {
+			m = strings.TrimRight(m, "/")
+			candidates = append(candidates, m+path)
+		}
+	}
+
+	var lastErr error
+
+	for i, url := range candidates {
+		fmt.Printf("  [%d/%d] %s\n", i+1, len(candidates), url)
+
+		tmpFile, err := os.CreateTemp("", "zig-*"+zigArchiveExt())
+		if err != nil {
+			return err
+		}
+		tmpPath := tmpFile.Name()
+		tmpFile.Close()
+
+		err = downloadWithProgress(url, tmpPath)
+		if err != nil {
+			os.Remove(tmpPath)
+			lastErr = err
+			fmt.Printf("    failed: %v\n", err)
+			continue
+		}
+
+		// Распаковка
+		if err := os.RemoveAll(targetDir); err != nil {
+			os.Remove(tmpPath)
+			return err
+		}
+		if err := os.MkdirAll(targetDir, 0755); err != nil {
+			os.Remove(tmpPath)
+			return err
+		}
+
+		fmt.Println("  Extracting...")
+		if err := extractArchive(tmpPath, targetDir); err != nil {
+			os.Remove(tmpPath)
+			lastErr = err
+			fmt.Printf("    extract failed: %v\n", err)
+			continue
+		}
+
+		os.Remove(tmpPath)
+		return nil
+	}
+
+	if lastErr != nil {
+		return lastErr
+	}
+	return fmt.Errorf("no working mirrors found")
+}
+
+// zigArchiveExt — расширение архива.
+func zigArchiveExt() string {
+	if runtime.GOOS == "windows" {
+		return ".zip"
+	}
+	return ".tar.xz"
+}
+
+// extractArchive — распаковка .zip (Windows) или .tar.xz (Linux/macOS).
+func extractArchive(archive, targetDir string) error {
+	switch {
+	case strings.HasSuffix(archive, ".zip"):
+		return extractZip(archive, targetDir)
+	case strings.HasSuffix(archive, ".tar.xz"):
+		return extractTarXz(archive, targetDir)
+	}
+	return fmt.Errorf("unknown archive format: %s", archive)
+}
+
+// extractZip — простой распаковщик ZIP.
+// После распаковки переносит содержимое корневой папки (zig-windows-x86_64-0.13.0/)
+// наверх, в targetDir.
+func extractZip(archive, targetDir string) error {
+	r, err := zip.OpenReader(archive)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+
+	// Находим корневую папку внутри архива
+	var rootPrefix string
+	if len(r.File) > 0 {
+		rootPrefix = strings.SplitN(r.File[0].Name, "/", 2)[0] + "/"
+	}
+
+	for _, f := range r.File {
+		// Отрезаем корневой префикс
+		name := strings.TrimPrefix(f.Name, rootPrefix)
+		if name == "" {
+			continue
+		}
+		outPath := filepath.Join(targetDir, name)
+
+		if f.FileInfo().IsDir() {
+			os.MkdirAll(outPath, 0755)
+			continue
+		}
+
+		os.MkdirAll(filepath.Dir(outPath), 0755)
+		out, err := os.OpenFile(outPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+		if err != nil {
+			return err
+		}
+		rc, err := f.Open()
+		if err != nil {
+			out.Close()
+			return err
+		}
+		_, err = io.Copy(out, rc)
+		rc.Close()
+		out.Close()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// extractTarXz — распаковка .tar.xz.
+// Требует xz-декодер. В Go нет встроенного, так что вызываем системный tar
+// (есть на Linux/macOS).
+func extractTarXz(archive, targetDir string) error {
+	// tar -xJf archive -C targetDir --strip-components=1
+	cmd := exec.Command("tar", "-xJf", archive, "-C", targetDir, "--strip-components=1")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
