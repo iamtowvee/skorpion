@@ -1,5 +1,7 @@
-use lib:iamtowvee/MyLib &ml
+use #lib:iamtowvee/MyLib
 
 void main(arr args) {
-    ml.println(getConfigField("var"))
+    println(getConfigField("name"))            // "MyProject"
+    println(getConfigField("buildOutFile"))    // "MyProject-stable-1.0.0.exe"
+    println(getConfig())                        // {name: MyProject, ...}
 }

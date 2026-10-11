@@ -37,6 +37,25 @@ var presetNames = map[string]bool{
 	"dependencies": true, "env": true, "execute": true,
 }
 
+func isValidKeyName(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		if i == 0 {
+			if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '_') {
+				return false
+			}
+			continue
+		}
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '_') {
+			return false
+		}
+	}
+	return true
+}
+
 func (c *Config) parseLine(line string, lineNum int, file string) error {
 	openIdx := strings.Index(line, "[")
 	if openIdx < 0 {
@@ -44,6 +63,18 @@ func (c *Config) parseLine(line string, lineNum int, file string) error {
 	}
 
 	key := strings.TrimSpace(line[:openIdx])
+
+	// Пустой ключ — ошибка
+	if key == "" {
+		return fmt.Errorf("empty key on line %d", lineNum)
+	}
+
+	// Невалидные символы в ключе — ошибка
+	if !isValidKeyName(key) {
+		return fmt.Errorf(
+			"invalid character in key '%s' (line %d)", key, lineNum)
+	}
+
 	rest := line[openIdx+1:]
 
 	closeIdx := strings.LastIndex(rest, "]")
@@ -274,7 +305,7 @@ func ParseConfig(path string) *Config {
 	for i, rawLine := range lines {
 		lineNum := i + 1
 		line := strings.TrimSpace(rawLine)
-		if line == "" || strings.HasPrefix(line, "//") {
+		if line == "" || strings.HasPrefix(line, "#!") {
 			continue
 		}
 
