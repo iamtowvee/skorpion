@@ -2,6 +2,7 @@ package front
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/gob"
 	"fmt"
 	"os"
@@ -37,14 +38,18 @@ func WriteLibrary(path string, lib *Library) error {
 		lib.Program.AllFunctions = nil
 	}
 
-	// gob-тело
+	// gob-тело, сжатое gzip
 	var body bytes.Buffer
-	enc := gob.NewEncoder(&body)
+	gz := gzip.NewWriter(&body)
+	enc := gob.NewEncoder(gz)
 	if err := enc.Encode(lib); err != nil {
 		return fmt.Errorf("gob encode: %w", err)
 	}
+	if err := gz.Close(); err != nil {
+		return fmt.Errorf("gzip close: %w", err)
+	}
 
-	// Собираем файл: magic + version + body
+	// Собираем файл: magic + version + gzipped gob
 	var buf bytes.Buffer
 	buf.Write(sklibMagic)
 	buf.WriteByte(byte(SKLibFormatVersion))
@@ -80,10 +85,16 @@ func ReadLibrary(path string) (*Library, error) {
 			headerVersion, SKLibFormatVersion)
 	}
 
-	// 2. gob-тело
+	// 2. gzip + gob
 	body := data[sklibHeaderSize:]
+	gz, err := gzip.NewReader(bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("gzip open: %w", err)
+	}
+	defer gz.Close()
+
 	var lib Library
-	dec := gob.NewDecoder(bytes.NewReader(body))
+	dec := gob.NewDecoder(gz)
 	if err := dec.Decode(&lib); err != nil {
 		return nil, fmt.Errorf("gob decode: %w", err)
 	}

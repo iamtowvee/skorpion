@@ -2,5 +2,4 @@ use lib:iamtowvee/MyLib &ml
 
 void main(arr args) {
     ml.println("hello")
-    ml.print("hello")
 }
