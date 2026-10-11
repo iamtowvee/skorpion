@@ -1329,4 +1329,10 @@ var ErrorCodes = map[string]ErrorCode{
 		Tip:         "Check that the library is placed in the correct author directory.",
 		Example:     "// If library was built by 'iamtowvee':\nlibs/iamtowvee/name/LIBRARY-name-1.0.0.sklib",
 	},
+	"3110": {
+		Code:        "3110",
+		Message:     "Not a .sklib file",
+		Description: "The file is not a valid Skorpion library. Magic bytes 'SKLB' not found at the start.",
+		Tip:         "Check that the file is really a .sklib built by 'skorpion build-lib'.",
+	},
 }

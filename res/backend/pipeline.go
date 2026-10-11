@@ -59,8 +59,15 @@ func (p *Pipeline) Process() *IRProgram {
 		p.IR.ErrorDecls = append(p.IR.ErrorDecls, irDecl)
 	}
 
+	// Идём по ВСЕМ функциям (включая приватные из либ),
+	// чтобы IR содержал их определения.
+	allFuncs := p.Program.AllFunctions
+	if len(allFuncs) == 0 {
+		allFuncs = p.Program.Functions
+	}
+
 	processed := make(map[string]bool)
-	for _, fn := range p.Program.Functions {
+	for _, fn := range allFuncs {
 		if processed[fn.Name] {
 			continue
 		}
@@ -2338,10 +2345,20 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 
 	// Определяем тип возврата
 	returnType := "sk_int"
+	found := false
 	for _, fn := range p.Program.Functions {
 		if fn.Name == simpleName {
 			returnType = p.typeToC(fn.ReturnType)
+			found = true
 			break
+		}
+	}
+	if !found {
+		for _, fn := range p.Program.AllFunctions {
+			if fn.Name == simpleName {
+				returnType = p.typeToC(fn.ReturnType)
+				break
+			}
 		}
 	}
 

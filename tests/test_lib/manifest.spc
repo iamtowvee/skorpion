@@ -1,0 +1,5 @@
+name["MyLib"]
+version["1.0.0"]
+main["./lib.sk"]
+authors[("iamtowvee")]
+buildOutName["lib-1.0.0"]

@@ -509,15 +509,25 @@ func buildProject() {
 	}
 	fmt.Println(cli.Colors.Success("Semantic analysis passed"))
 
+	// Functions — то, что видит semantic:
+	// локальные + ТОЛЬКО экспортируемые импортированные.
+	visibleFunctions := make([]*front.Function, len(mainProg.Functions))
+	copy(visibleFunctions, mainProg.Functions)
+
+	importedExported := im.GetExportedFunctionsInternal()
+	visibleFunctions = append(visibleFunctions, importedExported...)
+
+	// AllFunctions — то, что видит backend/pipeline:
+	// локальные + ВСЕ импортированные (включая приватные либы).
 	allFunctions := make([]*front.Function, len(mainProg.Functions))
 	copy(allFunctions, mainProg.Functions)
 
-	allImportedFunctions := im.GetAllFunctionsInternal()
-	allFunctions = append(allFunctions, allImportedFunctions...)
+	importedAll := im.GetAllFunctionsInternal()
+	allFunctions = append(allFunctions, importedAll...)
 
 	mergedProg := &front.Program{
 		Imports:        mainProg.Imports,
-		Functions:      allFunctions,
+		Functions:      visibleFunctions,
 		ErrorDecls:     mainProg.ErrorDecls,
 		GlobalIncludeC: mainProg.GlobalIncludeC,
 		AllFunctions:   allFunctions,
@@ -649,16 +659,27 @@ func buildLib(projectPath string) {
 		return
 	}
 
-	// Семантический анализ — свои функции + импортированные
+	// Functions — то, что видит semantic:
+	// свои функции + ТОЛЬКО экспортируемые импортированные.
+	visibleFunctions := make([]*front.Function, len(mainProg.Functions))
+	copy(visibleFunctions, mainProg.Functions)
+
+	for _, fn := range im.GetExportedFunctionsInternal() {
+		visibleFunctions = append(visibleFunctions, fn)
+	}
+
+	// AllFunctions — то, что видит backend/pipeline:
+	// свои + ВСЕ импортированные (включая приватные либы-зависимостей).
 	allFunctions := make([]*front.Function, len(mainProg.Functions))
 	copy(allFunctions, mainProg.Functions)
 
-	importedFuncs := im.GetAllFunctionsInternal()
-	allFunctions = append(allFunctions, importedFuncs...)
+	for _, fn := range im.GetAllFunctionsInternal() {
+		allFunctions = append(allFunctions, fn)
+	}
 
 	mergedProg := &front.Program{
 		Imports:        mainProg.Imports,
-		Functions:      allFunctions,
+		Functions:      visibleFunctions,
 		ErrorDecls:     mainProg.ErrorDecls,
 		GlobalIncludeC: mainProg.GlobalIncludeC,
 		AllFunctions:   allFunctions,
@@ -666,6 +687,7 @@ func buildLib(projectPath string) {
 
 	semantic := midlevel.NewSemanticAnalyzer(mergedProg)
 	semantic.SetImportManager(im)
+	semantic.SetLibraryMode(true) // либе не нужен main()
 
 	if !semantic.Analyze() {
 		for _, e := range semantic.Errors {
@@ -681,25 +703,37 @@ func buildLib(projectPath string) {
 	}
 	fmt.Println(cli.Colors.Success("Semantic analysis passed"))
 
-	// Оптимизация
-	mid := midlevel.NewMidLevel(mergedProg)
+	// Для оптимизации нужен ВЕСЬ набор функций (и приватные, и экспортируемые),
+	// иначе приватные не попадут в .sklib.
+	optInput := &front.Program{
+		Imports:        mergedProg.Imports,
+		Functions:      mergedProg.AllFunctions,
+		ErrorDecls:     mergedProg.ErrorDecls,
+		GlobalIncludeC: mergedProg.GlobalIncludeC,
+		AllFunctions:   mergedProg.AllFunctions,
+	}
+	mid := midlevel.NewMidLevel(optInput)
 	optProg := mid.OptimizeIR()
 	fmt.Println(cli.Colors.Success("Optimization complete"))
 
-	// Фильтруем: экспортируемые + все системные (__sk__*).
-	// Системные нужны для работы либы (например, __sk__std_io_send,
-	// которую вызывает sendln из std/io).
-	exported := make([]*front.Function, 0, len(optProg.Functions))
+	// В .sklib идут ВСЕ функции либы — и экспортируемые, и приватные.
+	// Приватные (с '*') нужны, чтобы их могли вызывать другие функции
+	// либы (например, sendln вызывает __sk__std_io_send).
+	// Потребителю они не видны — см. GetExportedFunctionsInternal.
+	libFunctions := make([]*front.Function, 0, len(optProg.Functions))
 	for _, fn := range optProg.Functions {
-		if fn.Name == "main" {
-			continue
-		}
-		if fn.IsExport || strings.HasPrefix(fn.Name, "__sk__") {
-			exported = append(exported, fn)
-		}
+		libFunctions = append(libFunctions, fn)
 	}
 
-	if len(exported) == 0 {
+	// Должна быть хотя бы одна экспортируемая функция.
+	hasExported := false
+	for _, fn := range libFunctions {
+		if fn.IsExport {
+			hasExported = true
+			break
+		}
+	}
+	if !hasExported {
 		errors.NewFatalError("3105",
 			"Library has no exportable functions (all functions are marked with '*')",
 			0, 0, mainFile)
@@ -708,10 +742,9 @@ func buildLib(projectPath string) {
 		return
 	}
 
-	// Формируем Program для .sklib
 	libProg := &front.Program{
-		Imports:        []*front.Import{}, // импорты не вшиваем
-		Functions:      exported,
+		Imports:        []*front.Import{},
+		Functions:      libFunctions,
 		ErrorDecls:     optProg.ErrorDecls,
 		GlobalIncludeC: optProg.GlobalIncludeC,
 		AllFunctions:   nil,
@@ -753,7 +786,7 @@ func buildLib(projectPath string) {
 
 	fmt.Printf(cli.Colors.Success("Library built: %s\n"), outPath)
 	fmt.Printf(cli.Colors.Info("Functions: %d, Errors: %d\n"),
-		len(exported), len(libProg.ErrorDecls))
+		len(libFunctions), len(libProg.ErrorDecls))
 	fmt.Printf(cli.Colors.Info("To use in another project:\n"))
 	fmt.Printf(cli.Colors.Info("  1. Copy %s to {libs}/%s/%s/\n"),
 		outName, cfg.Authors[0], cfg.Name)

@@ -11,6 +11,13 @@ import (
 // Версия формата .sklib. Меняется при несовместимых изменениях структуры.
 const SKLibFormatVersion = 1
 
+// Магические байты в начале .sklib. Позволяют мгновенно отличить
+// файл Skorpion-библиотеки от чего угодно другого.
+var sklibMagic = []byte{'S', 'K', 'L', 'B'}
+
+// Размер заголовка: 4 байта магии + 1 байт версии формата.
+const sklibHeaderSize = 5
+
 // Library — содержимое .sklib.
 type Library struct {
 	FormatVersion int
@@ -30,11 +37,18 @@ func WriteLibrary(path string, lib *Library) error {
 		lib.Program.AllFunctions = nil
 	}
 
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
+	// gob-тело
+	var body bytes.Buffer
+	enc := gob.NewEncoder(&body)
 	if err := enc.Encode(lib); err != nil {
 		return fmt.Errorf("gob encode: %w", err)
 	}
+
+	// Собираем файл: magic + version + body
+	var buf bytes.Buffer
+	buf.Write(sklibMagic)
+	buf.WriteByte(byte(SKLibFormatVersion))
+	buf.Write(body.Bytes())
 
 	if err := os.WriteFile(path, buf.Bytes(), 0644); err != nil {
 		return fmt.Errorf("write file: %w", err)
@@ -49,16 +63,37 @@ func ReadLibrary(path string) (*Library, error) {
 		return nil, fmt.Errorf("read file: %w", err)
 	}
 
+	// 1. Проверка заголовка
+	if len(data) < sklibHeaderSize {
+		return nil, fmt.Errorf("not a .sklib file: too short (%d bytes)", len(data))
+	}
+	if !bytes.Equal(data[:4], sklibMagic) {
+		return nil, fmt.Errorf(
+			"not a .sklib file: bad magic bytes (expected %q, got %q)",
+			sklibMagic, data[:4])
+	}
+
+	headerVersion := int(data[4])
+	if headerVersion != SKLibFormatVersion {
+		return nil, fmt.Errorf(
+			"unsupported .sklib format version: got %d, expected %d (recompile the library)",
+			headerVersion, SKLibFormatVersion)
+	}
+
+	// 2. gob-тело
+	body := data[sklibHeaderSize:]
 	var lib Library
-	dec := gob.NewDecoder(bytes.NewReader(data))
+	dec := gob.NewDecoder(bytes.NewReader(body))
 	if err := dec.Decode(&lib); err != nil {
 		return nil, fmt.Errorf("gob decode: %w", err)
 	}
 
+	// 3. Проверка версии внутри Library (защита от рассинхрона)
+	// Если кто-то вручную подменил байт в заголовке — поймаем здесь.
 	if lib.FormatVersion != SKLibFormatVersion {
 		return nil, fmt.Errorf(
-			"unsupported .sklib format version: got %d, expected %d (recompile the library)",
-			lib.FormatVersion, SKLibFormatVersion)
+			"internal version mismatch: header=%d, body=%d (file is corrupted)",
+			headerVersion, lib.FormatVersion)
 	}
 
 	return &lib, nil
@@ -112,54 +147,79 @@ func ParseLibSpec(path string) (LibSpec, error) {
 	return spec, nil
 }
 
-// FindLibraryFile ищет .sklib в libsDir для данного spec.
-// Если version указана — ищет LIBRARY-{name}-{version}.sklib.
-// Если нет — требует ровно один .sklib в папке.
-func FindLibraryFile(libsDir string, spec LibSpec) (string, error) {
+// FindLibrary ищет .sklib в libsDir для данного spec
+// и возвращает прочитанную Library вместе с путём к файлу.
+//
+// Правила:
+//   - Папка: {libsDir}/{author}/{name}/
+//   - Расширение: .sklib (обязательно)
+//   - Если version указан — ищем файл, внутри которого Version == spec.Version
+//   - Если version НЕ указан — в папке должен быть ровно 1 .sklib
+func FindLibrary(libsDir string, spec LibSpec) (*Library, string, error) {
 	dir := fmt.Sprintf("%s/%s/%s",
 		strings.TrimRight(libsDir, "/"), spec.Author, spec.Name)
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return "", fmt.Errorf(
-			"library not found: %s/%s (dir: %s)", spec.Author, spec.Name, dir)
+		return nil, "", fmt.Errorf("library not found: %s/%s (dir: %s)",
+			spec.Author, spec.Name, dir)
 	}
 
-	var matches []string
+	var candidates []string
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
 		}
-		name := e.Name()
-		if !strings.HasPrefix(name, "LIBRARY-") || !strings.HasSuffix(name, ".sklib") {
+		if !strings.HasSuffix(e.Name(), ".sklib") {
 			continue
 		}
-		if spec.Version != "" {
-			expected := fmt.Sprintf("LIBRARY-%s-%s.sklib", spec.Name, spec.Version)
-			if name == expected {
-				matches = append(matches, dir+"/"+name)
-			}
-		} else {
-			matches = append(matches, dir+"/"+name)
+		candidates = append(candidates, dir+"/"+e.Name())
+	}
+
+	if len(candidates) == 0 {
+		return nil, "", fmt.Errorf("library %s/%s not found in %s (no .sklib files)",
+			spec.Author, spec.Name, dir)
+	}
+
+	// Без версии — ровно 1 файл
+	if spec.Version == "" {
+		if len(candidates) > 1 {
+			return nil, "", fmt.Errorf(
+				"multiple versions of library %s/%s found in %s; specify @version",
+				spec.Author, spec.Name, dir)
+		}
+		lib, err := ReadLibrary(candidates[0])
+		if err != nil {
+			return nil, "", fmt.Errorf("cannot read %s: %w", candidates[0], err)
+		}
+		return lib, candidates[0], nil
+	}
+
+	// С версией — читаем все и ищем совпадение
+	var matches []*Library
+	var matchFiles []string
+	for _, file := range candidates {
+		lib, err := ReadLibrary(file)
+		if err != nil {
+			return nil, "", fmt.Errorf("cannot read %s: %w", file, err)
+		}
+		if lib.Version == spec.Version {
+			matches = append(matches, lib)
+			matchFiles = append(matchFiles, file)
 		}
 	}
 
 	if len(matches) == 0 {
-		if spec.Version != "" {
-			return "", fmt.Errorf("library %s/%s@%s not found in %s",
-				spec.Author, spec.Name, spec.Version, dir)
-		}
-		return "", fmt.Errorf("library %s/%s not found in %s",
-			spec.Author, spec.Name, dir)
+		return nil, "", fmt.Errorf("library %s/%s@%s not found in %s",
+			spec.Author, spec.Name, spec.Version, dir)
 	}
-
 	if len(matches) > 1 {
-		return "", fmt.Errorf(
-			"multiple versions of library %s/%s found in %s; specify @version",
-			spec.Author, spec.Name, dir)
+		return nil, "", fmt.Errorf(
+			"multiple files with version %s for library %s/%s in %s",
+			spec.Version, spec.Author, spec.Name, dir)
 	}
 
-	return matches[0], nil
+	return matches[0], matchFiles[0], nil
 }
 
 // init регистрирует все типы AST в gob.

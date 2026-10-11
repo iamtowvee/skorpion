@@ -1,0 +1,9 @@
+use std/io
+
+void *print(any line) {
+    io.sendln(line)
+}
+
+void println(any msg) {
+    print(msg)
+}

@@ -1,5 +1,6 @@
-use lib:iamtowvee/MyProject &mp
+use lib:iamtowvee/MyLib &ml
 
 void main(arr args) {
-    mp.print("hello")
+    ml.println("hello")
+    ml.print("hello")
 }

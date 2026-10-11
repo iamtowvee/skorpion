@@ -921,7 +921,8 @@ int sk_error_type_match(const char* actual, const char* expected) {
 }
 
 // Function prototypes
-void __sk__print(sk_any msg);
+void __sk__print(sk_any line);
+void __sk__println(sk_any msg);
 void __sk__std_io_send(sk_string line);
 sk_string __sk__std_io_input(sk_string prompt);
 void __sk__sendln(sk_any msg);
@@ -944,14 +945,21 @@ int main(int argc, char** argv) {
 
     t1 = any_string(sk_string_new("hello"));
     sk_call_push("main.sk", 4, 5);
-    __sk__print(t1);
+    __sk__println(t1);
     sk_call_pop();
     return 0;
 }
 
-void __sk__print(sk_any msg) {
-    sk_call_push("main.sk", 4, 5);
-    __sk__sendln(msg);
+void __sk__print(sk_any line) {
+    sk_call_push("lib.sk", 4, 5);
+    __sk__sendln(line);
+    sk_call_pop();
+    return;
+}
+
+void __sk__println(sk_any msg) {
+    sk_call_push("lib.sk", 8, 5);
+    __sk__print(msg);
     sk_call_pop();
     return;
 }

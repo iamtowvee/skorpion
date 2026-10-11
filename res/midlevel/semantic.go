@@ -19,6 +19,7 @@ type SemanticAnalyzer struct {
 	ImportedFuncs   map[string]*front.Function
 	ImportManager   *front.ImportManager
 	ErrorTypes      map[string]*front.ErrorDecl
+	IsLibrary bool
 }
 
 func NewSemanticAnalyzer(prog *front.Program) *SemanticAnalyzer {
@@ -35,6 +36,12 @@ func NewSemanticAnalyzer(prog *front.Program) *SemanticAnalyzer {
 func (sa *SemanticAnalyzer) SetImportManager(im *front.ImportManager) {
 	sa.ImportManager = im
 	sa.registerImportedFunctions()
+}
+
+// SetLibraryMode включает режим библиотеки: checkMain() не требует
+// наличия void main(arr args).
+func (sa *SemanticAnalyzer) SetLibraryMode(isLib bool) {
+	sa.IsLibrary = isLib
 }
 
 func (sa *SemanticAnalyzer) registerImportedFunctions() {
@@ -248,6 +255,11 @@ func (sa *SemanticAnalyzer) registerFunction(fn *front.Function) {
 }
 
 func (sa *SemanticAnalyzer) checkMain() bool {
+	// В режиме библиотеки main() не нужен — это просто набор функций.
+	if sa.IsLibrary {
+		return true
+	}
+
 	mainSym := sa.GlobalScope.Resolve("main")
 	if mainSym == nil {
 		sa.addError("1501", "No main() function found", 0, 0, "")

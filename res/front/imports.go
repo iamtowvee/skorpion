@@ -241,6 +241,9 @@ func IsExportable(fn *Function) bool {
 	return fn.IsExport
 }
 
+// GetAllFunctionsInternal — ВСЕ функции из всех загруженных модулей,
+// включая приватные (IsExport == false). Нужно для backend/pipeline,
+// который компилирует тела функций.
 func (im *ImportManager) GetAllFunctionsInternal() []*Function {
 	im.mu.Lock()
 	defer im.mu.Unlock()
@@ -250,6 +253,24 @@ func (im *ImportManager) GetAllFunctionsInternal() []*Function {
 		allFunctions = append(allFunctions, mod.Program.Functions...)
 	}
 	return allFunctions
+}
+
+// GetExportedFunctionsInternal — только экспортируемые функции
+// из загруженных модулей. Нужно для semantic: приватные функции
+// либы (IsExport == false) не должны быть видны потребителю.
+func (im *ImportManager) GetExportedFunctionsInternal() []*Function {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+
+	var exported []*Function
+	for _, mod := range im.loaded {
+		for _, fn := range mod.Program.Functions {
+			if fn.IsExport {
+				exported = append(exported, fn)
+			}
+		}
+	}
+	return exported
 }
 
 func appendUniqueErrors(dst []*ErrorDecl, src []*ErrorDecl) []*ErrorDecl {
@@ -291,31 +312,25 @@ func (im *ImportManager) loadLibraryInternal(path string, visited map[string]boo
 			"libs dir is not configured; add libs[\"path/\"] to manifest.spc")
 	}
 
-	file, err := FindLibraryFile(im.libsDir, spec)
+	lib, file, err := FindLibrary(im.libsDir, spec)
 	if err != nil {
 		return nil, err
 	}
 
-	lib, err := ReadLibrary(file)
-	if err != nil {
-		return nil, fmt.Errorf("cannot read library %s: %w", file, err)
-	}
-
+	// Проверки (имя/автор/версия уже частично проверены в FindLibrary,
+	// но Name и Author — нет, потому что папка навигационная).
 	if lib.Name != spec.Name {
 		return nil, fmt.Errorf(
 			"library name mismatch: path says '%s', file says '%s'",
 			spec.Name, lib.Name)
-	}
-	if spec.Version != "" && lib.Version != spec.Version {
-		return nil, fmt.Errorf(
-			"library version mismatch: path says '%s', file says '%s'",
-			spec.Version, lib.Version)
 	}
 	if lib.Author != "" && lib.Author != spec.Author {
 		return nil, fmt.Errorf(
 			"library author mismatch: path says '%s', file says '%s'",
 			spec.Author, lib.Author)
 	}
+	// Version уже совпала в FindLibrary, если spec.Version != ""
+	// Но если spec.Version == "" — версия любая, ок.
 
 	if err := im.checkDependencies(lib, path); err != nil {
 		return nil, err
