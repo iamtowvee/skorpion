@@ -2,6 +2,7 @@ package backend
 
 import (
 	"fmt"
+	"skrp/res/front"
 	"strings"
 )
 
@@ -43,6 +44,7 @@ type IRProgram struct {
 	Imports    []IRImport
 	InlineC    string
 	ErrorDecls []IRErrorDecl
+	Config     *front.Config
 }
 
 type IRErrorDecl struct {

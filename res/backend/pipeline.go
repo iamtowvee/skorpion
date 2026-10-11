@@ -15,9 +15,10 @@ type Pipeline struct {
 	LabelCounter int
 	TryFrames    []string
 	TryDepth     int
+	cfg          *front.Config
 }
 
-func NewPipeline(prog *front.Program) *Pipeline {
+func NewPipeline(prog *front.Program, cfg *front.Config) *Pipeline {
 	return &Pipeline{
 		Program:      prog,
 		IR:           &IRProgram{Functions: []IRFunction{}, Globals: []IRGlobal{}, Imports: []IRImport{}},
@@ -25,10 +26,13 @@ func NewPipeline(prog *front.Program) *Pipeline {
 		LabelCounter: 0,
 		TryFrames:    []string{},
 		TryDepth:     0,
+		cfg:          cfg,
 	}
 }
 
 func (p *Pipeline) Process() *IRProgram {
+	p.IR.Config = p.cfg
+
 	// Global includeC
 	for _, code := range p.Program.GlobalIncludeC {
 		p.IR.InlineC += code + "\n\n"
@@ -2271,6 +2275,59 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 		simpleName = parts[len(parts)-1]
 	}
 
+	// === getConfig / getConfigField (compile-time) ===
+	switch simpleName {
+	case "getConfig":
+		result := p.newTemp()
+		irFn.Locals = append(irFn.Locals, "sk_dict_ref "+result)
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "call",
+			Result:     result,
+			Arg1:       "__sk__get_config",
+			ReturnType: "sk_dict_ref",
+		})
+		return result
+
+	case "getConfigField":
+		if len(args) != 1 {
+			break
+		}
+		lit, ok := args[0].(*front.String)
+		if !ok {
+			break
+		}
+
+		dictVar := p.newTemp()
+		irFn.Locals = append(irFn.Locals, "sk_dict_ref "+dictVar)
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "call",
+			Result:     dictVar,
+			Arg1:       "__sk__get_config",
+			ReturnType: "sk_dict_ref",
+		})
+
+		keyVar := p.newTemp()
+		irFn.Locals = append(irFn.Locals, "sk_string "+keyVar)
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "call",
+			Result:     keyVar,
+			Arg1:       "sk_string_new",
+			Arg2:       fmt.Sprintf("%q", lit.Value),
+			ReturnType: "sk_string",
+		})
+
+		result := p.newTemp()
+		irFn.Locals = append(irFn.Locals, "sk_any "+result)
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "call",
+			Result:     result,
+			Arg1:       "sk_dict_get",
+			Arg2:       dictVar + ".value, " + keyVar,
+			ReturnType: "sk_any",
+		})
+		return result
+	}
+
 	// Builtins
 	switch simpleName {
 	case "to_int":
@@ -3744,6 +3801,10 @@ func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 			return "arr"
 		case "detruncate":
 			return "string"
+		case "getConfig":
+			return "dict"
+		case "getConfigField":
+			return "any"
 		}
 
 		for _, fn := range p.Program.Functions {

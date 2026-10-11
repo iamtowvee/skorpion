@@ -2,6 +2,7 @@ package backend
 
 import (
 	"fmt"
+	"skrp/res/front"
 	"strings"
 )
 
@@ -1037,6 +1038,11 @@ func (cg *CodeGenerator) Generate() string {
 		cg.writeLine("")
 	}
 
+	// ===== Config =====
+	if cg.IR.Config != nil {
+		cg.writeLine(GenerateConfigC(cg.IR.Config))
+	}
+
 	// ===== Function prototypes =====
 	cg.writeLine("// Function prototypes")
 	for _, fn := range cg.IR.Functions {
@@ -1563,4 +1569,62 @@ func (cg *CodeGenerator) collectErrorFields(decl IRErrorDecl) []IRErrorField {
 	}
 
 	return fields
+}
+
+func GenerateConfigC(cfg *front.Config) string {
+	if cfg == nil {
+		return ""
+	}
+
+	var sb strings.Builder
+
+	sb.WriteString("// Generated from manifest.spc\n")
+	sb.WriteString("sk_dict_ref __sk__get_config(void) {\n")
+	sb.WriteString("    sk_dict* d = sk_dict_new();\n")
+
+	for _, key := range cfg.VarOrder {
+		val, ok := cfg.Vars[key]
+		if !ok {
+			continue
+		}
+
+		keyLit := fmt.Sprintf("sk_string_new(%q)", key)
+
+		switch v := val.(type) {
+		case string:
+			sb.WriteString(fmt.Sprintf(
+				"    sk_dict_set(d, %s, any_string(sk_string_new(%q)));\n",
+				keyLit, v))
+
+		case []string:
+			tmpArr := fmt.Sprintf("_cfg_arr_%s", sanitizeCName(key))
+			sb.WriteString(fmt.Sprintf(
+				"    sk_array* %s = sk_array_new(sizeof(sk_string), 1);\n", tmpArr))
+			for _, elem := range v {
+				sb.WriteString(fmt.Sprintf(
+					"    sk_array_push_string(%s, sk_string_new(%q));\n",
+					tmpArr, elem))
+			}
+			sb.WriteString(fmt.Sprintf(
+				"    sk_dict_set(d, %s, any_arr(sk_arr_new(%s)));\n",
+				keyLit, tmpArr))
+		}
+	}
+
+	sb.WriteString("    return sk_dict_ref_new(d);\n")
+	sb.WriteString("}\n\n")
+	return sb.String()
+}
+
+func sanitizeCName(s string) string {
+	var out strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '_' {
+			out.WriteRune(r)
+		} else {
+			out.WriteByte('_')
+		}
+	}
+	return out.String()
 }

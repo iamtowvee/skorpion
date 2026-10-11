@@ -543,7 +543,7 @@ func buildProject() {
 		fmt.Println(cli.Colors.Success("Optimization complete"))
 	}
 
-	pipeline := backend.NewPipeline(optProg)
+	pipeline := backend.NewPipeline(optProg, cfg)
 	ir := pipeline.Process()
 	fmt.Printf(cli.Colors.Info("Generated IR with %d functions\n"), len(ir.Functions))
 

@@ -19,7 +19,7 @@ type SemanticAnalyzer struct {
 	ImportedFuncs   map[string]*front.Function
 	ImportManager   *front.ImportManager
 	ErrorTypes      map[string]*front.ErrorDecl
-	IsLibrary bool
+	IsLibrary       bool
 }
 
 func NewSemanticAnalyzer(prog *front.Program) *SemanticAnalyzer {
@@ -1222,13 +1222,15 @@ func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
 	}
 
 	builtinFuncs := map[string]bool{
-		"to_int":     true,
-		"to_float":   true,
-		"to_double":  true,
-		"to_string":  true,
-		"to_bool":    true,
-		"to_arr":     true,
-		"detruncate": true,
+		"to_int":         true,
+		"to_float":       true,
+		"to_double":      true,
+		"to_string":      true,
+		"to_bool":        true,
+		"to_arr":         true,
+		"detruncate":     true,
+		"getConfig":      true,
+		"getConfigField": true,
 	}
 	if builtinFuncs[simpleName] {
 		for _, arg := range args {
@@ -1752,6 +1754,10 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 			return "arr[any]"
 		case "detruncate":
 			return "string"
+		case "getConfig":
+			return "dict"
+		case "getConfigField":
+			return "any"
 		}
 
 		for _, fn := range sa.Program.Functions {
