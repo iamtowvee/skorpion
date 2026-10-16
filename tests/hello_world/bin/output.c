@@ -949,6 +949,12 @@ sk_string __sk__std_io_input(sk_string prompt);
 void __sk__sendln(sk_any msg);
 void __sk__sendf(sk_any msg);
 sk_string __sk__input(sk_string prefix);
+sk_string __sk__getEnv(sk_string env);
+void __sk__setEnv(sk_string env, sk_string val);
+void __sk__setClearEnv(sk_string env, sk_string val, sk_bool confirm);
+sk_string __sk__getExePath(void);
+sk_arr __sk__getArgs(void);
+void __sk__exit(sk_int code, sk_string msg);
 
 void __sk__foo(sk_int a, sk_arr some) {
     sk_any t1;
@@ -956,9 +962,10 @@ void __sk__foo(sk_int a, sk_arr some) {
     sk_any f;
     sk_int t3;
     sk_bool t4;
+    sk_bool t5;
 
     t1 = any_int(a);
-    sk_call_push("main.sk", 4, 5);
+    sk_call_push("main.sk", 5, 5);
     __sk__println(t1);
     sk_call_pop();
     t2 = sk_int_new(0);
@@ -972,7 +979,20 @@ L1:
     }
 L2:
     f = *(sk_any*)sk_array_get(some.value, t2.value);
-    sk_call_push("main.sk", 6, 9);
+    t5 = sk_bool_new(f.type == 6);
+    if (t5.value) {
+        goto L4;
+    } else {
+        goto L5;
+    }
+L4:
+    sk_call_push("main.sk", 8, 13);
+    __sk__exit(sk_int_new(1), sk_string_new("Oh, it's NULL"));
+    sk_call_pop();
+    goto L6;
+L5:
+L6:
+    sk_call_push("main.sk", 10, 9);
     __sk__println(f);
     sk_call_pop();
     t2 = sk_int_add(t2, sk_int_new(1));
@@ -993,58 +1013,58 @@ int main(int argc, char** argv) {
     }
     sk_arr args = sk_arr_new(args__arr);
 
-    sk_dict_ref t5;
-    sk_string t6;
-    sk_any t7;
-    sk_dict_ref t8;
-    sk_string t9;
-    sk_any t10;
-    sk_dict_ref t11;
-    sk_any t12;
-    sk_arr t13;
-    sk_any t14;
+    sk_dict_ref t6;
+    sk_string t7;
+    sk_any t8;
+    sk_dict_ref t9;
+    sk_string t10;
+    sk_any t11;
+    sk_dict_ref t12;
+    sk_any t13;
+    sk_arr t14;
     sk_any t15;
     sk_any t16;
     sk_any t17;
-    sk_arr t18;
-    sk_any t19;
+    sk_any t18;
+    sk_arr t19;
     sk_any t20;
+    sk_any t21;
 
-    t5 = __sk__get_config();
-    t6 = sk_string_new("name");
-    t7 = sk_dict_get(t5.value, t6);
-    free(t6.value);
-    sk_call_push("main.sk", 11, 5);
-    __sk__println(t7);
+    t6 = __sk__get_config();
+    t7 = sk_string_new("name");
+    t8 = sk_dict_get(t6.value, t7);
+    free(t7.value);
+    sk_call_push("main.sk", 15, 5);
+    __sk__println(t8);
     sk_call_pop();
-    t8 = __sk__get_config();
-    t9 = sk_string_new("buildOutFile");
-    t10 = sk_dict_get(t8.value, t9);
-    free(t9.value);
-    sk_call_push("main.sk", 12, 5);
-    __sk__println(t10);
+    t9 = __sk__get_config();
+    t10 = sk_string_new("buildOutFile");
+    t11 = sk_dict_get(t9.value, t10);
+    free(t10.value);
+    sk_call_push("main.sk", 16, 5);
+    __sk__println(t11);
     sk_call_pop();
-    t11 = __sk__get_config();
-    t12 = any_dict(t11);
-    sk_call_push("main.sk", 13, 5);
-    __sk__println(t12);
+    t12 = __sk__get_config();
+    t13 = any_dict(t12);
+    sk_call_push("main.sk", 17, 5);
+    __sk__println(t13);
     sk_call_pop();
-    t13 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    t14 = any_int(sk_int_new(-1));
-    sk_array_push_any(t13.value, t14);
-    t15 = any_bool(sk_bool_new(1));
-    sk_array_push_any(t13.value, t15);
-    t16 = any_int(SK_NULL_int);
-    sk_array_push_any(t13.value, t16);
-    t17 = any_string(sk_string_new("hi"));
-    sk_array_push_any(t13.value, t17);
-    t18 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    t19 = any_string(sk_string_new("hi"));
-    sk_array_push_any(t18.value, t19);
-    t20 = any_arr(t18);
-    sk_array_push_any(t13.value, t20);
-    sk_call_push("main.sk", 14, 5);
-    __sk__foo(sk_int_new(1), t13);
+    t14 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    t15 = any_int(sk_int_new(-1));
+    sk_array_push_any(t14.value, t15);
+    t16 = any_bool(sk_bool_new(1));
+    sk_array_push_any(t14.value, t16);
+    t17 = any_int(SK_NULL_int);
+    sk_array_push_any(t14.value, t17);
+    t18 = any_string(sk_string_new("hi"));
+    sk_array_push_any(t14.value, t18);
+    t19 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    t20 = any_string(sk_string_new("hi"));
+    sk_array_push_any(t19.value, t20);
+    t21 = any_arr(t19);
+    sk_array_push_any(t14.value, t21);
+    sk_call_push("main.sk", 18, 5);
+    __sk__foo(sk_int_new(1), t14);
     sk_call_pop();
     return 0;
 }
@@ -1088,36 +1108,107 @@ sk_string __sk__std_io_input(sk_string prompt) {
 }
 
 void __sk__sendln(sk_any msg) {
-    sk_string t21;
     sk_string t22;
-
-    t21 = any_to_string(msg);
-    t22 = sk_string_concat(t21, sk_string_new("\n"));
-    free(t21.value);
-    sk_call_push("<builtin:std/io>", 36, 5);
-    __sk__std_io_send(t22);
-    sk_call_pop();
-    free(t22.value);
-    return;
-}
-
-void __sk__sendf(sk_any msg) {
     sk_string t23;
 
-    t23 = any_to_string(msg);
-    sk_call_push("<builtin:std/io>", 40, 5);
+    t22 = any_to_string(msg);
+    t23 = sk_string_concat(t22, sk_string_new("\n"));
+    free(t22.value);
+    sk_call_push("<builtin:std/io>", 36, 5);
     __sk__std_io_send(t23);
     sk_call_pop();
     free(t23.value);
     return;
 }
 
-sk_string __sk__input(sk_string prefix) {
+void __sk__sendf(sk_any msg) {
     sk_string t24;
 
-    sk_call_push("<builtin:std/io>", 44, 12);
-    t24 = __sk__std_io_input(prefix);
+    t24 = any_to_string(msg);
+    sk_call_push("<builtin:std/io>", 40, 5);
+    __sk__std_io_send(t24);
     sk_call_pop();
-    return t24;
+    free(t24.value);
+    return;
+}
+
+sk_string __sk__input(sk_string prefix) {
+    sk_string t25;
+
+    sk_call_push("<builtin:std/io>", 44, 12);
+    t25 = __sk__std_io_input(prefix);
+    sk_call_pop();
+    return t25;
+}
+
+sk_string __sk__getEnv(sk_string env) {
+    if (env.__is_null) return sk_string_new("");
+        char* val = getenv(env.value);
+        return sk_string_new(val ? val : "");
+    return sk_string_new("");
+}
+
+void __sk__setEnv(sk_string env, sk_string val) {
+    if (env.__is_null || val.__is_null) return;
+        #if defined(_WIN32)
+            if (getenv(env.value) == NULL) {
+                _putenv_s(env.value, val.value);
+            }
+        #elif defined(__linux__)
+            setenv(env.value, val.value, 0);
+        #endif
+    return;
+}
+
+void __sk__setClearEnv(sk_string env, sk_string val, sk_bool confirm) {
+    sk_bool t26;
+
+    t26 = sk_bool_not(confirm);
+    if (t26.value) {
+        goto L7;
+    } else {
+        goto L8;
+    }
+L7:
+    return;
+    goto L9;
+L8:
+L9:
+    if (env.__is_null || val.__is_null) return;
+        #if defined(_WIN32)
+            _putenv_s(env.value, val.value);
+        #elif defined(__linux__)
+            setenv(env.value, val.value, 1);
+        #endif
+    return;
+}
+
+sk_string __sk__getExePath(void) {
+    if (__sk__argc > 0 && __sk__argv[0]) {
+                return sk_string_new(__sk__argv[0]);
+            }
+            return sk_string_new("");
+    return sk_string_new("");
+}
+
+sk_arr __sk__getArgs(void) {
+    sk_arr t27;
+
+    sk_array* arr = sk_array_new(sizeof(sk_string), 1);
+            for (int i = 0; i < __sk__argc; i++) {
+                sk_string s = sk_string_new(__sk__argv[i]);
+                sk_array_push(arr, &s);
+            }
+            return sk_arr_new(arr);
+    t27 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    return t27;
+}
+
+void __sk__exit(sk_int code, sk_string msg) {
+    if (msg.value != NULL && msg.value[0] != '\0') {
+          fprintf(stderr, "%s\n", msg.value);
+        }
+        exit(code.value);
+    return;
 }
 

@@ -1275,45 +1275,59 @@ func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
 	}
 	debug.Debug("Function %s found, params=%d\n", simpleName, len(targetFunc.Params))
 
-	// Считаем обычные параметры
-	normalParams := 0
+	// Считаем обязательные, опциональные и variadic
+	requiredParams := 0
+	optionalParams := 0
 	hasVariadic := false
-	var variadicParam *front.Param
-	for _, param := range targetFunc.Params {
-		if param.IsVariadic {
+	for _, p := range targetFunc.Params {
+		if p.IsVariadic {
 			hasVariadic = true
-			variadicParam = param
 			break
 		}
-		normalParams++
+		if p.DefaultValue != nil {
+			optionalParams++
+		} else {
+			requiredParams++
+		}
 	}
-	_ = variadicParam
+	totalNormal := requiredParams + optionalParams
 
 	if hasVariadic {
-		if len(args) < normalParams {
+		if len(args) < requiredParams {
 			sa.addError("1519", fmt.Sprintf(
 				"Function '%s' expects at least %d arguments, got %d",
-				simpleName, normalParams, len(args)),
+				simpleName, requiredParams, len(args)),
 				call.GetLine(), call.GetColumn(), sa.CurrentFile)
 			return call
 		}
 	} else {
-		if len(args) != normalParams {
+		if len(args) < requiredParams {
 			sa.addError("1519", fmt.Sprintf(
-				"Function '%s' expects %d arguments, got %d",
-				simpleName, normalParams, len(args)),
+				"Function '%s' expects at least %d arguments, got %d",
+				simpleName, requiredParams, len(args)),
+				call.GetLine(), call.GetColumn(), sa.CurrentFile)
+			return call
+		}
+		if len(args) > totalNormal {
+			sa.addError("1519", fmt.Sprintf(
+				"Function '%s' expects at most %d arguments, got %d",
+				simpleName, totalNormal, len(args)),
 				call.GetLine(), call.GetColumn(), sa.CurrentFile)
 			return call
 		}
 	}
 
+	// Сколько "реальных" (переданных) параметров идут до variadic
+	realNormal := len(args)
+	if hasVariadic && realNormal > totalNormal {
+		realNormal = totalNormal
+	}
+
 	for i, arg := range args {
-		// Анализируем аргумент (чтобы поймать вложенные ошибки)
 		sa.analyzeNode(arg)
 
-		if hasVariadic && i >= normalParams {
-			debug.Debug("Arg %d (variadic): type=%s, expected=any\n",
-				i, sa.getNodeType(arg))
+		// variadic-хвост
+		if hasVariadic && i >= totalNormal {
 			continue
 		}
 
@@ -1355,6 +1369,7 @@ func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
 			return call
 		}
 	}
+	_ = realNormal
 
 	debug.Debug("analyzeCall completed successfully\n")
 	return call

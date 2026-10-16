@@ -1,8 +1,12 @@
 use #lib:iamtowvee/MyLib
+use std/os
 
 void foo(int a, ...some) {
     println(a)
     for (any f in some) {
+        if (f == null) {
+            os.exit(1, "Oh, it's NULL")
+        }
         println(f)
     }
 }

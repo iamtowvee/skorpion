@@ -62,3 +62,12 @@ arr[string] getArgs() {
     ~~~
     return []
 }
+
+void exit(int code, string msg = "") {
+  includeC ~~~
+    if (msg.value != NULL && msg.value[0] != '\0') {
+      fprintf(stderr, "%s\n", msg.value);
+    }
+    exit(code.value);
+  ~~~
+}
