@@ -458,6 +458,27 @@ func (sa *SemanticAnalyzer) analyzeBlock(block *front.Block, isFunctionBody bool
 	debug.Debug("analyzeBlock completed\n")
 }
 
+func (sa *SemanticAnalyzer) analyzePostfix(pe *front.PostfixExpr) front.Node {
+	sym := sa.CurrentScope.Resolve(pe.VarName)
+	if sym == nil {
+		sa.addError("1508",
+			fmt.Sprintf("Undefined variable '%s'", pe.VarName),
+			pe.GetLine(), pe.GetColumn(), sa.CurrentFile)
+		return pe
+	}
+	if sym.Type != "int" {
+		sa.addError("1564",
+			fmt.Sprintf("'%s' requires an int variable, got '%s'", pe.Op, sym.Type),
+			pe.GetLine(), pe.GetColumn(), sa.CurrentFile)
+	}
+	if sym.IsConst {
+		sa.addError("1509",
+			fmt.Sprintf("Cannot modify constant '%s'", pe.VarName),
+			pe.GetLine(), pe.GetColumn(), sa.CurrentFile)
+	}
+	return pe
+}
+
 func (sa *SemanticAnalyzer) analyzeNode(node front.Node) front.Node {
 	debug.Debug("analyzeNode: %T\n", node)
 	switch n := node.(type) {
@@ -465,6 +486,8 @@ func (sa *SemanticAnalyzer) analyzeNode(node front.Node) front.Node {
 		return sa.analyzeVarDecl(n)
 	case *front.NullLiteral:
 		return n
+	case *front.PostfixExpr:
+		return sa.analyzePostfix(n)
 	case *front.UnicodeLiteral:
 		return n
 	case *front.BreakStmt:
@@ -1665,6 +1688,8 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 		return "int"
 	case *front.String:
 		return "string"
+	case *front.PostfixExpr:
+		return "int"
 	case *front.ArrayIndex:
 		sym := sa.CurrentScope.Resolve(n.Name)
 		if sym == nil {
@@ -2055,6 +2080,8 @@ func (sa *SemanticAnalyzer) collectUsedIdents(node front.Node, used map[string]b
 				sa.collectUsedIdents(stmt, used)
 			}
 		}
+	case *front.PostfixExpr:
+		used[n.VarName] = true
 	case *front.RangeExpr:
 		if n.Start != nil {
 			sa.collectUsedIdents(n.Start, used)

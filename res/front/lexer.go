@@ -15,6 +15,8 @@ const (
 	TOKEN_NUMBER
 	TOKEN_STRING
 	TOKEN_KEYWORD
+	TOKEN_PLUSPLUS
+	TOKEN_MINUSMINUS
 	// Символы
 	TOKEN_LPAREN
 	TOKEN_RPAREN
@@ -145,8 +147,20 @@ func (l *Lexer) NextToken() Token {
 	case ',':
 		return l.makeToken(TOKEN_COMMA, ",")
 	case '+':
+		if l.peek() == '+' {
+			col := l.col
+			l.pos += 2
+			l.col += 2
+			return Token{Type: TOKEN_PLUSPLUS, Literal: "++", Line: l.line, Column: col}
+		}
 		return l.makeToken(TOKEN_PLUS, "+")
 	case '-':
+		if l.peek() == '-' {
+			col := l.col
+			l.pos += 2
+			l.col += 2
+			return Token{Type: TOKEN_MINUSMINUS, Literal: "--", Line: l.line, Column: col}
+		}
 		return l.makeToken(TOKEN_MINUS, "-")
 	case '^':
 		return l.makeToken(TOKEN_CARET, "^")
@@ -724,6 +738,10 @@ func (tt TokenType) String() string {
 		return "VERSION"
 	case TOKEN_ELLIPSIS:
 		return "..."
+	case TOKEN_PLUSPLUS:
+		return "++"
+	case TOKEN_MINUSMINUS:
+		return "--"
 	default:
 		return "UNKNOWN"
 	}

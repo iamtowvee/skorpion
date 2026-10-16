@@ -12,12 +12,11 @@ void main(arr args) {
     println(getConfigField("name"))            // "MyProject"
     println(getConfigField("buildOutFile"))    // "MyProject-stable-1.0.0.exe"
     println(getConfig())                        // {name: MyProject, ...}
-    int x = 10
-    do {
-        if (x == 10) {
-            continue
-        }
+    int x = 0
+    while (x < 10) {
         foo(1, -1, true, null, "hi", ["hi"])
-        x = x + 1
-    } while (x < 0)
+        x++
+        int i = x++
+        println("DEBUG: " + $x + ", " + $i)
+    }
 }

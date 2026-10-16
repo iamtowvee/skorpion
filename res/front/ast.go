@@ -641,3 +641,12 @@ type DoWhileStmt struct {
 }
 
 func (d *DoWhileStmt) GetType() NodeType { return NODE_DO_WHILE }
+
+// PostfixExpr — i++ или i--
+type PostfixExpr struct {
+	Position
+	VarName string // имя переменной
+	Op      string // "++" или "--"
+}
+
+func (p *PostfixExpr) GetType() NodeType { return "Postfix" }

@@ -1219,6 +1219,13 @@ var ErrorCodes = map[string]ErrorCode{
 		Description: "The condition in a 'do { ... } while (cond)' must be a bool.",
 		Tip:         "Use a comparison like 'x > 0'.",
 	},
+	"1564": {
+		Code:        "1564",
+		Message:     "'++'/'--' requires an int",
+		Description: "The increment/decrement operators can only be applied to variables of type 'int'.",
+		Tip:         "Use an int variable, or convert with to_int().",
+		Example:     "// Wrong:\nstring s = \"hi\"\ns++\n\n// Right:\nint i = 0\ni++",
+	},
 
 	// ============================================================================
 	// 2000-2099: Warnings

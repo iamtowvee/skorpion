@@ -1300,6 +1300,20 @@ func (p *Parser) parseAssignmentOrCall() Node {
 	name := p.peek.Literal
 	p.advance()
 
+	// i++ или i--
+	if p.peek.Type == TOKEN_PLUSPLUS || p.peek.Type == TOKEN_MINUSMINUS {
+		op := p.peek.Literal
+		p.advance()
+		if p.peek.Type == TOKEN_SEMICOLON {
+			p.advance()
+		}
+		return &PostfixExpr{
+			Position: pos,
+			VarName:  name,
+			Op:       op,
+		}
+	}
+
 	// module.func(args)
 	if p.peek.Type == TOKEN_DOT {
 		p.advance()
@@ -1922,6 +1936,17 @@ func (p *Parser) parsePrimary() Node {
 		pos := p.pos()
 		name := p.peek.Literal
 		p.advance()
+
+		// i++ / i-- как выражение
+		if p.peek.Type == TOKEN_PLUSPLUS || p.peek.Type == TOKEN_MINUSMINUS {
+			op := p.peek.Literal
+			p.advance()
+			return &PostfixExpr{
+				Position: pos,
+				VarName:  name,
+				Op:       op,
+			}
+		}
 
 		// ErrorInstance: Name{field: value, ...}
 		if p.peek.Type == TOKEN_LBRACE {

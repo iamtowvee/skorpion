@@ -165,6 +165,8 @@ func (p *Pipeline) processNode(node front.Node, irFn *IRFunction) {
 		p.processVarDecl(n, irFn)
 	case *front.TypeOf:
 		p.processTypeOf(n, irFn)
+	case *front.PostfixExpr:
+		p.processPostfixStatement(n, irFn)
 	case *front.Assign:
 		p.processAssign(n, irFn)
 	case *front.BreakStmt:
@@ -1997,6 +1999,8 @@ func (p *Pipeline) processExpression(expr front.Node, irFn *IRFunction) string {
 		return fmt.Sprintf("sk_int_new(%s)", n.Value)
 	case *front.NullLiteral:
 		return "SK_NULL_int"
+	case *front.PostfixExpr:
+		return p.processPostfixExpr(n, irFn)
 	case *front.DictLiteral:
 		return p.processDictLiteral(n, irFn)
 	case *front.UnicodeLiteral:
@@ -2059,6 +2063,64 @@ func (p *Pipeline) processExpression(expr front.Node, irFn *IRFunction) string {
 	default:
 		return "SK_NULL_int"
 	}
+}
+
+// processPostfixStatement — i++ или i-- как отдельный statement.
+// Мутирует переменную: i = i + 1 или i = i - 1.
+func (p *Pipeline) processPostfixStatement(pe *front.PostfixExpr, irFn *IRFunction) {
+	varType := p.getVarCType(pe.VarName, irFn)
+	if varType == "" {
+		varType = "sk_int"
+	}
+
+	fnName := "sk_int_add"
+	if pe.Op == "--" {
+		fnName = "sk_int_sub"
+	}
+
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:         "call",
+		Result:     pe.VarName,
+		Arg1:       fnName,
+		Arg2:       pe.VarName + ", sk_int_new(1)",
+		ReturnType: varType,
+	})
+}
+
+// processPostfixExpr — i++ или i-- как выражение.
+// НЕ мутирует переменную. Возвращает i + 1 (или i - 1).
+func (p *Pipeline) processPostfixExpr(pe *front.PostfixExpr, irFn *IRFunction) string {
+	fnName := "sk_int_add"
+	if pe.Op == "--" {
+		fnName = "sk_int_sub"
+	}
+
+	result := p.newTemp()
+	irFn.Locals = append(irFn.Locals, "sk_int "+result)
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:         "call",
+		Result:     result,
+		Arg1:       fnName,
+		Arg2:       pe.VarName + ", sk_int_new(1)",
+		ReturnType: "sk_int",
+	})
+	return result
+}
+
+// getVarCType ищет C-тип переменной в локалах функции.
+func (p *Pipeline) getVarCType(name string, irFn *IRFunction) string {
+	for _, local := range irFn.Locals {
+		parts := strings.Fields(local)
+		if len(parts) >= 2 && parts[len(parts)-1] == name {
+			return parts[0]
+		}
+	}
+	for _, param := range irFn.Params {
+		if param.Name == name {
+			return p.typeToC(param.Type)
+		}
+	}
+	return ""
 }
 
 func (p *Pipeline) processDictAccess(objName, key string, irFn *IRFunction) string {

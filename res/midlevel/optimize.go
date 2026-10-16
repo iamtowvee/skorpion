@@ -586,6 +586,8 @@ func (o *Optimizer) hasNoSideEffects(node front.Node) bool {
 		return o.hasNoSideEffects(n.Left) && o.hasNoSideEffects(n.Right)
 	case *front.UnaryExpr:
 		return o.hasNoSideEffects(n.Expr)
+	case *front.PostfixExpr:
+		return false
 	case *front.TernaryExpr:
 		return o.hasNoSideEffects(n.Condition) &&
 			o.hasNoSideEffects(n.Then) &&
