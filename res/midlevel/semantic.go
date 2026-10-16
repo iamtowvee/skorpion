@@ -20,6 +20,7 @@ type SemanticAnalyzer struct {
 	ImportManager   *front.ImportManager
 	ErrorTypes      map[string]*front.ErrorDecl
 	IsLibrary       bool
+	LoopDepth       int
 }
 
 func NewSemanticAnalyzer(prog *front.Program) *SemanticAnalyzer {
@@ -291,6 +292,8 @@ func (sa *SemanticAnalyzer) checkMain() bool {
 }
 
 func (sa *SemanticAnalyzer) analyzeFunction(fn *front.Function) {
+	sa.LoopDepth = 0
+
 	debug.Debug("analyzeFunction: %s\n", fn.Name)
 
 	sa.CurrentScope = NewScope(sa.GlobalScope, false)
@@ -464,6 +467,12 @@ func (sa *SemanticAnalyzer) analyzeNode(node front.Node) front.Node {
 		return n
 	case *front.UnicodeLiteral:
 		return n
+	case *front.BreakStmt:
+		return sa.analyzeBreak(n)
+	case *front.ContinueStmt:
+		return sa.analyzeContinue(n)
+	case *front.DoWhileStmt:
+		return sa.analyzeDoWhile(n)
 	case *front.ArrayIndex:
 		return sa.analyzeArrayIndex(n)
 	case *front.IknowIdoBlock:
@@ -1550,6 +1559,9 @@ func (sa *SemanticAnalyzer) getConstantValue(node front.Node) string {
 }
 
 func (sa *SemanticAnalyzer) analyzeWhile(while *front.WhileStmt) front.Node {
+	sa.LoopDepth++
+	defer func() { sa.LoopDepth-- }()
+
 	if while.Condition != nil {
 		condType := sa.getNodeType(while.Condition)
 		if condType != "bool" && condType != "" {
@@ -1567,6 +1579,9 @@ func (sa *SemanticAnalyzer) analyzeWhile(while *front.WhileStmt) front.Node {
 }
 
 func (sa *SemanticAnalyzer) analyzeForIn(forIn *front.ForInStmt) front.Node {
+	sa.LoopDepth++
+	defer func() { sa.LoopDepth-- }()
+
 	iterType := sa.getNodeType(forIn.Iterable)
 
 	// iterable должен быть arr[T], string или range
@@ -1975,6 +1990,8 @@ func (sa *SemanticAnalyzer) nodeHasReturn(node front.Node) bool {
 	switch n := node.(type) {
 	case *front.ReturnStmt:
 		return true
+	case *front.DoWhileStmt:
+		return false
 	case *front.Block:
 		return sa.hasReturn(n)
 	case *front.TryStmt:
@@ -2044,6 +2061,17 @@ func (sa *SemanticAnalyzer) collectUsedIdents(node front.Node, used map[string]b
 		}
 		if n.End != nil {
 			sa.collectUsedIdents(n.End, used)
+		}
+	case *front.BreakStmt:
+		// ничего
+	case *front.ContinueStmt:
+		// ничего
+	case *front.DoWhileStmt:
+		if n.Body != nil {
+			sa.collectUsedIdents(n.Body, used)
+		}
+		if n.Condition != nil {
+			sa.collectUsedIdents(n.Condition, used)
 		}
 	case *front.IncludeC:
 		// includeC — сырой C, обрабатывается отдельно через containsIncludeC
@@ -2548,4 +2576,43 @@ func (sa *SemanticAnalyzer) analyzeArrayIndex(idx *front.ArrayIndex) front.Node 
 
 	sa.analyzeNode(idx.Index)
 	return idx
+}
+
+func (sa *SemanticAnalyzer) analyzeBreak(br *front.BreakStmt) front.Node {
+	if sa.LoopDepth == 0 {
+		sa.addError("1561",
+			"'break' outside of a loop",
+			br.GetLine(), br.GetColumn(), sa.CurrentFile)
+	}
+	return br
+}
+
+func (sa *SemanticAnalyzer) analyzeContinue(cont *front.ContinueStmt) front.Node {
+	if sa.LoopDepth == 0 {
+		sa.addError("1562",
+			"'continue' outside of a loop",
+			cont.GetLine(), cont.GetColumn(), sa.CurrentFile)
+	}
+	return cont
+}
+
+func (sa *SemanticAnalyzer) analyzeDoWhile(dw *front.DoWhileStmt) front.Node {
+	sa.LoopDepth++
+	defer func() { sa.LoopDepth-- }()
+
+	if dw.Body != nil {
+		sa.analyzeBlock(dw.Body, false)
+	}
+
+	if dw.Condition != nil {
+		condType := sa.getNodeType(dw.Condition)
+		if condType != "bool" && condType != "" {
+			sa.addError("1563",
+				fmt.Sprintf("Do-while condition must be boolean, got '%s'", condType),
+				dw.GetLine(), dw.GetColumn(), sa.CurrentFile)
+		}
+		sa.analyzeNode(dw.Condition)
+	}
+
+	return dw
 }

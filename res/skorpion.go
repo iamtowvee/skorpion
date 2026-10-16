@@ -1479,6 +1479,22 @@ func printAST(node front.Node, indent int) {
 			n.Name,
 			exprStr)
 
+	case *front.BreakStmt:
+		fmt.Println(prefix + cli.Colors.Yellow("Break"))
+
+	case *front.ContinueStmt:
+		fmt.Println(prefix + cli.Colors.Yellow("Continue"))
+
+	case *front.DoWhileStmt:
+		fmt.Println(prefix + cli.Colors.Yellow("DoWhile"))
+		if n.Body != nil {
+			printAST(n.Body, indent+1)
+		}
+		fmt.Println(prefix + cli.Colors.Dim("While:"))
+		if n.Condition != nil {
+			printAST(n.Condition, indent+1)
+		}
+
 	case *front.RangeExpr:
 		fmt.Printf("%s%s\n", prefix, cli.Colors.Cyan("RangeExpr"))
 

@@ -16,6 +16,12 @@ type Pipeline struct {
 	TryFrames    []string
 	TryDepth     int
 	cfg          *front.Config
+	LoopStack    []LoopLabels
+}
+
+type LoopLabels struct {
+	Start string // метка начала цикла (для continue)
+	End   string // метка конца (для break)
 }
 
 func NewPipeline(prog *front.Program, cfg *front.Config) *Pipeline {
@@ -123,6 +129,7 @@ func (p *Pipeline) processFunction(fn *front.Function) {
 
 	p.TryFrames = []string{}
 	p.TryDepth = 0
+	p.LoopStack = []LoopLabels{}
 
 	if fn.Body != nil {
 		p.processBlock(fn.Body, &irFn)
@@ -160,6 +167,12 @@ func (p *Pipeline) processNode(node front.Node, irFn *IRFunction) {
 		p.processTypeOf(n, irFn)
 	case *front.Assign:
 		p.processAssign(n, irFn)
+	case *front.BreakStmt:
+		p.processBreak(irFn)
+	case *front.ContinueStmt:
+		p.processContinue(irFn)
+	case *front.DoWhileStmt:
+		p.processDoWhile(n, irFn)
 	case *front.BinaryExpr:
 		p.processBinary(n, irFn)
 	case *front.UnaryExpr:
@@ -206,6 +219,29 @@ func (p *Pipeline) processNode(node front.Node, irFn *IRFunction) {
 	case *front.ArrayAdd:
 		p.processArrayAdd(n, irFn)
 	}
+}
+
+func (p *Pipeline) processBreak(irFn *IRFunction) {
+	if len(p.LoopStack) == 0 {
+		// semantic должен был поймать
+		return
+	}
+	loop := p.LoopStack[len(p.LoopStack)-1]
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:     "goto",
+		Result: loop.End,
+	})
+}
+
+func (p *Pipeline) processContinue(irFn *IRFunction) {
+	if len(p.LoopStack) == 0 {
+		return
+	}
+	loop := p.LoopStack[len(p.LoopStack)-1]
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:     "goto",
+		Result: loop.Start,
+	})
 }
 
 func (p *Pipeline) typeToC(typ string) string {
@@ -2877,6 +2913,12 @@ func (p *Pipeline) processWhile(while *front.WhileStmt, irFn *IRFunction) {
 	bodyLabel := p.newLabel()
 	endLabel := p.newLabel()
 
+	// Регистрируем метки цикла
+	p.LoopStack = append(p.LoopStack, LoopLabels{
+		Start: startLabel,
+		End:   endLabel,
+	})
+
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:     "label",
 		Result: startLabel,
@@ -2908,6 +2950,9 @@ func (p *Pipeline) processWhile(while *front.WhileStmt, irFn *IRFunction) {
 		Op:     "label",
 		Result: endLabel,
 	})
+
+	// Снимаем метки
+	p.LoopStack = p.LoopStack[:len(p.LoopStack)-1]
 }
 
 func (p *Pipeline) processForIn(forIn *front.ForInStmt, irFn *IRFunction) {
@@ -2936,6 +2981,11 @@ func (p *Pipeline) processForIn(forIn *front.ForInStmt, irFn *IRFunction) {
 	startLabel := p.newLabel()
 	bodyLabel := p.newLabel()
 	endLabel := p.newLabel()
+
+	p.LoopStack = append(p.LoopStack, LoopLabels{
+		Start: startLabel,
+		End:   endLabel,
+	})
 
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:     "label",
@@ -3041,6 +3091,58 @@ func (p *Pipeline) processForIn(forIn *front.ForInStmt, irFn *IRFunction) {
 		Op:     "label",
 		Result: endLabel,
 	})
+
+	p.LoopStack = p.LoopStack[:len(p.LoopStack)-1]
+}
+
+func (p *Pipeline) processDoWhile(dw *front.DoWhileStmt, irFn *IRFunction) {
+	startLabel := p.newLabel()
+	bodyLabel := p.newLabel()
+	condLabel := p.newLabel()
+	endLabel := p.newLabel()
+
+	// continue в do-while → переход на проверку условия (condLabel)
+	p.LoopStack = append(p.LoopStack, LoopLabels{
+		Start: condLabel, // ← не startLabel, а именно проверка условия
+		End:   endLabel,
+	})
+
+	// Начало
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:     "label",
+		Result: startLabel,
+	})
+
+	// Тело
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:     "label",
+		Result: bodyLabel,
+	})
+
+	if dw.Body != nil {
+		p.processBlock(dw.Body, irFn)
+	}
+
+	// Проверка условия
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:     "label",
+		Result: condLabel,
+	})
+
+	condResult := p.processExpression(dw.Condition, irFn)
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:     "if",
+		Result: condResult,
+		Arg1:   startLabel,
+		Arg2:   endLabel,
+	})
+
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:     "label",
+		Result: endLabel,
+	})
+
+	p.LoopStack = p.LoopStack[:len(p.LoopStack)-1]
 }
 
 func (p *Pipeline) processArrayIndex(idx *front.ArrayIndex, irFn *IRFunction) string {

@@ -37,6 +37,9 @@ const (
 	NODE_ERROR_FIELD    NodeType = "ErrorField"
 	NODE_ERROR_INSTANCE NodeType = "ErrorInstance"
 	NODE_THROW          NodeType = "Throw"
+	NODE_BREAK          NodeType = "Break"
+	NODE_CONTINUE       NodeType = "Continue"
+	NODE_DO_WHILE       NodeType = "DoWhile"
 	NODE_FIELD_ACCESS   NodeType = "FieldAccess"
 	NODE_TRY            NodeType = "Try"
 	NODE_CATCH          NodeType = "Catch"
@@ -606,3 +609,35 @@ type CatchClause struct {
 }
 
 func (c *CatchClause) GetType() NodeType { return NODE_CATCH }
+
+// ============================================================================
+// BreakStmt
+// ============================================================================
+
+type BreakStmt struct {
+	Position
+}
+
+func (b *BreakStmt) GetType() NodeType { return NODE_BREAK }
+
+// ============================================================================
+// ContinueStmt
+// ============================================================================
+
+type ContinueStmt struct {
+	Position
+}
+
+func (c *ContinueStmt) GetType() NodeType { return NODE_CONTINUE }
+
+// ============================================================================
+// DoWhileStmt
+// ============================================================================
+
+type DoWhileStmt struct {
+	Position
+	Body      *Block
+	Condition Node
+}
+
+func (d *DoWhileStmt) GetType() NodeType { return NODE_DO_WHILE }

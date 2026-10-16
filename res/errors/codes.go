@@ -818,6 +818,13 @@ var ErrorCodes = map[string]ErrorCode{
 		Description: "The '^' operator can only be applied to numeric types (int, float, double).",
 		Tip:         "Use '^' only on numbers.",
 	},
+	"0627": {
+		Code:        "0627",
+		Message:     "do-while syntax error",
+		Description: "'do' must be followed by '{ ... }' and 'while (condition)'.",
+		Tip:         "Use: do { ... } while (cond)",
+		Example:     "// Wrong:\ndo {\n  f()\n}\n\n// Right:\ndo {\n  f()\n} while (x > 0)",
+	},
 
 	// ============================================================================
 	// 1500-1599: Semantic errors
@@ -1191,6 +1198,26 @@ var ErrorCodes = map[string]ErrorCode{
 		Message:     "Unknown error type",
 		Description: "The specified error type is not declared.",
 		Tip:         "Declare the error type with 'const MyError{...} = new Error' before using it.",
+	},
+	"1561": {
+		Code:        "1561",
+		Message:     "break outside of a loop",
+		Description: "'break' can only be used inside a loop (while, for-in, do-while).",
+		Tip:         "Move the statement inside a loop, or remove it.",
+		Example:     "// Wrong:\nvoid f() {\n  break\n}\n\n// Right:\nwhile (x > 0) {\n  if (y) { break }\n}",
+	},
+	"1562": {
+		Code:        "1562",
+		Message:     "continue outside of a loop",
+		Description: "'continue' can only be used inside a loop (while, for-in, do-while).",
+		Tip:         "Move the statement inside a loop, or remove it.",
+		Example:     "// Wrong:\nvoid f() {\n  continue\n}\n\n// Right:\nwhile (x > 0) {\n  if (y) { continue }\n}",
+	},
+	"1563": {
+		Code:        "1563",
+		Message:     "do-while condition must be boolean",
+		Description: "The condition in a 'do { ... } while (cond)' must be a bool.",
+		Tip:         "Use a comparison like 'x > 0'.",
 	},
 
 	// ============================================================================

@@ -81,6 +81,19 @@ func (o *Optimizer) optimizeNode(node front.Node) front.Node {
 	case *front.UnicodeLiteral:
 		return node
 
+	case *front.BreakStmt:
+		return n
+	case *front.ContinueStmt:
+		return n
+	case *front.DoWhileStmt:
+		if n.Body != nil {
+			n.Body = o.optimizeBlock(n.Body)
+		}
+		if n.Condition != nil {
+			n.Condition = o.optimizeNode(n.Condition)
+		}
+		return n
+
 	case *front.IfStmt:
 		return o.optimizeIf(n)
 
@@ -608,6 +621,13 @@ func (o *Optimizer) collectUsedIdents(node front.Node, used map[string]bool) {
 			if stmt != nil {
 				o.collectUsedIdents(stmt, used)
 			}
+		}
+	case *front.DoWhileStmt:
+		if n.Body != nil {
+			o.collectUsedIdents(n.Body, used)
+		}
+		if n.Condition != nil {
+			o.collectUsedIdents(n.Condition, used)
 		}
 	case *front.VarDecl:
 		if n.Expr != nil {

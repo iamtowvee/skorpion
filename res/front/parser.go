@@ -385,36 +385,36 @@ func (p *Parser) parseFunction() *Function {
 		for {
 			paramPos := p.pos()
 
-				// ...name — variadic
-				if p.peek.Type == TOKEN_ELLIPSIS {
-					p.advance()
-					if p.peek.Type != TOKEN_IDENT {
-						p.hasErrors = true
-						errors.NewFatalError("0503",
-							fmt.Sprintf("Expected parameter name after '...', got '%s'", p.peek.Literal),
-							p.peek.Line, p.peek.Column, p.FileName)
-						return nil
-					}
-					paramName := p.peek.Literal
-					p.advance()
-
-					params = append(params, &Param{
-						Position:   paramPos,
-						Name:       paramName,
-						Type:       "arr[any]",
-						IsVariadic: true,
-					})
-
-					// ... должен быть последним
-					if p.peek.Type == TOKEN_COMMA {
-						p.hasErrors = true
-						errors.NewFatalError("0503",
-							"'...' must be the last parameter",
-							p.peek.Line, p.peek.Column, p.FileName)
-						return nil
-					}
-					break
+			// ...name — variadic
+			if p.peek.Type == TOKEN_ELLIPSIS {
+				p.advance()
+				if p.peek.Type != TOKEN_IDENT {
+					p.hasErrors = true
+					errors.NewFatalError("0503",
+						fmt.Sprintf("Expected parameter name after '...', got '%s'", p.peek.Literal),
+						p.peek.Line, p.peek.Column, p.FileName)
+					return nil
 				}
+				paramName := p.peek.Literal
+				p.advance()
+
+				params = append(params, &Param{
+					Position:   paramPos,
+					Name:       paramName,
+					Type:       "arr[any]",
+					IsVariadic: true,
+				})
+
+				// ... должен быть последним
+				if p.peek.Type == TOKEN_COMMA {
+					p.hasErrors = true
+					errors.NewFatalError("0503",
+						"'...' must be the last parameter",
+						p.peek.Line, p.peek.Column, p.FileName)
+					return nil
+				}
+				break
+			}
 
 			if !p.isType(p.peek) {
 				p.hasErrors = true
@@ -559,6 +559,24 @@ func (p *Parser) parseStatement() Node {
 	switch p.peek.Type {
 	case TOKEN_KEYWORD:
 		switch p.peek.Literal {
+		case "break":
+			pos := p.pos()
+			p.advance()
+			if p.peek.Type == TOKEN_SEMICOLON {
+				p.advance()
+			}
+			return &BreakStmt{Position: pos}
+
+		case "continue":
+			pos := p.pos()
+			p.advance()
+			if p.peek.Type == TOKEN_SEMICOLON {
+				p.advance()
+			}
+			return &ContinueStmt{Position: pos}
+
+		case "do":
+			return p.parseDoWhile()
 		case "if":
 			return p.parseIf()
 		case "while":
@@ -604,6 +622,72 @@ func (p *Parser) parseStatement() Node {
 			fmt.Sprintf("Expected statement, got '%s'", p.peek.Literal),
 			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
+	}
+}
+
+// parseDoWhile читает do { ... } while (cond)
+func (p *Parser) parseDoWhile() Node {
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	pos := p.pos()
+	p.advance() // do
+
+	// Тело
+	if p.peek.Type != TOKEN_LBRACE {
+		p.hasErrors = true
+		errors.NewFatalError("0627",
+			fmt.Sprintf("Expected '{' after 'do', got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
+	}
+	body := p.parseBlock()
+	if body == nil {
+		return nil
+	}
+
+	// while
+	if p.peek.Type != TOKEN_KEYWORD || p.peek.Literal != "while" {
+		p.hasErrors = true
+		errors.NewFatalError("0627",
+			fmt.Sprintf("Expected 'while' after do-block, got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
+	}
+	p.advance() // while
+
+	// Опциональные скобки вокруг условия
+	hasParen := false
+	if p.peek.Type == TOKEN_LPAREN {
+		hasParen = true
+		p.advance()
+	}
+
+	cond := p.parseExpression()
+	if cond == nil {
+		return nil
+	}
+
+	if hasParen {
+		if p.peek.Type != TOKEN_RPAREN {
+			p.hasErrors = true
+			errors.NewFatalError("0627",
+				fmt.Sprintf("Expected ')' after do-while condition, got '%s'", p.peek.Literal),
+				p.peek.Line, p.peek.Column, p.FileName)
+			return nil
+		}
+		p.advance()
+	}
+
+	if p.peek.Type == TOKEN_SEMICOLON {
+		p.advance()
+	}
+
+	return &DoWhileStmt{
+		Position:  pos,
+		Body:      body,
+		Condition: cond,
 	}
 }
 

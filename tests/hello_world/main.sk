@@ -4,9 +4,6 @@ use std/os
 void foo(int a, ...some) {
     println(a)
     for (any f in some) {
-        if (f == null) {
-            os.exit(1, "Oh, it's NULL")
-        }
         println(f)
     }
 }
@@ -15,5 +12,12 @@ void main(arr args) {
     println(getConfigField("name"))            // "MyProject"
     println(getConfigField("buildOutFile"))    // "MyProject-stable-1.0.0.exe"
     println(getConfig())                        // {name: MyProject, ...}
-    foo(1, -1, true, null, "hi", ["hi"])
+    int x = 10
+    do {
+        if (x == 10) {
+            continue
+        }
+        foo(1, -1, true, null, "hi", ["hi"])
+        x = x + 1
+    } while (x < 0)
 }
