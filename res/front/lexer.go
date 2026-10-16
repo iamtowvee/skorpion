@@ -28,6 +28,12 @@ const (
 	TOKEN_COMMA
 	TOKEN_NEQ
 	TOKEN_EQEQ
+	TOKEN_PLUSEQ    // +=
+	TOKEN_MINUSEQ   // -=
+	TOKEN_STAREQ    // *=
+	TOKEN_SLASHEQ   // /=
+	TOKEN_PERCENTEQ // %=
+	TOKEN_POWEQ     // **=
 	TOKEN_LTE
 	TOKEN_GTE
 	TOKEN_PLUS
@@ -147,6 +153,12 @@ func (l *Lexer) NextToken() Token {
 	case ',':
 		return l.makeToken(TOKEN_COMMA, ",")
 	case '+':
+		if l.peek() == '=' {
+			col := l.col
+			l.pos += 2
+			l.col += 2
+			return Token{Type: TOKEN_PLUSEQ, Literal: "+=", Line: l.line, Column: col}
+		}
 		if l.peek() == '+' {
 			col := l.col
 			l.pos += 2
@@ -155,6 +167,12 @@ func (l *Lexer) NextToken() Token {
 		}
 		return l.makeToken(TOKEN_PLUS, "+")
 	case '-':
+		if l.peek() == '=' {
+			col := l.col
+			l.pos += 2
+			l.col += 2
+			return Token{Type: TOKEN_MINUSEQ, Literal: "-=", Line: l.line, Column: col}
+		}
 		if l.peek() == '-' {
 			col := l.col
 			l.pos += 2
@@ -167,12 +185,30 @@ func (l *Lexer) NextToken() Token {
 	case '*':
 		if l.peek() == '*' {
 			col := l.col
+			// ** или **=
+			if l.pos+2 < len(l.input) && l.input[l.pos+2] == '=' {
+				l.pos += 3
+				l.col += 3
+				return Token{Type: TOKEN_POWEQ, Literal: "**=", Line: l.line, Column: col}
+			}
 			l.pos += 2
 			l.col += 2
 			return Token{Type: TOKEN_POW, Literal: "**", Line: l.line, Column: col}
 		}
+		if l.peek() == '=' {
+			col := l.col
+			l.pos += 2
+			l.col += 2
+			return Token{Type: TOKEN_STAREQ, Literal: "*=", Line: l.line, Column: col}
+		}
 		return l.makeToken(TOKEN_STAR, "*")
 	case '/':
+		if l.peek() == '=' {
+			col := l.col
+			l.pos += 2
+			l.col += 2
+			return Token{Type: TOKEN_SLASHEQ, Literal: "/=", Line: l.line, Column: col}
+		}
 		return l.makeToken(TOKEN_SLASH, "/")
 	case '=':
 		if l.peek() == '=' {
@@ -230,6 +266,12 @@ func (l *Lexer) NextToken() Token {
 		l.col++
 		return l.NextToken()
 	case '%':
+		if l.peek() == '=' {
+			col := l.col
+			l.pos += 2
+			l.col += 2
+			return Token{Type: TOKEN_PERCENTEQ, Literal: "%=", Line: l.line, Column: col}
+		}
 		return l.makeToken(TOKEN_PERCENT, "%")
 	case '#':
 		return l.makeToken(TOKEN_HASH, "#")
@@ -742,6 +784,18 @@ func (tt TokenType) String() string {
 		return "++"
 	case TOKEN_MINUSMINUS:
 		return "--"
+	case TOKEN_PLUSEQ:
+		return "+="
+	case TOKEN_MINUSEQ:
+		return "-="
+	case TOKEN_STAREQ:
+		return "*="
+	case TOKEN_SLASHEQ:
+		return "/="
+	case TOKEN_PERCENTEQ:
+		return "%="
+	case TOKEN_POWEQ:
+		return "**="
 	default:
 		return "UNKNOWN"
 	}

@@ -591,10 +591,30 @@ func (p *Parser) parseStatement() Node {
 			return p.parseCase()
 		case "try":
 			return p.parseTry()
-		case "const":
-			return p.parseErrorDecl()
 		case "throw":
 			return p.parseThrow()
+
+		case "const":
+			// Различаем: const Type name = ... (переменная)
+			//          или const Name{...} = ... (error-тип)
+			pos := p.pos()
+			p.advance() // const
+
+			if p.isType(p.peek) {
+				// const-переменная
+				return p.parseConstVarDeclAfterConst(pos)
+			}
+
+			// error-тип
+			if p.peek.Type != TOKEN_IDENT {
+				p.hasErrors = true
+				errors.NewFatalError("0580",
+					fmt.Sprintf("Expected type or error name after 'const', got '%s'", p.peek.Literal),
+					p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			return p.parseErrorDeclAfterConst(pos)
+
 		case "int", "string", "float", "double", "bool", "char", "arr", "dict", "any", "T":
 			return p.parseVarDecl()
 		}
@@ -622,6 +642,107 @@ func (p *Parser) parseStatement() Node {
 			fmt.Sprintf("Expected statement, got '%s'", p.peek.Literal),
 			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
+	}
+}
+
+// parseConstVarDeclAfterConst разбирает const-переменную после того,
+// как `const` уже съеден.
+// Формат: const Type name = expr
+//
+//	const arr[T] name = expr
+func (p *Parser) parseConstVarDeclAfterConst(pos Position) Node {
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	// Тип
+	varType := p.parseType()
+	if varType == "" {
+		return nil
+	}
+
+	// arr[int] / arr / arr[arr[int]]
+	if strings.HasPrefix(varType, "arr") {
+		elemType := parseArrayElemTypeFromFullType(varType)
+		if elemType == "" {
+			elemType = "any"
+		}
+
+		if p.peek.Type != TOKEN_IDENT {
+			p.hasErrors = true
+			errors.NewFatalError("0504",
+				fmt.Sprintf("Expected variable name, got '%s'", p.peek.Literal),
+				p.peek.Line, p.peek.Column, p.FileName)
+			return nil
+		}
+		name := p.peek.Literal
+		p.advance()
+
+		if p.peek.Type != TOKEN_EQUALS {
+			p.hasErrors = true
+			errors.NewFatalError("0557",
+				fmt.Sprintf("const requires initializer: 'const %s %s = ...'", varType, name),
+				p.peek.Line, p.peek.Column, p.FileName)
+			return nil
+		}
+		p.advance()
+
+		expr := p.parseExpression()
+		if expr == nil {
+			return nil
+		}
+
+		if p.peek.Type == TOKEN_SEMICOLON {
+			p.advance()
+		}
+
+		return &VarDecl{
+			Position: pos,
+			Name:     name,
+			Type:     "arr",
+			ElemType: elemType,
+			Expr:     expr,
+			IsArray:  true,
+			IsConst:  true,
+		}
+	}
+
+	// Скаляр / union
+	if p.peek.Type != TOKEN_IDENT {
+		p.hasErrors = true
+		errors.NewFatalError("0504",
+			fmt.Sprintf("Expected variable name, got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
+	}
+	name := p.peek.Literal
+	p.advance()
+
+	if p.peek.Type != TOKEN_EQUALS {
+		p.hasErrors = true
+		errors.NewFatalError("0557",
+			fmt.Sprintf("const requires initializer: 'const %s %s = ...'", varType, name),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
+	}
+	p.advance()
+
+	expr := p.parseExpression()
+	if expr == nil {
+		return nil
+	}
+
+	if p.peek.Type == TOKEN_SEMICOLON {
+		p.advance()
+	}
+
+	return &VarDecl{
+		Position: pos,
+		Name:     name,
+		Type:     varType,
+		Expr:     expr,
+		IsArray:  false,
+		IsConst:  true,
 	}
 }
 
@@ -1345,7 +1466,7 @@ func (p *Parser) parseAssignmentOrCall() Node {
 		return p.parseCall(name, pos)
 	}
 
-	// x[index] = value
+	// x[index] = value, x[index] += value, ...
 	if p.peek.Type == TOKEN_LBRACKET {
 		p.advance()
 		index := p.parseExpression()
@@ -1361,10 +1482,11 @@ func (p *Parser) parseAssignmentOrCall() Node {
 		}
 		p.advance()
 
-		if p.peek.Type != TOKEN_EQUALS {
+		op := p.peekAssignmentOp()
+		if op == "" {
 			p.hasErrors = true
 			errors.NewFatalError("0516",
-				fmt.Sprintf("Expected '=' after array index, got '%s'", p.peek.Literal),
+				fmt.Sprintf("Expected assignment operator after array index, got '%s'", p.peek.Literal),
 				p.peek.Line, p.peek.Column, p.FileName)
 			return nil
 		}
@@ -1382,10 +1504,11 @@ func (p *Parser) parseAssignmentOrCall() Node {
 			Name:     name,
 			Index:    index,
 			Expr:     value,
+			Op:       op,
 		}
 	}
 
-	// x.field = value
+	// x.field = value, x.field += value, ...
 	if p.peek.Type == TOKEN_DOT {
 		p.advance()
 		if p.peek.Type != TOKEN_IDENT {
@@ -1398,14 +1521,16 @@ func (p *Parser) parseAssignmentOrCall() Node {
 		fieldName := p.peek.Literal
 		p.advance()
 
-		if p.peek.Type != TOKEN_EQUALS {
+		op := p.peekAssignmentOp()
+		if op == "" {
 			p.hasErrors = true
 			errors.NewFatalError("0653",
-				fmt.Sprintf("Expected '=' after field name, got '%s'", p.peek.Literal),
+				fmt.Sprintf("Expected assignment operator after field name, got '%s'", p.peek.Literal),
 				p.peek.Line, p.peek.Column, p.FileName)
 			return nil
 		}
 		p.advance()
+
 		value := p.parseExpression()
 		if value == nil {
 			return nil
@@ -1413,11 +1538,18 @@ func (p *Parser) parseAssignmentOrCall() Node {
 		if p.peek.Type == TOKEN_SEMICOLON {
 			p.advance()
 		}
-		return &Assign{Position: pos, Name: name, Field: fieldName, Expr: value}
+		return &Assign{
+			Position: pos,
+			Name:     name,
+			Field:    fieldName,
+			Expr:     value,
+			Op:       op,
+		}
 	}
 
-	// x = value
-	if p.peek.Type == TOKEN_EQUALS {
+	// x = value, x += value, x -= value, ...
+	op := p.peekAssignmentOp()
+	if op != "" {
 		p.advance()
 		expr := p.parseExpression()
 		if expr == nil {
@@ -1426,7 +1558,12 @@ func (p *Parser) parseAssignmentOrCall() Node {
 		if p.peek.Type == TOKEN_SEMICOLON {
 			p.advance()
 		}
-		return &Assign{Position: pos, Name: name, Expr: expr}
+		return &Assign{
+			Position: pos,
+			Name:     name,
+			Expr:     expr,
+			Op:       op,
+		}
 	}
 
 	// x;
@@ -1440,6 +1577,28 @@ func (p *Parser) parseAssignmentOrCall() Node {
 		fmt.Sprintf("Unexpected token after identifier '%s': '%s'", name, p.peek.Literal),
 		p.peek.Line, p.peek.Column, p.FileName)
 	return nil
+}
+
+// peekAssignmentOp возвращает строку оператора присваивания, не съедая токен.
+// "" если это не оператор присваивания.
+func (p *Parser) peekAssignmentOp() string {
+	switch p.peek.Type {
+	case TOKEN_EQUALS:
+		return "="
+	case TOKEN_PLUSEQ:
+		return "+="
+	case TOKEN_MINUSEQ:
+		return "-="
+	case TOKEN_STAREQ:
+		return "*="
+	case TOKEN_SLASHEQ:
+		return "/="
+	case TOKEN_PERCENTEQ:
+		return "%="
+	case TOKEN_POWEQ:
+		return "**="
+	}
+	return ""
 }
 
 func (p *Parser) parseCall(name string, pos Position) Node {
@@ -2134,6 +2293,14 @@ func (p *Parser) parseErrorDecl() Node {
 
 	pos := p.pos()
 	p.advance() // const
+	return p.parseErrorDeclAfterConst(pos)
+}
+
+// parseErrorDeclAfterConst — разбор error-типа после 'const'.
+func (p *Parser) parseErrorDeclAfterConst(pos Position) Node {
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
 
 	// Имя типа — с заглавной буквы
 	if p.peek.Type != TOKEN_IDENT {
@@ -2171,7 +2338,6 @@ func (p *Parser) parseErrorDecl() Node {
 		for {
 			fieldPos := p.pos()
 
-			// Имя поля
 			if p.peek.Type != TOKEN_IDENT {
 				p.hasErrors = true
 				errors.NewFatalError("0583",
@@ -2182,7 +2348,6 @@ func (p *Parser) parseErrorDecl() Node {
 			fieldName := p.peek.Literal
 			p.advance()
 
-			// Двоеточие
 			if p.peek.Type != TOKEN_COLON {
 				p.hasErrors = true
 				errors.NewFatalError("0584",
@@ -2192,7 +2357,6 @@ func (p *Parser) parseErrorDecl() Node {
 			}
 			p.advance()
 
-			// Тип
 			if !p.isType(p.peek) {
 				p.hasErrors = true
 				errors.NewFatalError("0585",
@@ -2203,7 +2367,6 @@ func (p *Parser) parseErrorDecl() Node {
 			fieldType := p.peek.Literal
 			p.advance()
 
-			// Default: [expr]
 			var defaultValue Node
 			if p.peek.Type == TOKEN_LBRACKET {
 				p.advance()
@@ -2245,7 +2408,6 @@ func (p *Parser) parseErrorDecl() Node {
 	}
 	p.advance() // }
 
-	// = new Parent  или  = Parent
 	if p.peek.Type != TOKEN_EQUALS {
 		p.hasErrors = true
 		errors.NewFatalError("0588",
@@ -2261,7 +2423,6 @@ func (p *Parser) parseErrorDecl() Node {
 		p.advance()
 	}
 
-	// Родитель
 	if p.peek.Type != TOKEN_IDENT && !(p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "Error") {
 		p.hasErrors = true
 		errors.NewFatalError("0589",

@@ -1226,6 +1226,13 @@ var ErrorCodes = map[string]ErrorCode{
 		Tip:         "Use an int variable, or convert with to_int().",
 		Example:     "// Wrong:\nstring s = \"hi\"\ns++\n\n// Right:\nint i = 0\ni++",
 	},
+	"1565": {
+		Code:        "1565",
+		Message:     "Operator not supported for this type",
+		Description: "The compound assignment operator (+=, -=, etc.) is not supported for the given types.",
+		Tip:         "Check the variable type and the right-hand side type.",
+		Example:     "// Wrong:\nstring s = \"hi\"\ns *= 2\n\n// Right:\nint n = 5\nn *= 2",
+	},
 
 	// ============================================================================
 	// 2000-2099: Warnings

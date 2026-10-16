@@ -258,6 +258,7 @@ type VarDecl struct {
 	ElemType    string
 	Expr        Node
 	IsArray     bool
+	IsConst     bool
 }
 
 func (v *VarDecl) GetType() NodeType     { return NODE_VAR_DECL }
@@ -273,6 +274,7 @@ type Assign struct {
 	Field string
 	Index Node
 	Expr  Node
+	Op    string
 }
 
 func (a *Assign) GetType() NodeType { return NODE_ASSIGN }

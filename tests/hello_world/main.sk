@@ -9,14 +9,19 @@ void foo(int a, ...some) {
 }
 
 void main(arr args) {
-    println(getConfigField("name"))            // "MyProject"
-    println(getConfigField("buildOutFile"))    // "MyProject-stable-1.0.0.exe"
-    println(getConfig())                        // {name: MyProject, ...}
-    int x = 0
-    while (x < 10) {
-        foo(1, -1, true, null, "hi", ["hi"])
-        x++
-        int i = x++
-        println("DEBUG: " + $x + ", " + $i)
-    }
+    const int MAX = 100
+
+    int i = 0
+    i += 1               // i = 1
+    i -= 2               // i = -1
+    i *= 3               // i = -3
+    i /= 2               // i = -1
+    i %= 2               // i = -1
+    i **= 2              // i = 1
+
+    string s = "hello"
+    s += " world"        // "hello world"
+    s += '!'             // "hello world!"
+
+    const string name = "Skorpion"
 }

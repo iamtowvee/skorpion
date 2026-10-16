@@ -1157,6 +1157,12 @@ func (p *Pipeline) processAssign(assign *front.Assign, irFn *IRFunction) {
 		}
 	}
 
+	// === Compound op: x <op>= expr ===
+	if assign.Op != "" && assign.Op != "=" {
+		p.processCompoundAssign(assign, irFn)
+		return
+	}
+
 	// === dict: d["key"] = value; arr: x[i] = value ===
 	if assign.Index != nil {
 		if irFn.VarTypes != nil {
@@ -1222,35 +1228,9 @@ func (p *Pipeline) processAssign(assign *front.Assign, irFn *IRFunction) {
 	exprType := p.getExprType(assign.Expr, irFn)
 
 	// Определяем тип переменной
-	varType := ""
-	for _, local := range irFn.Locals {
-		parts := strings.Fields(local)
-		if len(parts) >= 2 && parts[len(parts)-1] == assign.Name {
-			switch parts[0] {
-			case "sk_int":
-				varType = "int"
-			case "sk_string":
-				varType = "string"
-			case "sk_char":
-				varType = "char"
-			case "sk_float":
-				varType = "float"
-			case "sk_double":
-				varType = "double"
-			case "sk_bool":
-				varType = "bool"
-			case "sk_arr":
-				varType = "arr"
-			case "sk_any":
-				varType = "any"
-			case "sk_dict_ref":
-				varType = "dict"
-			}
-			break
-		}
-	}
+	varType := p.getVarSkType(assign.Name, irFn)
 
-	// null (void) → SK_NULL_<varType>
+	// null
 	if exprType == "void" {
 		cType := p.typeToC(varType)
 		nullMacro := "SK_NULL_" + strings.TrimPrefix(cType, "sk_")
@@ -1264,7 +1244,7 @@ func (p *Pipeline) processAssign(assign *front.Assign, irFn *IRFunction) {
 
 	exprResult := p.processExpression(assign.Expr, irFn)
 
-	// Неявные конверсии char ↔ int
+	// char ↔ int
 	if varType == "int" && exprType == "char" {
 		tmp := p.newTemp()
 		irFn.Locals = append(irFn.Locals, "sk_int "+tmp)
@@ -1320,6 +1300,167 @@ func (p *Pipeline) processAssign(assign *front.Assign, irFn *IRFunction) {
 			Arg1:   exprResult,
 		})
 	}
+}
+
+func (p *Pipeline) processCompoundAssign(assign *front.Assign, irFn *IRFunction) {
+	op := strings.TrimSuffix(assign.Op, "=") // "+", "-", "*", "/", "%", "**"
+
+	cType := p.getVarCType(assign.Name, irFn)   // "sk_int", "sk_string", ...
+	skType := p.getVarSkType(assign.Name, irFn) // "int", "string", ...
+	if cType == "" {
+		cType = "sk_int"
+	}
+	if skType == "" {
+		skType = "int"
+	}
+
+	exprType := p.getExprType(assign.Expr, irFn)
+	rightVal := p.processExpression(assign.Expr, irFn)
+
+	// any
+	if cType == "sk_any" {
+		fnName := "sk_any_" + opName(op)
+		rightAny := p.wrapToAny(exprType, rightVal, irFn)
+		result := p.newTemp()
+		irFn.Locals = append(irFn.Locals, "sk_any "+result)
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "call",
+			Result:     result,
+			Arg1:       fnName,
+			Arg2:       assign.Name + ", " + rightAny,
+			ReturnType: "sk_any",
+		})
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "=",
+			Result: assign.Name,
+			Arg1:   result,
+		})
+		return
+	}
+
+	// string += ...
+	if cType == "sk_string" && op == "+" {
+		rightStr := rightVal
+		if exprType == "char" {
+			tmp := p.newTemp()
+			irFn.Locals = append(irFn.Locals, "sk_string "+tmp)
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:         "call",
+				Result:     tmp,
+				Arg1:       "sk_char_to_string",
+				Arg2:       rightVal,
+				ReturnType: "sk_string",
+			})
+			rightStr = tmp
+		}
+		result := p.newTemp()
+		irFn.Locals = append(irFn.Locals, "sk_string "+result)
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "call",
+			Result:     result,
+			Arg1:       "sk_string_concat",
+			Arg2:       assign.Name + ", " + rightStr,
+			ReturnType: "sk_string",
+		})
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "=",
+			Result: assign.Name,
+			Arg1:   result,
+		})
+		return
+	}
+
+	// char += string|char → результат string, но присваиваем в char? Это ошибка семантики.
+	if cType == "sk_char" && op == "+" {
+		// Не должно дойти — семантика не разрешит char += string.
+		// char += char → sk_char_add_char возвращает sk_string, тоже не то.
+		// Значит, семантически char += ... запрещено. Здесь — fallback.
+		return
+	}
+
+	// Числовые: sk_<type>_<op>
+	typeSuffix := strings.TrimPrefix(cType, "sk_") // "int", "float", ...
+	rightTyped := rightVal
+
+	// Приведение, если типы не совпадают
+	if cType != "sk_"+exprType && exprType != "any" && exprType != "" {
+		rightTyped = p.convertToType(rightVal, exprType, skType, irFn)
+	}
+
+	fnName := "sk_" + typeSuffix + "_" + opName(op)
+	result := p.newTemp()
+	irFn.Locals = append(irFn.Locals, cType+" "+result) // ← cType, не varType
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:         "call",
+		Result:     result,
+		Arg1:       fnName,
+		Arg2:       assign.Name + ", " + rightTyped,
+		ReturnType: cType,
+	})
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:     "=",
+		Result: assign.Name,
+		Arg1:   result,
+	})
+}
+
+// opName — "+" → "add", "-" → "sub", "*" → "mul", "/" → "div", "%" → "mod", "**" → "pow".
+func opName(op string) string {
+	switch op {
+	case "+":
+		return "add"
+	case "-":
+		return "sub"
+	case "*":
+		return "mul"
+	case "/":
+		return "div"
+	case "%":
+		return "mod"
+	case "**":
+		return "pow"
+	}
+	return "add"
+}
+
+// getVarSkType возвращает Skorpion-тип переменной по её C-типу в локалах.
+func (p *Pipeline) getVarSkType(name string, irFn *IRFunction) string {
+	if irFn.VarTypes != nil {
+		if t, ok := irFn.VarTypes[name]; ok {
+			return t
+		}
+	}
+	return ""
+}
+
+func (p *Pipeline) convertToType(rightVal, fromType, toType string, irFn *IRFunction) string {
+	if fromType == toType || fromType == "" {
+		return rightVal
+	}
+	cTo := p.typeToC(toType)
+	tmp := p.newTemp()
+	irFn.Locals = append(irFn.Locals, cTo+" "+tmp)
+
+	var expr string
+	switch toType {
+	case "int":
+		expr = fmt.Sprintf("(int)%s.value", rightVal)
+	case "float":
+		expr = fmt.Sprintf("(float)%s.value", rightVal)
+	case "double":
+		expr = fmt.Sprintf("(double)%s.value", rightVal)
+	default:
+		return rightVal
+	}
+
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:         "call",
+		Result:     tmp,
+		Arg1:       "sk_" + toType + "_new",
+		Arg2:       expr,
+		ReturnType: cTo,
+	})
+	return tmp
 }
 
 // processArrayAssign — x[index] = value

@@ -709,13 +709,14 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 		}
 
 		sym := sa.CurrentScope.Define(decl.Name, SYM_VARIABLE, decl.Type, false)
-		sym.CurrentType = decl.CurrentType
+		sym.IsConst = decl.IsConst
 		return decl
 	}
 
 	// === dict ===
 	if decl.Type == "dict" {
-		sym := sa.CurrentScope.Define(decl.Name, SYM_VARIABLE, "dict", false)
+		sym := sa.CurrentScope.Define(decl.Name, SYM_VARIABLE, decl.Type, false)
+		sym.IsConst = decl.IsConst
 		if decl.Expr != nil {
 			if lit, ok := decl.Expr.(*front.DictLiteral); ok {
 				sym.DictKeyTypes = make(map[string]string)
@@ -804,9 +805,9 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 		if elemType == "" {
 			elemType = "any"
 		}
-		fullType := "arr[" + elemType + "]"
-		sym := sa.CurrentScope.Define(decl.Name, SYM_VARIABLE, fullType, false)
-		sym.ArrayElemTypes = elemTypes
+		// fullType := "arr[" + elemType + "]"
+		sym := sa.CurrentScope.Define(decl.Name, SYM_VARIABLE, decl.Type, false)
+		sym.IsConst = decl.IsConst
 		return decl
 	}
 
@@ -840,7 +841,8 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 					decl.GetLine(), decl.GetColumn(), sa.CurrentFile)
 				return decl
 			}
-			sa.CurrentScope.Define(decl.Name, SYM_VARIABLE, decl.Type, false)
+			sym := sa.CurrentScope.Define(decl.Name, SYM_VARIABLE, decl.Type, false)
+			sym.IsConst = decl.IsConst
 			return decl
 		}
 
@@ -857,7 +859,8 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 		}
 	}
 
-	sa.CurrentScope.Define(decl.Name, SYM_VARIABLE, decl.Type, false)
+	sym := sa.CurrentScope.Define(decl.Name, SYM_VARIABLE, decl.Type, false)
+	sym.IsConst = decl.IsConst
 	return decl
 }
 
@@ -866,17 +869,20 @@ func (sa *SemanticAnalyzer) analyzeAssign(assign *front.Assign) front.Node {
 
 	sym := sa.CurrentScope.Resolve(assign.Name)
 	if sym == nil {
-		debug.Debug("Variable %s not found\n", assign.Name)
 		sa.addError("1508", fmt.Sprintf("Undefined variable '%s'", assign.Name),
 			assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
 		return assign
 	}
-	debug.Debug("Variable %s found, type=%s\n", assign.Name, sym.Type)
 
-	// x[index] = value
+	// === x[i] = ... ===
 	if assign.Index != nil {
-		// x должен быть массивом
-		if !isArrayTypeSemantic(sym.Type) {
+		if sym.IsConst {
+			sa.addError("1509",
+				fmt.Sprintf("Cannot modify constant '%s'", assign.Name),
+				assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
+			return assign
+		}
+		if !isArrayTypeSemantic(sym.Type) && sym.Type != "dict" {
 			sa.addError("1539",
 				fmt.Sprintf("Cannot index non-array variable '%s' (type '%s')",
 					assign.Name, sym.Type),
@@ -884,40 +890,58 @@ func (sa *SemanticAnalyzer) analyzeAssign(assign *front.Assign) front.Node {
 			return assign
 		}
 
-		// Индекс — int
 		indexType := sa.getNodeType(assign.Index)
-		if indexType != "int" && indexType != "" {
+		if indexType != "int" && indexType != "string" && indexType != "" {
 			sa.addError("1520",
 				fmt.Sprintf("Array index must be int, got '%s'", indexType),
 				assign.Index.GetLine(), assign.Index.GetColumn(), sa.CurrentFile)
 		}
 
-		// Значение — совместимо с elemType
-		valueType := sa.getNodeType(assign.Expr)
-		elemType := parseArrayElemTypeSemantic(sym.Type)
-		if elemType == "" {
-			elemType = "any"
-		}
-
-		if valueType == "void" {
-			// null — допустимо для any, int[], string[] и т.д.
-			// Но не для arr[void]
-		} else if elemType != "any" && valueType != elemType && valueType != "" {
-			sa.addError("1510",
-				fmt.Sprintf("Type mismatch: cannot assign '%s' to '%s' element",
-					valueType, elemType),
-				assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
+		// Compound op: +, -, *, /, %, **, или "" (обычное =)
+		if assign.Op != "" && assign.Op != "=" {
+			sa.checkCompoundAssignOp(assign, sym.Type, assign.Expr)
+		} else {
+			valueType := sa.getNodeType(assign.Expr)
+			elemType := "any"
+			if sym.Type != "dict" {
+				elemType = parseArrayElemTypeSemantic(sym.Type)
+				if elemType == "" {
+					elemType = "any"
+				}
+			}
+			if valueType == "void" {
+				// null — допустимо для any, int[], string[] и т.д.
+			} else if elemType != "any" && valueType != elemType && valueType != "" {
+				sa.addError("1510",
+					fmt.Sprintf("Type mismatch: cannot assign '%s' to '%s' element",
+						valueType, elemType),
+					assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
+			}
 		}
 
 		sa.analyzeNode(assign.Index)
 		sa.analyzeNode(assign.Expr)
-
 		return assign
 	}
 
+	// === x.field = ... ===
+	if assign.Field != "" {
+		if sym.IsConst {
+			sa.addError("1509",
+				fmt.Sprintf("Cannot modify constant '%s'", assign.Name),
+				assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
+			return assign
+		}
+		// ... существующая логика для field_set
+		sa.analyzeNode(assign.Expr)
+		return assign
+	}
+
+	// === x = ... (простое или compound) ===
 	if sym.IsConst {
 		debug.Debug("Variable %s is const\n", assign.Name)
-		sa.addError("1509", fmt.Sprintf("Cannot assign to constant '%s'", assign.Name),
+		sa.addError("1509",
+			fmt.Sprintf("Cannot assign to constant '%s'", assign.Name),
 			assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
 		return assign
 	}
@@ -926,9 +950,16 @@ func (sa *SemanticAnalyzer) analyzeAssign(assign *front.Assign) front.Node {
 		return assign
 	}
 
+	// Compound assignment
+	if assign.Op != "" && assign.Op != "=" {
+		sa.checkCompoundAssignOp(assign, sym.Type, assign.Expr)
+		sa.analyzeNode(assign.Expr)
+		return assign
+	}
+
+	// Обычное присваивание
 	exprType := sa.getNodeType(assign.Expr)
 
-	// === Union ===
 	if isUnionType(sym.Type) {
 		if exprType == "void" {
 			sym.CurrentType = ""
@@ -944,14 +975,7 @@ func (sa *SemanticAnalyzer) analyzeAssign(assign *front.Assign) front.Node {
 		return assign
 	}
 
-	// === Обычные проверки ===
 	if exprType == "void" {
-		if sym.Type == "void" {
-			sa.addError("1559",
-				"Cannot assign null to 'void'",
-				assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
-			return assign
-		}
 		if sym.Type == "any" {
 			sa.addError("1557",
 				"Cannot assign null to 'any' — cannot predict future value type",
@@ -974,8 +998,62 @@ func (sa *SemanticAnalyzer) analyzeAssign(assign *front.Assign) front.Node {
 		return assign
 	}
 
-	debug.Debug("analyzeAssign completed successfully\n")
 	return assign
+}
+
+// checkCompoundAssignOp проверяет, что operator (из assign.Op) допустим
+// для типа symType и типа правой части.
+func (sa *SemanticAnalyzer) checkCompoundAssignOp(assign *front.Assign, symType string, expr front.Node) {
+	exprType := sa.getNodeType(expr)
+	op := strings.TrimSuffix(assign.Op, "=")
+
+	// any — всё разрешено
+	if symType == "any" {
+		return
+	}
+
+	// string += string|char
+	if op == "+" && symType == "string" {
+		if exprType == "string" || exprType == "char" || exprType == "any" {
+			return
+		}
+		sa.addError("1510",
+			fmt.Sprintf("Cannot apply '%s' to string and '%s'", assign.Op, exprType),
+			assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
+		return
+	}
+
+	// char += string|char
+	if op == "+" && symType == "char" {
+		if exprType == "string" || exprType == "char" || exprType == "any" {
+			return
+		}
+		sa.addError("1510",
+			fmt.Sprintf("Cannot apply '%s' to char and '%s'", assign.Op, exprType),
+			assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
+		return
+	}
+
+	// числовые
+	if sa.isNumericType(symType) {
+		if op == "%" && symType != "int" {
+			sa.addError("1511",
+				fmt.Sprintf("'%%=' requires int, got '%s'", symType),
+				assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
+			return
+		}
+		if sa.isNumericType(exprType) {
+			return
+		}
+		sa.addError("1510",
+			fmt.Sprintf("Cannot apply '%s' to '%s' and '%s'", assign.Op, symType, exprType),
+			assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
+		return
+	}
+
+	sa.addError("1511",
+		fmt.Sprintf("Operator '%s' not supported for type '%s'", assign.Op, symType),
+		assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
 }
 
 func (sa *SemanticAnalyzer) analyzeTypeOf(typeOf *front.TypeOf) front.Node {
