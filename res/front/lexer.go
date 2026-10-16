@@ -55,6 +55,7 @@ const (
 	TOKEN_BACKTICK
 	TOKEN_TILDE
 	TOKEN_VERSION // @1.0.0
+	TOKEN_ELLIPSIS
 )
 
 type Token struct {
@@ -221,12 +222,20 @@ func (l *Lexer) NextToken() Token {
 	case '$':
 		return l.makeToken(TOKEN_DOLLAR, "$")
 	case '.':
+		col := l.col
+		// ... — три точки
+		if l.pos+2 < len(l.input) && l.input[l.pos+1] == '.' && l.input[l.pos+2] == '.' {
+			l.pos += 3
+			l.col += 3
+			return Token{Type: TOKEN_ELLIPSIS, Literal: "...", Line: l.line, Column: col}
+		}
+		// .. — две точки
 		if l.peek() == '.' {
-			col := l.col
 			l.pos += 2
 			l.col += 2
 			return Token{Type: TOKEN_DOTDOT, Literal: "..", Line: l.line, Column: col}
 		}
+		// . — одна точка
 		return l.makeToken(TOKEN_DOT, ".")
 	case '@':
 		return l.readVersion()
@@ -710,6 +719,8 @@ func (tt TokenType) String() string {
 		return "UNICODE"
 	case TOKEN_VERSION:
 		return "VERSION"
+	case TOKEN_ELLIPSIS:
+		return "..."
 	default:
 		return "UNKNOWN"
 	}

@@ -101,14 +101,19 @@ func (p *Pipeline) processFunction(fn *front.Function) {
 	}
 
 	for _, param := range fn.Params {
+		paramType := param.Type
+		if param.IsVariadic {
+			paramType = "arr[any]"
+		}
+
 		irFn.Params = append(irFn.Params, IRParam{
 			Name: param.Name,
-			Type: param.Type,
+			Type: paramType,
 		})
-		irFn.VarTypes[param.Name] = param.Type
+		irFn.VarTypes[param.Name] = paramType
 
-		if isArrayType(param.Type) {
-			elemType := parseArrayElemType(param.Type)
+		if isArrayType(paramType) {
+			elemType := parseArrayElemType(paramType)
 			if elemType == "" {
 				elemType = "any"
 			}
@@ -2201,8 +2206,35 @@ func (p *Pipeline) processCall(call *front.CallExpr, irFn *IRFunction) {
 	if targetFunc != nil {
 		argIndex := 0
 		for _, param := range targetFunc.Params {
-			var argExpr front.Node
+			// === Variadic ===
+			if param.IsVariadic {
+				variadicArr := p.newTemp()
+				irFn.Locals = append(irFn.Locals, "sk_arr "+variadicArr)
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op:         "call",
+					Result:     variadicArr,
+					Arg1:       "sk_arr_new",
+					Arg2:       "sk_array_new(sizeof(sk_any), 5)",
+					ReturnType: "sk_arr",
+				})
+				for argIndex < len(call.Args) {
+					argExpr := call.Args[argIndex]
+					argIndex++
+					argType := p.getExprType(argExpr, irFn)
+					argVal := p.processExpression(argExpr, irFn)
+					argAny := p.wrapToAny(argType, argVal, irFn)
+					irFn.Instructions = append(irFn.Instructions, IRInstruction{
+						Op:   "call",
+						Arg1: "sk_array_push_any",
+						Arg2: variadicArr + ".value, " + argAny,
+					})
+				}
+				args = append(args, variadicArr)
+				break
+			}
 
+			// === Обычный параметр ===
+			var argExpr front.Node
 			if argIndex < len(call.Args) {
 				argExpr = call.Args[argIndex]
 				argIndex++
@@ -2374,12 +2406,37 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 	}
 
 	argsStr := []string{}
-
 	if targetFunc != nil {
 		argIndex := 0
 		for _, param := range targetFunc.Params {
-			var argExpr front.Node
+			if param.IsVariadic {
+				// Собираем все оставшиеся args в arr[any]
+				variadicArr := p.newTemp()
+				irFn.Locals = append(irFn.Locals, "sk_arr "+variadicArr)
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op:         "call",
+					Result:     variadicArr,
+					Arg1:       "sk_arr_new",
+					Arg2:       "sk_array_new(sizeof(sk_any), 5)",
+					ReturnType: "sk_arr",
+				})
+				for argIndex < len(args) {
+					argExpr := args[argIndex]
+					argIndex++
+					argType := p.getExprType(argExpr, irFn)
+					argVal := p.processExpression(argExpr, irFn)
+					argAny := p.wrapToAny(argType, argVal, irFn)
+					irFn.Instructions = append(irFn.Instructions, IRInstruction{
+						Op:   "call",
+						Arg1: "sk_array_push_any",
+						Arg2: variadicArr + ".value, " + argAny,
+					})
+				}
+				argsStr = append(argsStr, variadicArr)
+				break
+			}
 
+			var argExpr front.Node
 			if argIndex < len(args) {
 				argExpr = args[argIndex]
 				argIndex++
@@ -2389,7 +2446,6 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 				argsStr = append(argsStr, "SK_NULL_int")
 				continue
 			}
-
 			argsStr = append(argsStr, p.prepareArg(argExpr, param.Type, irFn))
 		}
 	} else {

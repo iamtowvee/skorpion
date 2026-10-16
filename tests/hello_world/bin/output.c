@@ -941,6 +941,7 @@ sk_dict_ref __sk__get_config(void) {
 
 
 // Function prototypes
+void __sk__foo(sk_int a, sk_arr some);
 void __sk__print(sk_any line);
 void __sk__println(sk_any msg);
 void __sk__std_io_send(sk_string line);
@@ -948,6 +949,37 @@ sk_string __sk__std_io_input(sk_string prompt);
 void __sk__sendln(sk_any msg);
 void __sk__sendf(sk_any msg);
 sk_string __sk__input(sk_string prefix);
+
+void __sk__foo(sk_int a, sk_arr some) {
+    sk_any t1;
+    sk_int t2;
+    sk_any f;
+    sk_int t3;
+    sk_bool t4;
+
+    t1 = any_int(a);
+    sk_call_push("main.sk", 4, 5);
+    __sk__println(t1);
+    sk_call_pop();
+    t2 = sk_int_new(0);
+L1:
+    t3 = sk_int_new(sk_array_len(some.value));
+    t4 = sk_int_lt(t2, t3);
+    if (t4.value) {
+        goto L2;
+    } else {
+        goto L3;
+    }
+L2:
+    f = *(sk_any*)sk_array_get(some.value, t2.value);
+    sk_call_push("main.sk", 6, 9);
+    __sk__println(f);
+    sk_call_pop();
+    t2 = sk_int_add(t2, sk_int_new(1));
+    goto L1;
+L3:
+    return;
+}
 
 int main(int argc, char** argv) {
     __sk__argc = argc;
@@ -961,33 +993,58 @@ int main(int argc, char** argv) {
     }
     sk_arr args = sk_arr_new(args__arr);
 
-    sk_dict_ref t1;
-    sk_string t2;
-    sk_any t3;
-    sk_dict_ref t4;
-    sk_string t5;
-    sk_any t6;
-    sk_dict_ref t7;
-    sk_any t8;
+    sk_dict_ref t5;
+    sk_string t6;
+    sk_any t7;
+    sk_dict_ref t8;
+    sk_string t9;
+    sk_any t10;
+    sk_dict_ref t11;
+    sk_any t12;
+    sk_arr t13;
+    sk_any t14;
+    sk_any t15;
+    sk_any t16;
+    sk_any t17;
+    sk_arr t18;
+    sk_any t19;
+    sk_any t20;
 
-    t1 = __sk__get_config();
-    t2 = sk_string_new("name");
-    t3 = sk_dict_get(t1.value, t2);
-    free(t2.value);
-    sk_call_push("main.sk", 4, 5);
-    __sk__println(t3);
+    t5 = __sk__get_config();
+    t6 = sk_string_new("name");
+    t7 = sk_dict_get(t5.value, t6);
+    free(t6.value);
+    sk_call_push("main.sk", 11, 5);
+    __sk__println(t7);
     sk_call_pop();
-    t4 = __sk__get_config();
-    t5 = sk_string_new("buildOutFile");
-    t6 = sk_dict_get(t4.value, t5);
-    free(t5.value);
-    sk_call_push("main.sk", 5, 5);
-    __sk__println(t6);
+    t8 = __sk__get_config();
+    t9 = sk_string_new("buildOutFile");
+    t10 = sk_dict_get(t8.value, t9);
+    free(t9.value);
+    sk_call_push("main.sk", 12, 5);
+    __sk__println(t10);
     sk_call_pop();
-    t7 = __sk__get_config();
-    t8 = any_dict(t7);
-    sk_call_push("main.sk", 6, 5);
-    __sk__println(t8);
+    t11 = __sk__get_config();
+    t12 = any_dict(t11);
+    sk_call_push("main.sk", 13, 5);
+    __sk__println(t12);
+    sk_call_pop();
+    t13 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    t14 = any_int(sk_int_new(-1));
+    sk_array_push_any(t13.value, t14);
+    t15 = any_bool(sk_bool_new(1));
+    sk_array_push_any(t13.value, t15);
+    t16 = any_int(SK_NULL_int);
+    sk_array_push_any(t13.value, t16);
+    t17 = any_string(sk_string_new("hi"));
+    sk_array_push_any(t13.value, t17);
+    t18 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    t19 = any_string(sk_string_new("hi"));
+    sk_array_push_any(t18.value, t19);
+    t20 = any_arr(t18);
+    sk_array_push_any(t13.value, t20);
+    sk_call_push("main.sk", 14, 5);
+    __sk__foo(sk_int_new(1), t13);
     sk_call_pop();
     return 0;
 }
@@ -1031,36 +1088,36 @@ sk_string __sk__std_io_input(sk_string prompt) {
 }
 
 void __sk__sendln(sk_any msg) {
-    sk_string t9;
-    sk_string t10;
+    sk_string t21;
+    sk_string t22;
 
-    t9 = any_to_string(msg);
-    t10 = sk_string_concat(t9, sk_string_new("\n"));
-    free(t9.value);
+    t21 = any_to_string(msg);
+    t22 = sk_string_concat(t21, sk_string_new("\n"));
+    free(t21.value);
     sk_call_push("<builtin:std/io>", 36, 5);
-    __sk__std_io_send(t10);
+    __sk__std_io_send(t22);
     sk_call_pop();
-    free(t10.value);
+    free(t22.value);
     return;
 }
 
 void __sk__sendf(sk_any msg) {
-    sk_string t11;
+    sk_string t23;
 
-    t11 = any_to_string(msg);
+    t23 = any_to_string(msg);
     sk_call_push("<builtin:std/io>", 40, 5);
-    __sk__std_io_send(t11);
+    __sk__std_io_send(t23);
     sk_call_pop();
-    free(t11.value);
+    free(t23.value);
     return;
 }
 
 sk_string __sk__input(sk_string prefix) {
-    sk_string t12;
+    sk_string t24;
 
     sk_call_push("<builtin:std/io>", 44, 12);
-    t12 = __sk__std_io_input(prefix);
+    t24 = __sk__std_io_input(prefix);
     sk_call_pop();
-    return t12;
+    return t24;
 }
 

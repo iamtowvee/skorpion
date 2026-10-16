@@ -1,7 +1,15 @@
 use #lib:iamtowvee/MyLib
 
+void foo(int a, ...some) {
+    println(a)
+    for (any f in some) {
+        println(f)
+    }
+}
+
 void main(arr args) {
     println(getConfigField("name"))            // "MyProject"
     println(getConfigField("buildOutFile"))    // "MyProject-stable-1.0.0.exe"
     println(getConfig())                        // {name: MyProject, ...}
+    foo(1, -1, true, null, "hi", ["hi"])
 }

@@ -126,6 +126,7 @@ type Param struct {
 	Type         string // declared
 	CurrentType  string // для union — известный тип
 	DefaultValue Node
+	IsVariadic   bool
 }
 
 func (p *Param) GetType() NodeType { return "Param" }

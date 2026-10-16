@@ -385,6 +385,37 @@ func (p *Parser) parseFunction() *Function {
 		for {
 			paramPos := p.pos()
 
+				// ...name — variadic
+				if p.peek.Type == TOKEN_ELLIPSIS {
+					p.advance()
+					if p.peek.Type != TOKEN_IDENT {
+						p.hasErrors = true
+						errors.NewFatalError("0503",
+							fmt.Sprintf("Expected parameter name after '...', got '%s'", p.peek.Literal),
+							p.peek.Line, p.peek.Column, p.FileName)
+						return nil
+					}
+					paramName := p.peek.Literal
+					p.advance()
+
+					params = append(params, &Param{
+						Position:   paramPos,
+						Name:       paramName,
+						Type:       "arr[any]",
+						IsVariadic: true,
+					})
+
+					// ... должен быть последним
+					if p.peek.Type == TOKEN_COMMA {
+						p.hasErrors = true
+						errors.NewFatalError("0503",
+							"'...' must be the last parameter",
+							p.peek.Line, p.peek.Column, p.FileName)
+						return nil
+					}
+					break
+				}
+
 			if !p.isType(p.peek) {
 				p.hasErrors = true
 				errors.NewFatalError("0502",

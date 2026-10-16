@@ -358,6 +358,24 @@ func (sa *SemanticAnalyzer) analyzeFunction(fn *front.Function) {
 		sa.CurrentScope.Define(param.Name, SYM_VARIABLE, param.Type, false)
 	}
 
+	// Проверка: ... только один и только последний
+	variadicCount := 0
+	for i, param := range fn.Params {
+		if param.IsVariadic {
+			variadicCount++
+			if i != len(fn.Params)-1 {
+				sa.addError("0560",
+					"Variadic parameter must be the last one",
+					param.GetLine(), param.GetColumn(), sa.CurrentFile)
+			}
+		}
+	}
+	if variadicCount > 1 {
+		sa.addError("0560",
+			"Only one variadic parameter is allowed",
+			fn.GetLine(), fn.GetColumn(), sa.CurrentFile)
+	}
+
 	if fn.Body != nil {
 		debug.Debug("Analyzing body of %s\n", fn.Name)
 		sa.analyzeBlock(fn.Body, true)
@@ -1257,17 +1275,47 @@ func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
 	}
 	debug.Debug("Function %s found, params=%d\n", simpleName, len(targetFunc.Params))
 
-	if len(args) != len(targetFunc.Params) {
-		debug.Debug("Argument count mismatch: expected %d, got %d\n", len(targetFunc.Params), len(args))
-		sa.addError("1519", fmt.Sprintf("Function '%s' expects %d arguments, got %d",
-			simpleName, len(targetFunc.Params), len(args)),
-			call.GetLine(), call.GetColumn(), sa.CurrentFile)
-		return call
+	// Считаем обычные параметры
+	normalParams := 0
+	hasVariadic := false
+	var variadicParam *front.Param
+	for _, param := range targetFunc.Params {
+		if param.IsVariadic {
+			hasVariadic = true
+			variadicParam = param
+			break
+		}
+		normalParams++
+	}
+	_ = variadicParam
+
+	if hasVariadic {
+		if len(args) < normalParams {
+			sa.addError("1519", fmt.Sprintf(
+				"Function '%s' expects at least %d arguments, got %d",
+				simpleName, normalParams, len(args)),
+				call.GetLine(), call.GetColumn(), sa.CurrentFile)
+			return call
+		}
+	} else {
+		if len(args) != normalParams {
+			sa.addError("1519", fmt.Sprintf(
+				"Function '%s' expects %d arguments, got %d",
+				simpleName, normalParams, len(args)),
+				call.GetLine(), call.GetColumn(), sa.CurrentFile)
+			return call
+		}
 	}
 
 	for i, arg := range args {
 		// Анализируем аргумент (чтобы поймать вложенные ошибки)
 		sa.analyzeNode(arg)
+
+		if hasVariadic && i >= normalParams {
+			debug.Debug("Arg %d (variadic): type=%s, expected=any\n",
+				i, sa.getNodeType(arg))
+			continue
+		}
 
 		argType := sa.getNodeType(arg)
 		paramType := targetFunc.Params[i].Type
