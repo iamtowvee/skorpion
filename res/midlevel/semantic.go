@@ -291,6 +291,133 @@ func (sa *SemanticAnalyzer) checkMain() bool {
 	return true
 }
 
+func (sa *SemanticAnalyzer) checkUselessAsync(fn *front.Function) {
+	if !fn.IsAsync || fn.Body == nil {
+		return
+	}
+	if sa.hasDynamicConstructs(fn.Body) {
+		return
+	}
+	errors.NewWarning("2005",
+		fmt.Sprintf("'async' is useless in '%s()' — function contains only static operations; "+
+			"Promise will only hold the final return value", fn.Name),
+		fn.GetNameLine(), fn.GetNameColumn(), fn.File)
+}
+
+func (sa *SemanticAnalyzer) hasDynamicConstructs(node front.Node) bool {
+	if node == nil {
+		return false
+	}
+	switch n := node.(type) {
+	case *front.PromiseSet:
+		return true
+	case *front.AwaitExpr:
+		return true
+	case *front.ThrowStmt:
+		return true
+	case *front.TryStmt:
+		return true
+	case *front.IncludeC:
+		return true
+	case *front.CallExpr:
+		simpleName := n.Name
+		if strings.Contains(simpleName, ".") {
+			parts := strings.Split(simpleName, ".")
+			simpleName = parts[len(parts)-1]
+		}
+		if target := sa.resolveFunction(simpleName); target != nil {
+			if target.IsAsync {
+				return true
+			}
+			if target.Body != nil && sa.containsIncludeC(target.Body) {
+				return true
+			}
+		}
+		for _, arg := range n.Args {
+			if sa.hasDynamicConstructs(arg) {
+				return true
+			}
+		}
+		return false
+	case *front.Block:
+		for _, s := range n.Statements {
+			if sa.hasDynamicConstructs(s) {
+				return true
+			}
+		}
+	case *front.IfStmt:
+		if sa.hasDynamicConstructs(n.Condition) {
+			return true
+		}
+		if sa.hasDynamicConstructs(n.Then) {
+			return true
+		}
+		for _, e := range n.Elsifs {
+			if sa.hasDynamicConstructs(e.Condition) || sa.hasDynamicConstructs(e.Then) {
+				return true
+			}
+		}
+		if sa.hasDynamicConstructs(n.Else) {
+			return true
+		}
+	case *front.WhileStmt:
+		if sa.hasDynamicConstructs(n.Condition) || sa.hasDynamicConstructs(n.Body) {
+			return true
+		}
+	case *front.DoWhileStmt:
+		if sa.hasDynamicConstructs(n.Body) || sa.hasDynamicConstructs(n.Condition) {
+			return true
+		}
+	case *front.ForInStmt:
+		if sa.hasDynamicConstructs(n.Iterable) || sa.hasDynamicConstructs(n.Body) {
+			return true
+		}
+	case *front.CaseStmt:
+		if sa.hasDynamicConstructs(n.Value) {
+			return true
+		}
+		for _, b := range n.Branches {
+			if sa.hasDynamicConstructs(b.Body) {
+				return true
+			}
+		}
+		if sa.hasDynamicConstructs(n.Default) {
+			return true
+		}
+	case *front.BinaryExpr:
+		return sa.hasDynamicConstructs(n.Left) || sa.hasDynamicConstructs(n.Right)
+	case *front.UnaryExpr:
+		return sa.hasDynamicConstructs(n.Expr)
+	case *front.TernaryExpr:
+		return sa.hasDynamicConstructs(n.Condition) ||
+			sa.hasDynamicConstructs(n.Then) ||
+			sa.hasDynamicConstructs(n.Else)
+	case *front.VarDecl:
+		return sa.hasDynamicConstructs(n.Expr)
+	case *front.Assign:
+		return sa.hasDynamicConstructs(n.Expr)
+	case *front.ReturnStmt:
+		return sa.hasDynamicConstructs(n.Expr)
+	case *front.ArrayLiteral:
+		for _, e := range n.Elements {
+			if sa.hasDynamicConstructs(e) {
+				return true
+			}
+		}
+	case *front.ArrayIndex:
+		return sa.hasDynamicConstructs(n.Index)
+	case *front.ArrayAdd:
+		return sa.hasDynamicConstructs(n.Elem)
+	case *front.FormatExpr:
+		return sa.hasDynamicConstructs(n.Expr)
+	case *front.TypeOf:
+		return sa.hasDynamicConstructs(n.Expr)
+	case *front.RangeExpr:
+		return sa.hasDynamicConstructs(n.Start) || sa.hasDynamicConstructs(n.End)
+	}
+	return false
+}
+
 func (sa *SemanticAnalyzer) analyzeFunction(fn *front.Function) {
 	sa.LoopDepth = 0
 
@@ -379,6 +506,61 @@ func (sa *SemanticAnalyzer) analyzeFunction(fn *front.Function) {
 			fn.GetLine(), fn.GetColumn(), sa.CurrentFile)
 	}
 
+	// === ASYNC checks ===
+	if fn.IsAsync {
+		if fn.ReturnType == "void" {
+			sa.addError("0665",
+				"async function cannot return 'void' — Promise must have a concrete type",
+				fn.GetLine(), fn.GetColumn(), sa.CurrentFile)
+		}
+		if isUnionType(fn.ReturnType) {
+			for _, t := range parseUnionTypes(fn.ReturnType) {
+				if t == "any" {
+					sa.addError("0615",
+						"Cannot use 'any' in async return union",
+						fn.GetLine(), fn.GetColumn(), sa.CurrentFile)
+				}
+			}
+		}
+
+		// Promise[...] — ровно один, только первым statement'ом, только литерал
+		if fn.Body != nil {
+			promiseCount := 0
+			for i, stmt := range fn.Body.Statements {
+				if ps, isPromise := stmt.(*front.PromiseSet); isPromise {
+					promiseCount++
+					if i != 0 {
+						sa.addError("0670",
+							fmt.Sprintf("'Promise[...]' must be the first statement in async function '%s'", fn.Name),
+							ps.GetLine(), ps.GetColumn(), sa.CurrentFile)
+					}
+					if !isLiteralNode(ps.Value) {
+						sa.addError("0671",
+							"Promise[...] requires a literal (number, string, char, true, false, null)",
+							ps.Value.GetLine(), ps.Value.GetColumn(), sa.CurrentFile)
+					}
+				}
+			}
+			if promiseCount > 1 {
+				sa.addError("0675",
+					fmt.Sprintf("async function '%s' must have exactly one 'Promise[...]'", fn.Name),
+					fn.GetNameLine(), fn.GetNameColumn(), sa.CurrentFile)
+			}
+		}
+	} else {
+		// В не-async функциях Promise запрещён (ловится в analyzePromiseSet,
+		// но проверим раньше — чтобы не генерировать каскад ошибок)
+		if fn.Body != nil {
+			for _, stmt := range fn.Body.Statements {
+				if _, isPromise := stmt.(*front.PromiseSet); isPromise {
+					sa.addError("0662",
+						"'Promise[...]' can only be used inside an async function",
+						stmt.GetLine(), stmt.GetColumn(), sa.CurrentFile)
+				}
+			}
+		}
+	}
+
 	if fn.Body != nil {
 		debug.Debug("Analyzing body of %s\n", fn.Name)
 		sa.analyzeBlock(fn.Body, true)
@@ -416,7 +598,6 @@ func (sa *SemanticAnalyzer) analyzeFunction(fn *front.Function) {
 
 		if len(unusedParams) > 0 {
 			if hasIncludeC {
-				// Не можем точно сказать — параметр может использоваться внутри includeC
 				names := []string{}
 				for _, p := range unusedParams {
 					names = append(names, "'"+p.Name+"'")
@@ -428,7 +609,6 @@ func (sa *SemanticAnalyzer) analyzeFunction(fn *front.Function) {
 					fn.GetNameLine(), fn.GetNameColumn()+len(fn.Name),
 					sa.CurrentFile)
 			} else {
-				// Точная проверка — параметры точно неиспользуемые
 				for _, param := range unusedParams {
 					errors.NewWarningSpan("2001",
 						fmt.Sprintf("Unused parameter '%s' in function '%s'", param.Name, fn.Name),
@@ -437,6 +617,10 @@ func (sa *SemanticAnalyzer) analyzeFunction(fn *front.Function) {
 						sa.CurrentFile)
 				}
 			}
+		}
+
+		if fn.IsAsync {
+			sa.checkUselessAsync(fn)
 		}
 
 		// Проверка: неиспользуемые переменные
@@ -452,10 +636,90 @@ func (sa *SemanticAnalyzer) analyzeBlock(block *front.Block, isFunctionBody bool
 	debug.Debug("analyzeBlock: %d statements, isFunctionBody=%v\n", len(block.Statements), isFunctionBody)
 	for i, stmt := range block.Statements {
 		debug.Debug("Statement %d: %T\n", i, stmt)
-		sa.analyzeNode(stmt)
+		sa.analyzeStatement(stmt)
 		debug.Debug("Statement %d processed\n", i)
 	}
 	debug.Debug("analyzeBlock completed\n")
+}
+
+// analyzeStatement — как analyzeNode, но для statement-level CallExpr
+// с async-функцией делает fire-and-forget (разрешено).
+func (sa *SemanticAnalyzer) analyzeStatement(stmt front.Node) {
+	if call, ok := stmt.(*front.CallExpr); ok {
+		simpleName := call.Name
+		if strings.Contains(simpleName, ".") {
+			parts := strings.Split(simpleName, ".")
+			simpleName = parts[len(parts)-1]
+		}
+		if target := sa.resolveFunction(simpleName); target != nil && target.IsAsync {
+			// fire-and-forget: результат discard, ошибки — в глобальный обработчик
+			sa.analyzeFireAndForget(call, target)
+			return
+		}
+	}
+	sa.analyzeNode(stmt)
+}
+
+// analyzeFireAndForget — анализ async-вызова в statement-позиции.
+// Проверяет аргументы, но не ругается на «async как значение».
+func (sa *SemanticAnalyzer) analyzeFireAndForget(call *front.CallExpr, target *front.Function) {
+	// Проверка количества аргументов
+	requiredParams := 0
+	optionalParams := 0
+	hasVariadic := false
+	for _, p := range target.Params {
+		if p.IsVariadic {
+			hasVariadic = true
+			break
+		}
+		if p.DefaultValue != nil {
+			optionalParams++
+		} else {
+			requiredParams++
+		}
+	}
+	totalNormal := requiredParams + optionalParams
+
+	if hasVariadic {
+		if len(call.Args) < requiredParams {
+			sa.addError("1519", fmt.Sprintf(
+				"Function '%s' expects at least %d arguments, got %d",
+				call.Name, requiredParams, len(call.Args)),
+				call.GetLine(), call.GetColumn(), sa.CurrentFile)
+			return
+		}
+	} else {
+		if len(call.Args) < requiredParams {
+			sa.addError("1519", fmt.Sprintf(
+				"Function '%s' expects at least %d arguments, got %d",
+				call.Name, requiredParams, len(call.Args)),
+				call.GetLine(), call.GetColumn(), sa.CurrentFile)
+			return
+		}
+		if len(call.Args) > totalNormal {
+			sa.addError("1519", fmt.Sprintf(
+				"Function '%s' expects at most %d arguments, got %d",
+				call.Name, totalNormal, len(call.Args)),
+				call.GetLine(), call.GetColumn(), sa.CurrentFile)
+			return
+		}
+	}
+
+	// Проверка типов аргументов
+	for i, arg := range call.Args {
+		sa.analyzeNode(arg)
+		if hasVariadic && i >= totalNormal {
+			continue
+		}
+		argType := sa.getNodeType(arg)
+		paramType := target.Params[i].Type
+		if argType != paramType && argType != "" && paramType != "any" {
+			sa.addError("1520",
+				fmt.Sprintf("Argument %d type mismatch: expected '%s', got '%s'",
+					i+1, paramType, argType),
+				arg.GetLine(), arg.GetColumn(), sa.CurrentFile)
+		}
+	}
 }
 
 func (sa *SemanticAnalyzer) analyzePostfix(pe *front.PostfixExpr) front.Node {
@@ -490,6 +754,10 @@ func (sa *SemanticAnalyzer) analyzeNode(node front.Node) front.Node {
 		return sa.analyzePostfix(n)
 	case *front.UnicodeLiteral:
 		return n
+	case *front.PromiseSet:
+		return sa.analyzePromiseSet(n)
+	case *front.AwaitExpr:
+		return sa.analyzeAwait(n)
 	case *front.BreakStmt:
 		return sa.analyzeBreak(n)
 	case *front.ContinueStmt:
@@ -672,6 +940,43 @@ func (sa *SemanticAnalyzer) analyzeUnary(unary *front.UnaryExpr) front.Node {
 }
 
 func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
+	// === ASYNC: T x = greet(...) ===
+	if call, ok := decl.Expr.(*front.CallExpr); ok {
+		simpleName := call.Name
+		if strings.Contains(simpleName, ".") {
+			parts := strings.Split(simpleName, ".")
+			simpleName = parts[len(parts)-1]
+		}
+		if target := sa.resolveFunction(simpleName); target != nil && target.IsAsync {
+			// Тип-чек: decl.Type должен совпадать с target.ReturnType
+			if decl.Type != target.ReturnType {
+				sa.addError("1507",
+					fmt.Sprintf("Type mismatch: cannot assign async '%s' (%s) to '%s'",
+						simpleName, target.ReturnType, decl.Type),
+					decl.GetLine(), decl.GetColumn(), sa.CurrentFile)
+				return decl
+			}
+			// Проверка аргументов — как у обычного вызова
+			for i, arg := range call.Args {
+				sa.analyzeNode(arg)
+				if i < len(target.Params) {
+					argType := sa.getNodeType(arg)
+					paramType := target.Params[i].Type
+					if argType != paramType && argType != "" && paramType != "any" {
+						sa.addError("1520",
+							fmt.Sprintf("Argument %d type mismatch: expected '%s', got '%s'",
+								i+1, paramType, argType),
+							arg.GetLine(), arg.GetColumn(), sa.CurrentFile)
+					}
+				}
+			}
+			// Регистрируем x как promise-переменную
+			sym := sa.CurrentScope.Define(decl.Name, SYM_VARIABLE, decl.Type, false)
+			sym.RealType = "promise"
+			return decl
+		}
+	}
+
 	// === Union T<...> ===
 	if isUnionType(decl.Type) {
 		types := parseUnionTypes(decl.Type)
@@ -864,10 +1169,26 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 	return decl
 }
 
-func (sa *SemanticAnalyzer) analyzeAssign(assign *front.Assign) front.Node {
-	debug.Debug("analyzeAssign: %s\n", assign.Name)
+func (sa *SemanticAnalyzer) isPromiseVar(name string) bool {
+	sym := sa.CurrentScope.Resolve(name)
+	if sym == nil {
+		return false
+	}
+	// Проверяем: инициализирована из async-вызова?
+	// Простой признак: RealType установлен в "promise" (нужно ставить при analyzeVarDecl).
+	return sym.RealType == "promise"
+}
 
+func (sa *SemanticAnalyzer) analyzeAssign(assign *front.Assign) front.Node {
 	sym := sa.CurrentScope.Resolve(assign.Name)
+	debug.Debug("analyzeAssign: %s\n", assign.Name)
+	if sym != nil && sym.RealType == "promise" {
+		sa.addError("0674",
+			fmt.Sprintf("Cannot assign to promise variable '%s' — Promise is written only by the async function", assign.Name),
+			assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
+		return assign
+	}
+
 	if sym == nil {
 		sa.addError("1508", fmt.Sprintf("Undefined variable '%s'", assign.Name),
 			assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
@@ -1348,11 +1669,15 @@ func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
 		parts := strings.Split(simpleName, ".")
 		simpleName = parts[len(parts)-1]
 	}
+	if simpleName == "isAsyncEnded" {
+		return sa.analyzeIsAsyncEnded(call, args)
+	}
 
 	builtinFuncs := map[string]bool{
 		"to_int":         true,
 		"to_float":       true,
 		"to_double":      true,
+		"isAsyncEnded":   true,
 		"to_string":      true,
 		"to_bool":        true,
 		"to_arr":         true,
@@ -1482,6 +1807,33 @@ func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
 	_ = realNormal
 
 	debug.Debug("analyzeCall completed successfully\n")
+	return call
+}
+
+func (sa *SemanticAnalyzer) analyzeIsAsyncEnded(call *front.CallExpr, args []front.Node) front.Node {
+	if len(args) != 1 {
+		sa.addError("0666",
+			"isAsyncEnded requires exactly one argument (async function name as string)",
+			call.GetLine(), call.GetColumn(), sa.CurrentFile)
+		return call
+	}
+	lit, ok := args[0].(*front.String)
+	if !ok {
+		sa.addError("0667",
+			"isAsyncEnded argument must be a string literal with the async function name",
+			call.GetLine(), call.GetColumn(), sa.CurrentFile)
+		return call
+	}
+	target := sa.resolveFunction(lit.Value)
+	if target == nil {
+		sa.addError("1518",
+			fmt.Sprintf("Undefined function '%s'", lit.Value),
+			call.GetLine(), call.GetColumn(), sa.CurrentFile)
+	} else if !target.IsAsync {
+		sa.addError("0664",
+			fmt.Sprintf("'%s' is not an async function", lit.Value),
+			call.GetLine(), call.GetColumn(), sa.CurrentFile)
+	}
 	return call
 }
 
@@ -1766,6 +2118,33 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 		return "int"
 	case *front.String:
 		return "string"
+	case *front.AwaitExpr:
+		if sa.CurrentFunction == nil {
+			return ""
+		}
+		switch e := n.Expr.(type) {
+		case *front.CallExpr:
+			simpleName := e.Name
+			if strings.Contains(simpleName, ".") {
+				parts := strings.Split(simpleName, ".")
+				simpleName = parts[len(parts)-1]
+			}
+			if fn := sa.resolveFunction(simpleName); fn != nil {
+				return fn.ReturnType
+			}
+		case *front.Ident:
+			sym := sa.CurrentScope.Resolve(e.Name)
+			if sym != nil {
+				return sym.Type
+			}
+		}
+		return ""
+
+	case *front.PromiseSet:
+		if sa.CurrentFunction != nil {
+			return sa.CurrentFunction.ReturnType
+		}
+		return ""
 	case *front.PostfixExpr:
 		return "int"
 	case *front.ArrayIndex:
@@ -2160,6 +2539,14 @@ func (sa *SemanticAnalyzer) collectUsedIdents(node front.Node, used map[string]b
 		}
 	case *front.PostfixExpr:
 		used[n.VarName] = true
+	case *front.AwaitExpr:
+		if n.Expr != nil {
+			sa.collectUsedIdents(n.Expr, used)
+		}
+	case *front.PromiseSet:
+		if n.Value != nil {
+			sa.collectUsedIdents(n.Value, used)
+		}
 	case *front.RangeExpr:
 		if n.Start != nil {
 			sa.collectUsedIdents(n.Start, used)
@@ -2720,4 +3107,82 @@ func (sa *SemanticAnalyzer) analyzeDoWhile(dw *front.DoWhileStmt) front.Node {
 	}
 
 	return dw
+}
+
+func (sa *SemanticAnalyzer) analyzePromiseSet(ps *front.PromiseSet) front.Node {
+	if sa.CurrentFunction == nil || !sa.CurrentFunction.IsAsync {
+		sa.addError("0662",
+			"'Promise[...]' can only be used inside an async function",
+			ps.GetLine(), ps.GetColumn(), sa.CurrentFile)
+		return ps
+	}
+
+	// Только литерал: Number, String, CharLiteral, UnicodeLiteral,
+	// NullLiteral, true, false
+	if !isLiteralNode(ps.Value) {
+		sa.addError("0671",
+			"Promise[...] requires a literal (number, string, char, true, false, null)",
+			ps.Value.GetLine(), ps.Value.GetColumn(), sa.CurrentFile)
+		return ps
+	}
+
+	valueType := sa.getNodeType(ps.Value)
+	if valueType != "" && valueType != sa.CurrentFunction.ReturnType {
+		sa.addError("0669",
+			fmt.Sprintf("Promise[...] value type '%s' does not match async return type '%s'",
+				valueType, sa.CurrentFunction.ReturnType),
+			ps.GetLine(), ps.GetColumn(), sa.CurrentFile)
+	}
+
+	sa.analyzeNode(ps.Value)
+	return ps
+}
+
+// isLiteralNode — литерал (разрешён в Promise[...])
+func isLiteralNode(n front.Node) bool {
+	switch n.(type) {
+	case *front.Number, *front.String, *front.CharLiteral,
+		*front.UnicodeLiteral, *front.NullLiteral:
+		return true
+	case *front.Ident:
+		id := n.(*front.Ident)
+		return id.Name == "true" || id.Name == "false"
+	}
+	return false
+}
+
+func (sa *SemanticAnalyzer) analyzeAwait(aw *front.AwaitExpr) front.Node {
+	switch e := aw.Expr.(type) {
+	case *front.CallExpr:
+		simpleName := e.Name
+		if strings.Contains(simpleName, ".") {
+			parts := strings.Split(simpleName, ".")
+			simpleName = parts[len(parts)-1]
+		}
+		target := sa.resolveFunction(simpleName)
+		if target == nil {
+			sa.addError("1518",
+				fmt.Sprintf("Undefined function '%s'", simpleName),
+				aw.GetLine(), aw.GetColumn(), sa.CurrentFile)
+			return aw
+		}
+		if !target.IsAsync {
+			sa.addError("0664",
+				fmt.Sprintf("'await' applied to '%s', which is not an async function", simpleName),
+				aw.GetLine(), aw.GetColumn(), sa.CurrentFile)
+		}
+		sa.analyzeNode(e)
+	case *front.Ident:
+		sym := sa.CurrentScope.Resolve(e.Name)
+		if sym == nil {
+			sa.addError("1514",
+				fmt.Sprintf("Undefined identifier '%s'", e.Name),
+				aw.GetLine(), aw.GetColumn(), sa.CurrentFile)
+		}
+	default:
+		sa.addError("0663",
+			"'await' requires a function call or a promise variable",
+			aw.GetLine(), aw.GetColumn(), sa.CurrentFile)
+	}
+	return aw
 }

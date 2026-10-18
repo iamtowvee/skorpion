@@ -76,14 +76,11 @@ func (gc *GCAnalyzer) collectVariables(fn *IRFunction) []string {
 	variables := []string{}
 
 	for _, local := range fn.Locals {
-		// sk_string — содержит char* value (нужно освобождать .value)
-		// sk_array* — прямой указатель (нужно free)
-		// sk_arr — содержит sk_array* value (нужно освобождать .value)
-		// void* — может быть malloc
 		if strings.Contains(local, "sk_string") ||
 			strings.Contains(local, "sk_array*") ||
 			strings.Contains(local, "sk_arr") ||
-			strings.Contains(local, "void*") {
+			strings.Contains(local, "void*") ||
+			strings.Contains(local, "sk_promise_") {
 			parts := strings.Fields(local)
 			if len(parts) >= 2 {
 				variables = append(variables, parts[len(parts)-1])
@@ -130,6 +127,13 @@ func (gc *GCAnalyzer) findOwners(fn *IRFunction, variables []string) map[string]
 			if gc.callAllocates(ins.Arg1) {
 				allocated[ins.Result] = true
 			}
+		}
+	}
+
+	// --- Шаг 1.5: promise-переменные, созданные async_spawn, — владельцы ---
+	for _, ins := range fn.Instructions {
+		if ins.Op == "async_spawn" {
+			allocated[ins.Result] = true
 		}
 	}
 
@@ -713,6 +717,19 @@ func (gc *GCAnalyzer) applyInsertions(fn *IRFunction, insertions []gcInsertion, 
 				}
 
 				cType := gc.findVarCType(fn, v)
+
+				// === PROMISE RELEASE ===
+				if strings.HasPrefix(cType, "sk_promise_") {
+					suffix := strings.TrimPrefix(cType, "sk_promise_")
+					suffix = strings.TrimSuffix(suffix, "*")
+					newInstructions = append(newInstructions, IRInstruction{
+						Op:   "promise_release",
+						Arg1: v,
+						Arg2: suffix,
+					})
+					continue
+				}
+
 				var op string
 				switch cType {
 				case "sk_string":
@@ -720,7 +737,7 @@ func (gc *GCAnalyzer) applyInsertions(fn *IRFunction, insertions []gcInsertion, 
 				case "sk_array*":
 					op = "free_arr"
 				case "sk_arr":
-					op = "free_arr_field" // освободить .value
+					op = "free_arr_field"
 				default:
 					op = "free"
 				}
@@ -757,7 +774,7 @@ func (gc *GCAnalyzer) hasFreeAfter(fn *IRFunction, idx int, varName string) bool
 	for j := idx + 1; j < len(fn.Instructions); j++ {
 		if fn.Instructions[j].Arg1 == varName {
 			switch fn.Instructions[j].Op {
-			case "free", "free_str", "free_arr", "free_arr_field":
+			case "free", "free_str", "free_arr", "free_arr_field", "promise_release":
 				return true
 			}
 		}

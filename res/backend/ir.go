@@ -27,6 +27,7 @@ type IRFunction struct {
 	File           string
 	Params         []IRParam
 	Locals         []string
+	IsAsync        bool
 	ArrayElemTypes map[string]string
 	VarTypes       map[string]string
 	DictKeyTypes   map[string]map[string]string

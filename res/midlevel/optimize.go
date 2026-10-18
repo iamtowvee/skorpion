@@ -588,6 +588,14 @@ func (o *Optimizer) hasNoSideEffects(node front.Node) bool {
 		return o.hasNoSideEffects(n.Expr)
 	case *front.PostfixExpr:
 		return false
+	case *front.AwaitExpr:
+		// await — блокирующая операция, побочный эффект (ожидание)
+		return false
+	case *front.PromiseSet:
+		// Promise[...] — запись в promise, побочный эффект
+		return false
+	case *front.CallExpr:
+		return false
 	case *front.TernaryExpr:
 		return o.hasNoSideEffects(n.Condition) &&
 			o.hasNoSideEffects(n.Then) &&
@@ -701,6 +709,10 @@ func (o *Optimizer) collectUsedIdents(node front.Node, used map[string]bool) {
 		}
 		if n.Body != nil {
 			o.collectUsedIdents(n.Body, used)
+		}
+	case *front.AwaitExpr:
+		if n.Expr != nil {
+			o.collectUsedIdents(n.Expr, used)
 		}
 	case *front.ForInStmt:
 		if n.Iterable != nil {

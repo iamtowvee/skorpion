@@ -8,6 +8,8 @@
 #include <math.h>
 #include <limits.h>
 #include <ctype.h>
+#include <pthread.h>
+#include <stdatomic.h>
 // ==== Call stack for panic reporting ====
 typedef struct {
     const char* file;
@@ -820,6 +822,11 @@ void sk_array_deep_free(sk_array* a) {
     free(a);
 }
 
+typedef struct SkError {
+    const char* __type;
+    sk_string msg;
+} SkError;
+
 typedef struct SkCleanup {
     void** ptr;
     int type;
@@ -920,6 +927,696 @@ int sk_error_type_match(const char* actual, const char* expected) {
     return actual[len] == '\0' || actual[len] == '.';
 }
 
+// ==== Async / Promise runtime ====
+typedef struct {
+    _Atomic int owner_ref;
+    _Atomic int task_ref;
+    _Atomic int done;
+    pthread_mutex_t mtx;
+    pthread_cond_t cv;
+} sk_promise_common;
+
+static inline void sk_promise_common_destroy(sk_promise_common* c) {
+    pthread_mutex_destroy(&c->mtx);
+    pthread_cond_destroy(&c->cv);
+}
+
+typedef struct {
+    sk_promise_common common;
+    sk_int value;
+    void* error;
+} sk_promise_int;
+
+static inline sk_promise_int* sk_promise_new_int(void) {
+    sk_promise_int* p = malloc(sizeof(sk_promise_int));
+    atomic_store(&p->common.owner_ref, 1);
+    atomic_store(&p->common.task_ref, 1);
+    atomic_store(&p->common.done, 0);
+    pthread_mutex_init(&p->common.mtx, NULL);
+    pthread_cond_init(&p->common.cv, NULL);
+    p->value = SK_NULL_int;
+    p->error = NULL;
+    return p;
+}
+
+static inline void sk_promise_set_int(sk_promise_int* p, sk_int v) {
+    pthread_mutex_lock(&p->common.mtx);
+    p->value = v;
+    pthread_mutex_unlock(&p->common.mtx);
+}
+
+static inline void sk_promise_finish_int(sk_promise_int* p, sk_int v) {
+    pthread_mutex_lock(&p->common.mtx);
+    p->value = v;
+    atomic_store(&p->common.done, 1);
+    pthread_cond_broadcast(&p->common.cv);
+    pthread_mutex_unlock(&p->common.mtx);
+}
+
+static inline void sk_promise_fail_int(sk_promise_int* p, void* err) {
+    pthread_mutex_lock(&p->common.mtx);
+    p->error = err;
+    atomic_store(&p->common.done, 1);
+    pthread_cond_broadcast(&p->common.cv);
+    pthread_mutex_unlock(&p->common.mtx);
+}
+
+static inline sk_int sk_promise_read_int(sk_promise_int* p) {
+    pthread_mutex_lock(&p->common.mtx);
+    sk_int v = p->value;
+    pthread_mutex_unlock(&p->common.mtx);
+    return v;
+}
+
+static inline sk_int sk_promise_await_int(sk_promise_int* p) {
+    pthread_mutex_lock(&p->common.mtx);
+    while (!atomic_load(&p->common.done)) {
+        pthread_cond_wait(&p->common.cv, &p->common.mtx);
+    }
+    if (p->error) {
+        void* err = p->error;
+        pthread_mutex_unlock(&p->common.mtx);
+        sk_throw(err, "<await>", 0, 0);
+    }
+    sk_int v = p->value;
+    pthread_mutex_unlock(&p->common.mtx);
+    return v;
+}
+
+static inline sk_bool sk_promise_ended_int(sk_promise_int* p) {
+    sk_bool r; r.value = atomic_load(&p->common.done) ? 1 : 0; r.__is_null = 0; return r;
+}
+
+static inline void sk_promise_release_int(sk_promise_int* p) {
+    if (!p) return;
+    atomic_fetch_sub(&p->common.owner_ref, 1);
+    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {
+        sk_promise_common_destroy(&p->common);
+        free(p);
+    }
+}
+
+typedef struct {
+    sk_promise_common common;
+    sk_char value;
+    void* error;
+} sk_promise_char;
+
+static inline sk_promise_char* sk_promise_new_char(void) {
+    sk_promise_char* p = malloc(sizeof(sk_promise_char));
+    atomic_store(&p->common.owner_ref, 1);
+    atomic_store(&p->common.task_ref, 1);
+    atomic_store(&p->common.done, 0);
+    pthread_mutex_init(&p->common.mtx, NULL);
+    pthread_cond_init(&p->common.cv, NULL);
+    p->value = SK_NULL_char;
+    p->error = NULL;
+    return p;
+}
+
+static inline void sk_promise_set_char(sk_promise_char* p, sk_char v) {
+    pthread_mutex_lock(&p->common.mtx);
+    p->value = v;
+    pthread_mutex_unlock(&p->common.mtx);
+}
+
+static inline void sk_promise_finish_char(sk_promise_char* p, sk_char v) {
+    pthread_mutex_lock(&p->common.mtx);
+    p->value = v;
+    atomic_store(&p->common.done, 1);
+    pthread_cond_broadcast(&p->common.cv);
+    pthread_mutex_unlock(&p->common.mtx);
+}
+
+static inline void sk_promise_fail_char(sk_promise_char* p, void* err) {
+    pthread_mutex_lock(&p->common.mtx);
+    p->error = err;
+    atomic_store(&p->common.done, 1);
+    pthread_cond_broadcast(&p->common.cv);
+    pthread_mutex_unlock(&p->common.mtx);
+}
+
+static inline sk_char sk_promise_read_char(sk_promise_char* p) {
+    pthread_mutex_lock(&p->common.mtx);
+    sk_char v = p->value;
+    pthread_mutex_unlock(&p->common.mtx);
+    return v;
+}
+
+static inline sk_char sk_promise_await_char(sk_promise_char* p) {
+    pthread_mutex_lock(&p->common.mtx);
+    while (!atomic_load(&p->common.done)) {
+        pthread_cond_wait(&p->common.cv, &p->common.mtx);
+    }
+    if (p->error) {
+        void* err = p->error;
+        pthread_mutex_unlock(&p->common.mtx);
+        sk_throw(err, "<await>", 0, 0);
+    }
+    sk_char v = p->value;
+    pthread_mutex_unlock(&p->common.mtx);
+    return v;
+}
+
+static inline sk_bool sk_promise_ended_char(sk_promise_char* p) {
+    sk_bool r; r.value = atomic_load(&p->common.done) ? 1 : 0; r.__is_null = 0; return r;
+}
+
+static inline void sk_promise_release_char(sk_promise_char* p) {
+    if (!p) return;
+    atomic_fetch_sub(&p->common.owner_ref, 1);
+    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {
+        sk_promise_common_destroy(&p->common);
+        free(p);
+    }
+}
+
+typedef struct {
+    sk_promise_common common;
+    sk_float value;
+    void* error;
+} sk_promise_float;
+
+static inline sk_promise_float* sk_promise_new_float(void) {
+    sk_promise_float* p = malloc(sizeof(sk_promise_float));
+    atomic_store(&p->common.owner_ref, 1);
+    atomic_store(&p->common.task_ref, 1);
+    atomic_store(&p->common.done, 0);
+    pthread_mutex_init(&p->common.mtx, NULL);
+    pthread_cond_init(&p->common.cv, NULL);
+    p->value = SK_NULL_float;
+    p->error = NULL;
+    return p;
+}
+
+static inline void sk_promise_set_float(sk_promise_float* p, sk_float v) {
+    pthread_mutex_lock(&p->common.mtx);
+    p->value = v;
+    pthread_mutex_unlock(&p->common.mtx);
+}
+
+static inline void sk_promise_finish_float(sk_promise_float* p, sk_float v) {
+    pthread_mutex_lock(&p->common.mtx);
+    p->value = v;
+    atomic_store(&p->common.done, 1);
+    pthread_cond_broadcast(&p->common.cv);
+    pthread_mutex_unlock(&p->common.mtx);
+}
+
+static inline void sk_promise_fail_float(sk_promise_float* p, void* err) {
+    pthread_mutex_lock(&p->common.mtx);
+    p->error = err;
+    atomic_store(&p->common.done, 1);
+    pthread_cond_broadcast(&p->common.cv);
+    pthread_mutex_unlock(&p->common.mtx);
+}
+
+static inline sk_float sk_promise_read_float(sk_promise_float* p) {
+    pthread_mutex_lock(&p->common.mtx);
+    sk_float v = p->value;
+    pthread_mutex_unlock(&p->common.mtx);
+    return v;
+}
+
+static inline sk_float sk_promise_await_float(sk_promise_float* p) {
+    pthread_mutex_lock(&p->common.mtx);
+    while (!atomic_load(&p->common.done)) {
+        pthread_cond_wait(&p->common.cv, &p->common.mtx);
+    }
+    if (p->error) {
+        void* err = p->error;
+        pthread_mutex_unlock(&p->common.mtx);
+        sk_throw(err, "<await>", 0, 0);
+    }
+    sk_float v = p->value;
+    pthread_mutex_unlock(&p->common.mtx);
+    return v;
+}
+
+static inline sk_bool sk_promise_ended_float(sk_promise_float* p) {
+    sk_bool r; r.value = atomic_load(&p->common.done) ? 1 : 0; r.__is_null = 0; return r;
+}
+
+static inline void sk_promise_release_float(sk_promise_float* p) {
+    if (!p) return;
+    atomic_fetch_sub(&p->common.owner_ref, 1);
+    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {
+        sk_promise_common_destroy(&p->common);
+        free(p);
+    }
+}
+
+typedef struct {
+    sk_promise_common common;
+    sk_double value;
+    void* error;
+} sk_promise_double;
+
+static inline sk_promise_double* sk_promise_new_double(void) {
+    sk_promise_double* p = malloc(sizeof(sk_promise_double));
+    atomic_store(&p->common.owner_ref, 1);
+    atomic_store(&p->common.task_ref, 1);
+    atomic_store(&p->common.done, 0);
+    pthread_mutex_init(&p->common.mtx, NULL);
+    pthread_cond_init(&p->common.cv, NULL);
+    p->value = SK_NULL_double;
+    p->error = NULL;
+    return p;
+}
+
+static inline void sk_promise_set_double(sk_promise_double* p, sk_double v) {
+    pthread_mutex_lock(&p->common.mtx);
+    p->value = v;
+    pthread_mutex_unlock(&p->common.mtx);
+}
+
+static inline void sk_promise_finish_double(sk_promise_double* p, sk_double v) {
+    pthread_mutex_lock(&p->common.mtx);
+    p->value = v;
+    atomic_store(&p->common.done, 1);
+    pthread_cond_broadcast(&p->common.cv);
+    pthread_mutex_unlock(&p->common.mtx);
+}
+
+static inline void sk_promise_fail_double(sk_promise_double* p, void* err) {
+    pthread_mutex_lock(&p->common.mtx);
+    p->error = err;
+    atomic_store(&p->common.done, 1);
+    pthread_cond_broadcast(&p->common.cv);
+    pthread_mutex_unlock(&p->common.mtx);
+}
+
+static inline sk_double sk_promise_read_double(sk_promise_double* p) {
+    pthread_mutex_lock(&p->common.mtx);
+    sk_double v = p->value;
+    pthread_mutex_unlock(&p->common.mtx);
+    return v;
+}
+
+static inline sk_double sk_promise_await_double(sk_promise_double* p) {
+    pthread_mutex_lock(&p->common.mtx);
+    while (!atomic_load(&p->common.done)) {
+        pthread_cond_wait(&p->common.cv, &p->common.mtx);
+    }
+    if (p->error) {
+        void* err = p->error;
+        pthread_mutex_unlock(&p->common.mtx);
+        sk_throw(err, "<await>", 0, 0);
+    }
+    sk_double v = p->value;
+    pthread_mutex_unlock(&p->common.mtx);
+    return v;
+}
+
+static inline sk_bool sk_promise_ended_double(sk_promise_double* p) {
+    sk_bool r; r.value = atomic_load(&p->common.done) ? 1 : 0; r.__is_null = 0; return r;
+}
+
+static inline void sk_promise_release_double(sk_promise_double* p) {
+    if (!p) return;
+    atomic_fetch_sub(&p->common.owner_ref, 1);
+    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {
+        sk_promise_common_destroy(&p->common);
+        free(p);
+    }
+}
+
+typedef struct {
+    sk_promise_common common;
+    sk_bool value;
+    void* error;
+} sk_promise_bool;
+
+static inline sk_promise_bool* sk_promise_new_bool(void) {
+    sk_promise_bool* p = malloc(sizeof(sk_promise_bool));
+    atomic_store(&p->common.owner_ref, 1);
+    atomic_store(&p->common.task_ref, 1);
+    atomic_store(&p->common.done, 0);
+    pthread_mutex_init(&p->common.mtx, NULL);
+    pthread_cond_init(&p->common.cv, NULL);
+    p->value = SK_NULL_bool;
+    p->error = NULL;
+    return p;
+}
+
+static inline void sk_promise_set_bool(sk_promise_bool* p, sk_bool v) {
+    pthread_mutex_lock(&p->common.mtx);
+    p->value = v;
+    pthread_mutex_unlock(&p->common.mtx);
+}
+
+static inline void sk_promise_finish_bool(sk_promise_bool* p, sk_bool v) {
+    pthread_mutex_lock(&p->common.mtx);
+    p->value = v;
+    atomic_store(&p->common.done, 1);
+    pthread_cond_broadcast(&p->common.cv);
+    pthread_mutex_unlock(&p->common.mtx);
+}
+
+static inline void sk_promise_fail_bool(sk_promise_bool* p, void* err) {
+    pthread_mutex_lock(&p->common.mtx);
+    p->error = err;
+    atomic_store(&p->common.done, 1);
+    pthread_cond_broadcast(&p->common.cv);
+    pthread_mutex_unlock(&p->common.mtx);
+}
+
+static inline sk_bool sk_promise_read_bool(sk_promise_bool* p) {
+    pthread_mutex_lock(&p->common.mtx);
+    sk_bool v = p->value;
+    pthread_mutex_unlock(&p->common.mtx);
+    return v;
+}
+
+static inline sk_bool sk_promise_await_bool(sk_promise_bool* p) {
+    pthread_mutex_lock(&p->common.mtx);
+    while (!atomic_load(&p->common.done)) {
+        pthread_cond_wait(&p->common.cv, &p->common.mtx);
+    }
+    if (p->error) {
+        void* err = p->error;
+        pthread_mutex_unlock(&p->common.mtx);
+        sk_throw(err, "<await>", 0, 0);
+    }
+    sk_bool v = p->value;
+    pthread_mutex_unlock(&p->common.mtx);
+    return v;
+}
+
+static inline sk_bool sk_promise_ended_bool(sk_promise_bool* p) {
+    sk_bool r; r.value = atomic_load(&p->common.done) ? 1 : 0; r.__is_null = 0; return r;
+}
+
+static inline void sk_promise_release_bool(sk_promise_bool* p) {
+    if (!p) return;
+    atomic_fetch_sub(&p->common.owner_ref, 1);
+    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {
+        sk_promise_common_destroy(&p->common);
+        free(p);
+    }
+}
+
+typedef struct {
+    sk_promise_common common;
+    sk_string value;
+    void* error;
+} sk_promise_string;
+
+static inline sk_promise_string* sk_promise_new_string(void) {
+    sk_promise_string* p = malloc(sizeof(sk_promise_string));
+    atomic_store(&p->common.owner_ref, 1);
+    atomic_store(&p->common.task_ref, 1);
+    atomic_store(&p->common.done, 0);
+    pthread_mutex_init(&p->common.mtx, NULL);
+    pthread_cond_init(&p->common.cv, NULL);
+    p->value = SK_NULL_string;
+    p->error = NULL;
+    return p;
+}
+
+static inline void sk_promise_set_string(sk_promise_string* p, sk_string v) {
+    pthread_mutex_lock(&p->common.mtx);
+    p->value = v;
+    pthread_mutex_unlock(&p->common.mtx);
+}
+
+static inline void sk_promise_finish_string(sk_promise_string* p, sk_string v) {
+    pthread_mutex_lock(&p->common.mtx);
+    p->value = v;
+    atomic_store(&p->common.done, 1);
+    pthread_cond_broadcast(&p->common.cv);
+    pthread_mutex_unlock(&p->common.mtx);
+}
+
+static inline void sk_promise_fail_string(sk_promise_string* p, void* err) {
+    pthread_mutex_lock(&p->common.mtx);
+    p->error = err;
+    atomic_store(&p->common.done, 1);
+    pthread_cond_broadcast(&p->common.cv);
+    pthread_mutex_unlock(&p->common.mtx);
+}
+
+static inline sk_string sk_promise_read_string(sk_promise_string* p) {
+    pthread_mutex_lock(&p->common.mtx);
+    sk_string v = p->value;
+    pthread_mutex_unlock(&p->common.mtx);
+    return v;
+}
+
+static inline sk_string sk_promise_await_string(sk_promise_string* p) {
+    pthread_mutex_lock(&p->common.mtx);
+    while (!atomic_load(&p->common.done)) {
+        pthread_cond_wait(&p->common.cv, &p->common.mtx);
+    }
+    if (p->error) {
+        void* err = p->error;
+        pthread_mutex_unlock(&p->common.mtx);
+        sk_throw(err, "<await>", 0, 0);
+    }
+    sk_string v = p->value;
+    pthread_mutex_unlock(&p->common.mtx);
+    return v;
+}
+
+static inline sk_bool sk_promise_ended_string(sk_promise_string* p) {
+    sk_bool r; r.value = atomic_load(&p->common.done) ? 1 : 0; r.__is_null = 0; return r;
+}
+
+static inline void sk_promise_release_string(sk_promise_string* p) {
+    if (!p) return;
+    atomic_fetch_sub(&p->common.owner_ref, 1);
+    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {
+        sk_promise_common_destroy(&p->common);
+        free(p);
+    }
+}
+
+typedef struct {
+    sk_promise_common common;
+    sk_arr value;
+    void* error;
+} sk_promise_arr;
+
+static inline sk_promise_arr* sk_promise_new_arr(void) {
+    sk_promise_arr* p = malloc(sizeof(sk_promise_arr));
+    atomic_store(&p->common.owner_ref, 1);
+    atomic_store(&p->common.task_ref, 1);
+    atomic_store(&p->common.done, 0);
+    pthread_mutex_init(&p->common.mtx, NULL);
+    pthread_cond_init(&p->common.cv, NULL);
+    p->value = SK_NULL_arr;
+    p->error = NULL;
+    return p;
+}
+
+static inline void sk_promise_set_arr(sk_promise_arr* p, sk_arr v) {
+    pthread_mutex_lock(&p->common.mtx);
+    p->value = v;
+    pthread_mutex_unlock(&p->common.mtx);
+}
+
+static inline void sk_promise_finish_arr(sk_promise_arr* p, sk_arr v) {
+    pthread_mutex_lock(&p->common.mtx);
+    p->value = v;
+    atomic_store(&p->common.done, 1);
+    pthread_cond_broadcast(&p->common.cv);
+    pthread_mutex_unlock(&p->common.mtx);
+}
+
+static inline void sk_promise_fail_arr(sk_promise_arr* p, void* err) {
+    pthread_mutex_lock(&p->common.mtx);
+    p->error = err;
+    atomic_store(&p->common.done, 1);
+    pthread_cond_broadcast(&p->common.cv);
+    pthread_mutex_unlock(&p->common.mtx);
+}
+
+static inline sk_arr sk_promise_read_arr(sk_promise_arr* p) {
+    pthread_mutex_lock(&p->common.mtx);
+    sk_arr v = p->value;
+    pthread_mutex_unlock(&p->common.mtx);
+    return v;
+}
+
+static inline sk_arr sk_promise_await_arr(sk_promise_arr* p) {
+    pthread_mutex_lock(&p->common.mtx);
+    while (!atomic_load(&p->common.done)) {
+        pthread_cond_wait(&p->common.cv, &p->common.mtx);
+    }
+    if (p->error) {
+        void* err = p->error;
+        pthread_mutex_unlock(&p->common.mtx);
+        sk_throw(err, "<await>", 0, 0);
+    }
+    sk_arr v = p->value;
+    pthread_mutex_unlock(&p->common.mtx);
+    return v;
+}
+
+static inline sk_bool sk_promise_ended_arr(sk_promise_arr* p) {
+    sk_bool r; r.value = atomic_load(&p->common.done) ? 1 : 0; r.__is_null = 0; return r;
+}
+
+static inline void sk_promise_release_arr(sk_promise_arr* p) {
+    if (!p) return;
+    atomic_fetch_sub(&p->common.owner_ref, 1);
+    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {
+        sk_promise_common_destroy(&p->common);
+        free(p);
+    }
+}
+
+typedef struct {
+    sk_promise_common common;
+    sk_dict_ref value;
+    void* error;
+} sk_promise_dict;
+
+static inline sk_promise_dict* sk_promise_new_dict(void) {
+    sk_promise_dict* p = malloc(sizeof(sk_promise_dict));
+    atomic_store(&p->common.owner_ref, 1);
+    atomic_store(&p->common.task_ref, 1);
+    atomic_store(&p->common.done, 0);
+    pthread_mutex_init(&p->common.mtx, NULL);
+    pthread_cond_init(&p->common.cv, NULL);
+    p->value = SK_NULL_dict;
+    p->error = NULL;
+    return p;
+}
+
+static inline void sk_promise_set_dict(sk_promise_dict* p, sk_dict_ref v) {
+    pthread_mutex_lock(&p->common.mtx);
+    p->value = v;
+    pthread_mutex_unlock(&p->common.mtx);
+}
+
+static inline void sk_promise_finish_dict(sk_promise_dict* p, sk_dict_ref v) {
+    pthread_mutex_lock(&p->common.mtx);
+    p->value = v;
+    atomic_store(&p->common.done, 1);
+    pthread_cond_broadcast(&p->common.cv);
+    pthread_mutex_unlock(&p->common.mtx);
+}
+
+static inline void sk_promise_fail_dict(sk_promise_dict* p, void* err) {
+    pthread_mutex_lock(&p->common.mtx);
+    p->error = err;
+    atomic_store(&p->common.done, 1);
+    pthread_cond_broadcast(&p->common.cv);
+    pthread_mutex_unlock(&p->common.mtx);
+}
+
+static inline sk_dict_ref sk_promise_read_dict(sk_promise_dict* p) {
+    pthread_mutex_lock(&p->common.mtx);
+    sk_dict_ref v = p->value;
+    pthread_mutex_unlock(&p->common.mtx);
+    return v;
+}
+
+static inline sk_dict_ref sk_promise_await_dict(sk_promise_dict* p) {
+    pthread_mutex_lock(&p->common.mtx);
+    while (!atomic_load(&p->common.done)) {
+        pthread_cond_wait(&p->common.cv, &p->common.mtx);
+    }
+    if (p->error) {
+        void* err = p->error;
+        pthread_mutex_unlock(&p->common.mtx);
+        sk_throw(err, "<await>", 0, 0);
+    }
+    sk_dict_ref v = p->value;
+    pthread_mutex_unlock(&p->common.mtx);
+    return v;
+}
+
+static inline sk_bool sk_promise_ended_dict(sk_promise_dict* p) {
+    sk_bool r; r.value = atomic_load(&p->common.done) ? 1 : 0; r.__is_null = 0; return r;
+}
+
+static inline void sk_promise_release_dict(sk_promise_dict* p) {
+    if (!p) return;
+    atomic_fetch_sub(&p->common.owner_ref, 1);
+    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {
+        sk_promise_common_destroy(&p->common);
+        free(p);
+    }
+}
+
+typedef struct {
+    sk_promise_common common;
+    sk_any value;
+    void* error;
+} sk_promise_any;
+
+static inline sk_promise_any* sk_promise_new_any(void) {
+    sk_promise_any* p = malloc(sizeof(sk_promise_any));
+    atomic_store(&p->common.owner_ref, 1);
+    atomic_store(&p->common.task_ref, 1);
+    atomic_store(&p->common.done, 0);
+    pthread_mutex_init(&p->common.mtx, NULL);
+    pthread_cond_init(&p->common.cv, NULL);
+    p->value = any_null();
+    p->error = NULL;
+    return p;
+}
+
+static inline void sk_promise_set_any(sk_promise_any* p, sk_any v) {
+    pthread_mutex_lock(&p->common.mtx);
+    p->value = v;
+    pthread_mutex_unlock(&p->common.mtx);
+}
+
+static inline void sk_promise_finish_any(sk_promise_any* p, sk_any v) {
+    pthread_mutex_lock(&p->common.mtx);
+    p->value = v;
+    atomic_store(&p->common.done, 1);
+    pthread_cond_broadcast(&p->common.cv);
+    pthread_mutex_unlock(&p->common.mtx);
+}
+
+static inline void sk_promise_fail_any(sk_promise_any* p, void* err) {
+    pthread_mutex_lock(&p->common.mtx);
+    p->error = err;
+    atomic_store(&p->common.done, 1);
+    pthread_cond_broadcast(&p->common.cv);
+    pthread_mutex_unlock(&p->common.mtx);
+}
+
+static inline sk_any sk_promise_read_any(sk_promise_any* p) {
+    pthread_mutex_lock(&p->common.mtx);
+    sk_any v = p->value;
+    pthread_mutex_unlock(&p->common.mtx);
+    return v;
+}
+
+static inline sk_any sk_promise_await_any(sk_promise_any* p) {
+    pthread_mutex_lock(&p->common.mtx);
+    while (!atomic_load(&p->common.done)) {
+        pthread_cond_wait(&p->common.cv, &p->common.mtx);
+    }
+    if (p->error) {
+        void* err = p->error;
+        pthread_mutex_unlock(&p->common.mtx);
+        sk_throw(err, "<await>", 0, 0);
+    }
+    sk_any v = p->value;
+    pthread_mutex_unlock(&p->common.mtx);
+    return v;
+}
+
+static inline sk_bool sk_promise_ended_any(sk_promise_any* p) {
+    sk_bool r; r.value = atomic_load(&p->common.done) ? 1 : 0; r.__is_null = 0; return r;
+}
+
+static inline void sk_promise_release_any(sk_promise_any* p) {
+    if (!p) return;
+    atomic_fetch_sub(&p->common.owner_ref, 1);
+    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {
+        sk_promise_common_destroy(&p->common);
+        free(p);
+    }
+}
+
+
 // Generated from manifest.spc
 sk_dict_ref __sk__get_config(void) {
     sk_dict* d = sk_dict_new();
@@ -941,50 +1638,171 @@ sk_dict_ref __sk__get_config(void) {
 
 
 // Function prototypes
-void __sk__foo(sk_int a, sk_arr some);
-void __sk__print(sk_any line);
-void __sk__println(sk_any msg);
+void __sk__compute(sk_promise_int* __promise, sk_int x);
+void __sk__greet(sk_promise_string* __promise, sk_string name);
+sk_int __sk__fail_later(sk_int n);
 void __sk__std_io_send(sk_string line);
 sk_string __sk__std_io_input(sk_string prompt);
 void __sk__sendln(sk_any msg);
 void __sk__sendf(sk_any msg);
 sk_string __sk__input(sk_string prefix);
-sk_string __sk__getEnv(sk_string env);
-void __sk__setEnv(sk_string env, sk_string val);
-void __sk__setClearEnv(sk_string env, sk_string val, sk_bool confirm);
-sk_string __sk__getExePath(void);
-sk_arr __sk__getArgs(void);
-void __sk__exit(sk_int code, sk_string msg);
 
-void __sk__foo(sk_int a, sk_arr some) {
-    sk_any t1;
+typedef struct {
+    sk_promise_int* p;
+    sk_int arg0;  // x
+} __sk__async_ctx___sk__compute;
+
+void* __sk__async_runner___sk__compute(void* __arg) {
+    __sk__async_ctx___sk__compute* ctx = (__sk__async_ctx___sk__compute*)__arg;
+    sk_promise_int* p = ctx->p;
+
+    SkTryFrame frame;
+    sk_try_push(&frame);
+    if (setjmp(sk_try_stack->env) != 0) {
+        void* err = frame.error;
+        sk_try_pop(&frame);
+        sk_promise_fail_int(p, err);
+        free(ctx);
+        atomic_fetch_sub(&p->common.task_ref, 1);
+        if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {
+            sk_promise_common_destroy(&p->common);
+            free(p);
+        }
+        return NULL;
+    }
+
+    __sk__compute(p, ctx->arg0);
+
+    sk_try_pop(&frame);
+    free(ctx);
+    atomic_fetch_sub(&p->common.task_ref, 1);
+    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {
+        sk_promise_common_destroy(&p->common);
+        free(p);
+    }
+    return NULL;
+}
+
+typedef struct {
+    sk_promise_string* p;
+    sk_string arg0;  // name
+} __sk__async_ctx___sk__greet;
+
+void* __sk__async_runner___sk__greet(void* __arg) {
+    __sk__async_ctx___sk__greet* ctx = (__sk__async_ctx___sk__greet*)__arg;
+    sk_promise_string* p = ctx->p;
+
+    SkTryFrame frame;
+    sk_try_push(&frame);
+    if (setjmp(sk_try_stack->env) != 0) {
+        void* err = frame.error;
+        sk_try_pop(&frame);
+        sk_promise_fail_string(p, err);
+        free(ctx);
+        atomic_fetch_sub(&p->common.task_ref, 1);
+        if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {
+            sk_promise_common_destroy(&p->common);
+            free(p);
+        }
+        return NULL;
+    }
+
+    __sk__greet(p, ctx->arg0);
+
+    sk_try_pop(&frame);
+    free(ctx);
+    atomic_fetch_sub(&p->common.task_ref, 1);
+    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {
+        sk_promise_common_destroy(&p->common);
+        free(p);
+    }
+    return NULL;
+}
+
+void __sk__compute(sk_promise_int* __promise, sk_int x) {
+    sk_int acc;
+    sk_int i;
+    sk_bool t1;
     sk_int t2;
-    sk_any f;
     sk_int t3;
-    sk_bool t4;
+    sk_int t4;
 
-    t1 = any_int(a);
-    sk_call_push("main.sk", 5, 5);
-    __sk__println(t1);
-    sk_call_pop();
-    t2 = sk_int_new(0);
+    sk_promise_set_int(__promise, sk_int_new(0));
+    acc = sk_int_new(0);
+    i = sk_int_new(0);
 L1:
-    t3 = sk_int_new(sk_array_len(some.value));
-    t4 = sk_int_lt(t2, t3);
-    if (t4.value) {
+    t1 = sk_int_lt(i, x);
+    if (t1.value) {
         goto L2;
     } else {
         goto L3;
     }
 L2:
-    f = *(sk_any*)sk_array_get(some.value, t2.value);
-    sk_call_push("main.sk", 7, 9);
-    __sk__println(f);
-    sk_call_pop();
-    t2 = sk_int_add(t2, sk_int_new(1));
+    t2 = sk_int_add(acc, i);
+    acc = t2;
+    t3 = sk_int_add(i, sk_int_new(1));
+    i = t3;
     goto L1;
 L3:
+    t4 = sk_int_mul(acc, sk_int_new(2));
+    sk_promise_finish_int(__promise, t4);
     return;
+    return;
+    return;
+}
+
+void __sk__greet(sk_promise_string* __promise, sk_string name) {
+    sk_string result;
+    sk_string t5;
+    sk_string t6;
+
+    sk_promise_set_string(__promise, sk_string_new("..."));
+    t5 = sk_string_concat(sk_string_new("Hello, "), name);
+    t6 = sk_string_concat(t5, sk_string_new("!"));
+    free(t5.value);
+    result = t6;
+    sk_promise_finish_string(__promise, result);
+    return;
+    return;
+    return;
+}
+
+sk_int __sk__fail_later(sk_int n) {
+    sk_bool t7;
+    sk_promise_string* t8;
+    sk_string t9;
+    sk_string t10;
+    sk_any t11;
+    sk_int t12;
+
+    t7 = sk_int_lt(n, sk_int_new(0));
+    if (t7.value) {
+        goto L4;
+    } else {
+        goto L5;
+    }
+L4:
+    t8 = sk_promise_new_string();
+    __sk__async_ctx___sk__greet* __ctx_t8 = malloc(sizeof(__sk__async_ctx___sk__greet));
+    __ctx_t8->p = t8;
+    __ctx_t8->arg0 = sk_string_new("hi");
+    pthread_t __tid_t8;
+    pthread_create(&__tid_t8, NULL, __sk__async_runner___sk__greet, __ctx_t8);
+    pthread_detach(__tid_t8);
+    t9 = sk_promise_read_string(t8);
+    sk_promise_release_string(t8);
+    t10 = sk_string_new(t9.value);
+    t11 = any_string(t10);
+    free(t10.value);
+    sk_call_push("main.sk", 22, 9);
+    __sk__sendln(t11);
+    sk_call_pop();
+    goto L6;
+L5:
+L6:
+    t12 = sk_int_mul(n, n);
+    return t12;
+    return t12;
 }
 
 int main(int argc, char** argv) {
@@ -999,54 +1817,161 @@ int main(int argc, char** argv) {
     }
     sk_arr args = sk_arr_new(args__arr);
 
-    sk_int i;
-    sk_int t5;
-    sk_int t6;
-    sk_int t7;
-    sk_int t8;
-    sk_int t9;
-    sk_int t10;
-    sk_string s;
-    sk_string t11;
-    sk_string t12;
-    sk_string t13;
+    sk_int a;
+    sk_promise_int* t13;
+    sk_int t14;
+    sk_string t15;
+    sk_string t16;
+    sk_any t17;
+    sk_promise_int* t18;
+    sk_promise_int* b__p;
+    sk_bool t19;
+    sk_any t20;
+    sk_int b_final;
+    sk_int t21;
+    sk_string t22;
+    sk_string t23;
+    sk_any t24;
+    sk_string g;
+    sk_promise_string* t25;
+    sk_string t26;
+    sk_any t27;
+    sk_promise_int* t28;
+    sk_promise_int* p1__p;
+    sk_promise_int* t29;
+    sk_promise_int* p2__p;
+    sk_int r1;
+    sk_int t30;
+    sk_int r2;
+    sk_int t31;
+    sk_string t32;
+    sk_string t33;
+    sk_string t34;
+    sk_string t35;
+    sk_string t36;
+    sk_any t37;
+    sk_bool t38;
+    sk_any t39;
 
-    i = sk_int_new(0);
-    t5 = sk_int_add(i, sk_int_new(1));
-    i = t5;
-    t6 = sk_int_sub(i, sk_int_new(2));
-    i = t6;
-    t7 = sk_int_mul(i, sk_int_new(3));
-    i = t7;
-    t8 = sk_int_div(i, sk_int_new(2));
-    i = t8;
-    t9 = sk_int_mod(i, sk_int_new(2));
-    i = t9;
-    t10 = sk_int_pow(i, sk_int_new(2));
-    i = t10;
-    s = sk_string_new("hello");
-    t11 = sk_string_concat(s, sk_string_new(" world"));
-    s = t11;
-    t12 = sk_char_to_string(sk_char_new(33));
-    t13 = sk_string_concat(s, t12);
-    free(t12.value);
-    s = t13;
-    free(s.value);
+    t13 = sk_promise_new_int();
+    __sk__async_ctx___sk__compute* __ctx_t13 = malloc(sizeof(__sk__async_ctx___sk__compute));
+    __ctx_t13->p = t13;
+    __ctx_t13->arg0 = sk_int_new(5);
+    pthread_t __tid_t13;
+    pthread_create(&__tid_t13, NULL, __sk__async_runner___sk__compute, __ctx_t13);
+    pthread_detach(__tid_t13);
+    t14 = sk_promise_await_int(t13);
+    sk_promise_release_int(t13);
+    a = t14;
+    t15 = sk_int_to_string(a);
+    t16 = sk_string_concat(sk_string_new("compute(5) = "), t15);
+    free(t15.value);
+    t17 = any_string(t16);
+    free(t16.value);
+    sk_call_push("main.sk", 30, 5);
+    __sk__sendln(t17);
+    sk_call_pop();
+    t18 = sk_promise_new_int();
+    __sk__async_ctx___sk__compute* __ctx_t18 = malloc(sizeof(__sk__async_ctx___sk__compute));
+    __ctx_t18->p = t18;
+    __ctx_t18->arg0 = sk_int_new(10);
+    pthread_t __tid_t18;
+    pthread_create(&__tid_t18, NULL, __sk__async_runner___sk__compute, __ctx_t18);
+    pthread_detach(__tid_t18);
+    b__p = t18;
+    t19 = sk_promise_ended_int(b__p);
+    if (t19.value) {
+        goto L7;
+    } else {
+        goto L8;
+    }
+L7:
+    t20 = any_string(sk_string_new("still running (impossible)"));
+    sk_call_push("main.sk", 35, 9);
+    __sk__sendln(t20);
+    sk_call_pop();
+    goto L9;
+L8:
+L9:
+    t21 = sk_promise_await_int(b__p);
+    b_final = t21;
+    t22 = sk_int_to_string(b_final);
+    t23 = sk_string_concat(sk_string_new("compute(10) = "), t22);
+    t24 = any_string(t23);
+    sk_call_push("main.sk", 38, 5);
+    __sk__sendln(t24);
+    sk_call_pop();
+    t25 = sk_promise_new_string();
+    __sk__async_ctx___sk__greet* __ctx_t25 = malloc(sizeof(__sk__async_ctx___sk__greet));
+    __ctx_t25->p = t25;
+    __ctx_t25->arg0 = sk_string_new("Skorpion");
+    pthread_t __tid_t25;
+    pthread_create(&__tid_t25, NULL, __sk__async_runner___sk__greet, __ctx_t25);
+    pthread_detach(__tid_t25);
+    t26 = sk_promise_await_string(t25);
+    g = t26;
+    t27 = any_string(g);
+    sk_call_push("main.sk", 42, 5);
+    __sk__sendln(t27);
+    sk_call_pop();
+    sk_call_push("main.sk", 44, 5);
+    __sk__fail_later(sk_int_new(-5));
+    sk_call_pop();
+    t28 = sk_promise_new_int();
+    __sk__async_ctx___sk__compute* __ctx_t28 = malloc(sizeof(__sk__async_ctx___sk__compute));
+    __ctx_t28->p = t28;
+    __ctx_t28->arg0 = sk_int_new(3);
+    pthread_t __tid_t28;
+    pthread_create(&__tid_t28, NULL, __sk__async_runner___sk__compute, __ctx_t28);
+    pthread_detach(__tid_t28);
+    p1__p = t28;
+    t29 = sk_promise_new_int();
+    __sk__async_ctx___sk__compute* __ctx_t29 = malloc(sizeof(__sk__async_ctx___sk__compute));
+    __ctx_t29->p = t29;
+    __ctx_t29->arg0 = sk_int_new(4);
+    pthread_t __tid_t29;
+    pthread_create(&__tid_t29, NULL, __sk__async_runner___sk__compute, __ctx_t29);
+    pthread_detach(__tid_t29);
+    p2__p = t29;
+    t30 = sk_promise_await_int(p1__p);
+    r1 = t30;
+    t31 = sk_promise_await_int(p2__p);
+    r2 = t31;
+    t32 = sk_int_to_string(r1);
+    t33 = sk_string_concat(sk_string_new("p1="), t32);
+    t34 = sk_string_concat(t33, sk_string_new(" p2="));
+    t35 = sk_int_to_string(r2);
+    t36 = sk_string_concat(t34, t35);
+    t37 = any_string(t36);
+    sk_call_push("main.sk", 51, 5);
+    __sk__sendln(t37);
+    sk_call_pop();
+    t38 = sk_promise_ended_int(p2__p);
+    if (t38.value) {
+        goto L10;
+    } else {
+        goto L11;
+    }
+L10:
+    t39 = any_string(sk_string_new("compute ended"));
+    sk_call_push("main.sk", 55, 9);
+    __sk__sendln(t39);
+    sk_call_pop();
+    goto L12;
+L11:
+    free(t36.value);
+    free(t35.value);
+    free(t34.value);
+    free(t33.value);
+    free(t32.value);
+    sk_promise_release_int(p2__p);
+    sk_promise_release_int(p1__p);
+    sk_promise_release_string(t25);
+    free(t23.value);
+    free(t22.value);
+    sk_promise_release_int(b__p);
+L12:
     return 0;
-}
-
-void __sk__print(sk_any line) {
-    sk_call_push("lib.sk", 4, 5);
-    __sk__sendln(line);
-    sk_call_pop();
-    return;
-}
-
-void __sk__println(sk_any msg) {
-    sk_call_push("lib.sk", 8, 5);
-    __sk__print(msg);
-    sk_call_pop();
-    return;
 }
 
 void __sk__std_io_send(sk_string line) {
@@ -1055,6 +1980,7 @@ void __sk__std_io_send(sk_string line) {
             } else {
                 printf("%s", line.value);
             }
+            fflush(stdout);
     return;
 }
 
@@ -1071,110 +1997,41 @@ sk_string __sk__std_io_input(sk_string prompt) {
             return sk_string_new(buffer);
     prompt = sk_string_new("");
     return sk_string_new("");
+    return sk_string_new("");
 }
 
 void __sk__sendln(sk_any msg) {
-    sk_string t14;
-    sk_string t15;
+    sk_string t40;
+    sk_string t41;
 
-    t14 = any_to_string(msg);
-    t15 = sk_string_concat(t14, sk_string_new("\n"));
-    free(t14.value);
-    sk_call_push("<builtin:std/io>", 36, 5);
-    __sk__std_io_send(t15);
+    t40 = any_to_string(msg);
+    t41 = sk_string_concat(t40, sk_string_new("\n"));
+    free(t40.value);
+    sk_call_push("<builtin:std/io>", 37, 5);
+    __sk__std_io_send(t41);
     sk_call_pop();
-    free(t15.value);
+    free(t41.value);
     return;
 }
 
 void __sk__sendf(sk_any msg) {
-    sk_string t16;
+    sk_string t42;
 
-    t16 = any_to_string(msg);
-    sk_call_push("<builtin:std/io>", 40, 5);
-    __sk__std_io_send(t16);
+    t42 = any_to_string(msg);
+    sk_call_push("<builtin:std/io>", 41, 5);
+    __sk__std_io_send(t42);
     sk_call_pop();
-    free(t16.value);
+    free(t42.value);
     return;
 }
 
 sk_string __sk__input(sk_string prefix) {
-    sk_string t17;
+    sk_string t43;
 
-    sk_call_push("<builtin:std/io>", 44, 12);
-    t17 = __sk__std_io_input(prefix);
+    sk_call_push("<builtin:std/io>", 45, 12);
+    t43 = __sk__std_io_input(prefix);
     sk_call_pop();
-    return t17;
-}
-
-sk_string __sk__getEnv(sk_string env) {
-    if (env.__is_null) return sk_string_new("");
-        char* val = getenv(env.value);
-        return sk_string_new(val ? val : "");
-    return sk_string_new("");
-}
-
-void __sk__setEnv(sk_string env, sk_string val) {
-    if (env.__is_null || val.__is_null) return;
-        #if defined(_WIN32)
-            if (getenv(env.value) == NULL) {
-                _putenv_s(env.value, val.value);
-            }
-        #elif defined(__linux__)
-            setenv(env.value, val.value, 0);
-        #endif
-    return;
-}
-
-void __sk__setClearEnv(sk_string env, sk_string val, sk_bool confirm) {
-    sk_bool t18;
-
-    t18 = sk_bool_not(confirm);
-    if (t18.value) {
-        goto L4;
-    } else {
-        goto L5;
-    }
-L4:
-    return;
-    goto L6;
-L5:
-L6:
-    if (env.__is_null || val.__is_null) return;
-        #if defined(_WIN32)
-            _putenv_s(env.value, val.value);
-        #elif defined(__linux__)
-            setenv(env.value, val.value, 1);
-        #endif
-    return;
-}
-
-sk_string __sk__getExePath(void) {
-    if (__sk__argc > 0 && __sk__argv[0]) {
-                return sk_string_new(__sk__argv[0]);
-            }
-            return sk_string_new("");
-    return sk_string_new("");
-}
-
-sk_arr __sk__getArgs(void) {
-    sk_arr t19;
-
-    sk_array* arr = sk_array_new(sizeof(sk_string), 1);
-            for (int i = 0; i < __sk__argc; i++) {
-                sk_string s = sk_string_new(__sk__argv[i]);
-                sk_array_push(arr, &s);
-            }
-            return sk_arr_new(arr);
-    t19 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t19;
-}
-
-void __sk__exit(sk_int code, sk_string msg) {
-    if (msg.value != NULL && msg.value[0] != '\0') {
-          fprintf(stderr, "%s\n", msg.value);
-        }
-        exit(code.value);
-    return;
+    return t43;
+    return t43;
 }
 

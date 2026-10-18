@@ -825,6 +825,107 @@ var ErrorCodes = map[string]ErrorCode{
 		Tip:         "Use: do { ... } while (cond)",
 		Example:     "// Wrong:\ndo {\n  f()\n}\n\n// Right:\ndo {\n  f()\n} while (x > 0)",
 	},
+	"0660": {
+		Code:        "0660",
+		Message:     "Expected '[' after 'Promise'",
+		Description: "The 'Promise' keyword must be followed by '[' and a literal value.",
+		Tip:         "Use: 'Promise[0]', 'Promise[\"\"]', 'Promise[null]'.",
+		Example:     "// Wrong:\nPromise 0\n\n// Right:\nPromise[0]",
+	},
+	"0661": {
+		Code:        "0661",
+		Message:     "Expected ']' after Promise value",
+		Description: "The Promise[...] construct was not closed with ']'.",
+		Tip:         "Add ']' after the literal.",
+		Example:     "// Wrong:\nPromise[0\n\n// Right:\nPromise[0]",
+	},
+	"0662": {
+		Code:        "0662",
+		Message:     "'Promise[...]' can only be used inside an async function",
+		Description: "The Promise[...] construct is only valid inside a function declared with 'async'.",
+		Tip:         "Add 'async' to the function declaration, or remove 'Promise[...]'.",
+		Example:     "// Wrong:\nint f() {\n  Promise[0]\n  return 1\n}\n\n// Right:\nasync int *f() {\n  Promise[0]\n  return 1\n}",
+	},
+	"0663": {
+		Code:        "0663",
+		Message:     "'await' requires a function call or a promise variable",
+		Description: "'await' can only be applied to an async function call or a variable that holds a promise.",
+		Tip:         "Use 'await asyncFunc(...)' or 'await someVariable' where 'someVariable' was initialized from an async call.",
+		Example:     "// Wrong:\nawait 5\n\n// Right:\nint x = await compute(5)\nint y = await x",
+	},
+	"0664": {
+		Code:        "0664",
+		Message:     "Not an async function",
+		Description: "The function referenced here is not declared with 'async'.",
+		Tip:         "Add 'async' to the function declaration, or remove 'await'/'isAsyncEnded'.",
+	},
+	"0665": {
+		Code:        "0665",
+		Message:     "async function cannot return 'void'",
+		Description: "An async function must have a concrete return type — its Promise must hold a value.",
+		Tip:         "Change the return type to a concrete type: 'async int *f()', 'async string *g()', etc.",
+		Example:     "// Wrong:\nasync void *f() { }\n\n// Right:\nasync int *f() { return 0 }",
+	},
+	"0666": {
+		Code:        "0666",
+		Message:     "isAsyncEnded requires exactly one argument",
+		Description: "The builtin 'isAsyncEnded' takes exactly one argument — the async function name as a string literal.",
+		Tip:         "Use: 'isAsyncEnded(\"funcName\")'.",
+		Example:     "// Wrong:\nisAsyncEnded()\nisAsyncEnded(\"a\", \"b\")\n\n// Right:\nisAsyncEnded(\"compute\")",
+	},
+	"0667": {
+		Code:        "0667",
+		Message:     "isAsyncEnded argument must be a string literal",
+		Description: "The argument to 'isAsyncEnded' must be a string literal with the async function name — not a variable or expression.",
+		Tip:         "Use: 'isAsyncEnded(\"funcName\")'.",
+		Example:     "// Wrong:\nstring name = \"compute\"\nisAsyncEnded(name)\n\n// Right:\nisAsyncEnded(\"compute\")",
+	},
+	"0668": {
+		Code:        "0668",
+		Message:     "No async call found in scope",
+		Description: "isAsyncEnded(...) could not find a variable in the current scope that holds a promise from the given async function. This happens when the async call was never assigned to a variable (e.g. only 'await f()' without 'int x = f()').",
+		Tip:         "Assign the async call to a variable first: 'int x = f(...)', then use 'isAsyncEnded(\"f\")'.",
+		Example:     "// Wrong:\nawait compute(5)\nif (isAsyncEnded(\"compute\")) { ... }\n\n// Right:\nint p = compute(5)\nif (isAsyncEnded(\"compute\")) { ... }",
+	},
+	"0669": {
+		Code:        "0669",
+		Message:     "Promise[...] value type mismatch",
+		Description: "The type of the value inside Promise[...] does not match the async function's return type.",
+		Tip:         "Use a value of the same type as the function's return type.",
+		Example:     "// Wrong:\nasync int *f() {\n  Promise[\"hi\"]  // string, not int\n  return 0\n}\n\n// Right:\nasync int *f() {\n  Promise[0]\n  return 0\n}",
+	},
+	"0670": {
+		Code:        "0670",
+		Message:     "'Promise[...]' must be the first statement in an async function",
+		Description: "In the current async model, Promise[...] can only appear as the very first statement of the function body — it declares the starting value of the promise. Intermediate writes are not supported.",
+		Tip:         "Move 'Promise[...]' to the top of the function, right after '{'.",
+		Example:     "// Wrong:\nasync int *f() {\n  int x = 1\n  Promise[0]\n  return x\n}\n\n// Right:\nasync int *f() {\n  Promise[0]\n  int x = 1\n  return x\n}",
+	},
+	"0671": {
+		Code:        "0671",
+		Message:     "Promise[...] requires a literal",
+		Description: "The value inside Promise[...] must be a literal — number, string, char, true, false, or null. Expressions, variables, and function calls are not allowed.",
+		Tip:         "Use a literal: 'Promise[0]', 'Promise[\"\"]', 'Promise[null]'.",
+		Example:     "// Wrong:\nint x = 5\nPromise[x]\n\n// Right:\nPromise[0]",
+	},
+	"0672": {
+		Code:        "0672",
+		Message:     "async function must declare Promise[...]",
+		Description: "Every async function must start with Promise[...] to declare its starting value. (Only if this rule is enabled.)",
+		Tip:         "Add 'Promise[<literal>]' as the first statement.",
+	},
+	"0674": {
+		Code:        "0674",
+		Message:     "Cannot assign to promise variable",
+		Description: "Promise variables are read-only from the outside. Only the async function writes to the Promise.",
+		Tip:         "Don't assign to it; read it or await it instead.",
+	},
+	"0675": {
+		Code:        "0675",
+		Message:     "async function must have exactly one Promise[...]",
+		Description: "Each async function must declare its starting value with exactly one Promise[...] as its first statement.",
+		Tip:         "Add exactly one 'Promise[<literal>]' at the top of the function.",
+	},
 
 	// ============================================================================
 	// 1500-1599: Semantic errors
@@ -1269,6 +1370,13 @@ var ErrorCodes = map[string]ErrorCode{
 		Tip: "If you know the parameters are used inside the includeC block — ignore this warning. " +
 			"Otherwise remove unused parameters or use them in Skorpion code.",
 	},
+	"2005": {
+		Code:        "2005",
+		Message:     "'async' is useless",
+		Description: "The async function has no dynamic operations (no 'await', no async calls, no 'throw', no 'try', no 'includeC'). Its body runs synchronously, so async adds only overhead.",
+		Tip:         "Remove 'async' from the function declaration, or add dynamic operations (await/throw/try) to justify async.",
+		Example:     "// Warn+2005:\nasync int *f(int x) {\n  return x * 2\n}\n\n// OK (has await):\nasync int *f(int x) {\n  int y = await g(x)\n  return y * 2\n}",
+	},
 
 	// ============================================================================
 	// 2500-2599: Backend / Codegen
@@ -1278,6 +1386,15 @@ var ErrorCodes = map[string]ErrorCode{
 		Message:     "IR generation error",
 		Description: "Failed to generate intermediate representation.",
 		Tip:         "This is an internal error. Please report it.",
+	},
+	"2501": {
+		Code:    "2500",
+		Message: "IR generation error",
+		Description: "An internal error occurred during IR generation. " +
+			"The compiler could not determine the type of an expression — " +
+			"this is a compiler bug, not a user error.",
+		Tip: "Please report this with the full output. " +
+			"Include the Skorpion source and the line/column from the error.",
 	},
 
 	// ============================================================================

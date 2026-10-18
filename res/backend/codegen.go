@@ -15,7 +15,7 @@ type CodeGenerator struct {
 func NewCodeGenerator(ir *IRProgram) *CodeGenerator {
 	cg := &CodeGenerator{
 		IR:       ir,
-		Includes: []string{"<stdio.h>", "<stdlib.h>", "<string.h>", "<setjmp.h>", "<math.h>", "<limits.h>", "<ctype.h>"},
+		Includes: []string{"<stdio.h>", "<stdlib.h>", "<string.h>", "<setjmp.h>", "<math.h>", "<limits.h>", "<ctype.h>", "<pthread.h>", "<stdatomic.h>"},
 	}
 	return cg
 }
@@ -132,8 +132,8 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("sk_string sk_array_to_string(sk_array* a);")
 	cg.writeLine("void sk_array_deep_free(sk_array* a);")
 	cg.writeLine("sk_string sk_string_concat(sk_string a, sk_string b);")
-	cg.writeLine("sk_bool sk_bool_eq(sk_bool a, sk_bool b);") // <-- добавить
-	cg.writeLine("sk_bool sk_bool_ne(sk_bool a, sk_bool b);") // <-- добавить
+	cg.writeLine("sk_bool sk_bool_eq(sk_bool a, sk_bool b);")
+	cg.writeLine("sk_bool sk_bool_ne(sk_bool a, sk_bool b);")
 	cg.writeLine("unsigned int __sk__utf8__decode(const char *s, int *len);")
 	cg.writeLine("")
 
@@ -906,27 +906,25 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("")
 
 	// ===== Error types =====
-	if len(cg.IR.ErrorDecls) > 0 {
-		cg.writeLine("typedef struct SkError {")
-		cg.writeLine("    const char* __type;")
-		cg.writeLine("    sk_string msg;")
-		cg.writeLine("} SkError;")
-		cg.writeLine("")
+	cg.writeLine("typedef struct SkError {")
+	cg.writeLine("    const char* __type;")
+	cg.writeLine("    sk_string msg;")
+	cg.writeLine("} SkError;")
+	cg.writeLine("")
 
-		for _, decl := range cg.IR.ErrorDecls {
-			if decl.Name == "Error" {
-				continue
-			}
-			cg.writeLine(fmt.Sprintf("typedef struct %s {", decl.Name))
-			cg.writeLine("    const char* __type;")
-			fields := cg.collectErrorFields(decl)
-			for _, field := range fields {
-				cType := cg.typeToC(field.Type)
-				cg.writeLine(fmt.Sprintf("    %s %s;", cType, field.Name))
-			}
-			cg.writeLine(fmt.Sprintf("} %s;", decl.Name))
-			cg.writeLine("")
+	for _, decl := range cg.IR.ErrorDecls {
+		if decl.Name == "Error" {
+			continue
 		}
+		cg.writeLine(fmt.Sprintf("typedef struct %s {", decl.Name))
+		cg.writeLine("    const char* __type;")
+		fields := cg.collectErrorFields(decl)
+		for _, field := range fields {
+			cType := cg.typeToC(field.Type)
+			cg.writeLine(fmt.Sprintf("    %s %s;", cType, field.Name))
+		}
+		cg.writeLine(fmt.Sprintf("} %s;", decl.Name))
+		cg.writeLine("")
 	}
 
 	// ===== try / throw runtime =====
@@ -1031,6 +1029,8 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("}")
 	cg.writeLine("")
 
+	cg.generateAsyncRuntime()
+
 	// ===== Inline C =====
 	if cg.IR.InlineC != "" {
 		cg.writeLine("// Inline C code")
@@ -1049,8 +1049,19 @@ func (cg *CodeGenerator) Generate() string {
 		if fn.Name == "main" {
 			continue
 		}
-		returnType := cg.typeToC(fn.ReturnType)
+
+		var returnType string
+		if fn.IsAsync {
+			returnType = "void"
+		} else {
+			returnType = cg.typeToC(fn.ReturnType)
+		}
+
 		params := []string{}
+		if fn.IsAsync {
+			params = append(params, fmt.Sprintf("sk_promise_%s* __promise",
+				cg.promiseSuffix(fn.ReturnType)))
+		}
 		for _, p := range fn.Params {
 			params = append(params, fmt.Sprintf("%s %s", cg.typeToC(p.Type), p.Name))
 		}
@@ -1075,6 +1086,8 @@ func (cg *CodeGenerator) Generate() string {
 		cg.writeLine("")
 	}
 
+	cg.generateAsyncWrappers()
+
 	// ===== Functions =====
 	for _, fn := range cg.IR.Functions {
 		cg.generateFunction(&fn)
@@ -1083,28 +1096,155 @@ func (cg *CodeGenerator) Generate() string {
 	return cg.CSource.String()
 }
 
+func (cg *CodeGenerator) generateAsyncRuntime() {
+	cg.writeLine("// ==== Async / Promise runtime ====")
+	cg.writeLine("typedef struct {")
+	cg.writeLine("    _Atomic int owner_ref;")
+	cg.writeLine("    _Atomic int task_ref;")
+	cg.writeLine("    _Atomic int done;")
+	cg.writeLine("    pthread_mutex_t mtx;")
+	cg.writeLine("    pthread_cond_t cv;")
+	cg.writeLine("} sk_promise_common;")
+	cg.writeLine("")
+	cg.writeLine("static inline void sk_promise_common_destroy(sk_promise_common* c) {")
+	cg.writeLine("    pthread_mutex_destroy(&c->mtx);")
+	cg.writeLine("    pthread_cond_destroy(&c->cv);")
+	cg.writeLine("}")
+	cg.writeLine("")
+
+	types := []string{"int", "char", "float", "double", "bool", "string", "arr", "dict", "any"}
+	for _, t := range types {
+		// C-тип значения Promise = C-тип переменной Skorpion этого типа.
+		// dict → sk_dict_ref (обёртка), any → sk_any, остальные → sk_<t>.
+		var ctype string
+		switch t {
+		case "dict":
+			ctype = "sk_dict_ref"
+		case "any":
+			ctype = "sk_any"
+		default:
+			ctype = "sk_" + t
+		}
+
+		cg.writeLine(fmt.Sprintf("typedef struct {"))
+		cg.writeLine(fmt.Sprintf("    sk_promise_common common;"))
+		cg.writeLine(fmt.Sprintf("    %s value;", ctype))
+		cg.writeLine(fmt.Sprintf("    void* error;"))
+		cg.writeLine(fmt.Sprintf("} sk_promise_%s;", t))
+		cg.writeLine("")
+
+		cg.writeLine(fmt.Sprintf("static inline sk_promise_%s* sk_promise_new_%s(void) {", t, t))
+		cg.writeLine(fmt.Sprintf("    sk_promise_%s* p = malloc(sizeof(sk_promise_%s));", t, t))
+		cg.writeLine("    atomic_store(&p->common.owner_ref, 1);")
+		cg.writeLine("    atomic_store(&p->common.task_ref, 1);")
+		cg.writeLine("    atomic_store(&p->common.done, 0);")
+		cg.writeLine("    pthread_mutex_init(&p->common.mtx, NULL);")
+		cg.writeLine("    pthread_cond_init(&p->common.cv, NULL);")
+		if t == "any" {
+			cg.writeLine("    p->value = any_null();")
+		} else {
+			cg.writeLine(fmt.Sprintf("    p->value = SK_NULL_%s;", t))
+		}
+		cg.writeLine("    p->error = NULL;")
+		cg.writeLine("    return p;")
+		cg.writeLine("}")
+		cg.writeLine("")
+
+		cg.writeLine(fmt.Sprintf("static inline void sk_promise_set_%s(sk_promise_%s* p, %s v) {", t, t, ctype))
+		cg.writeLine("    pthread_mutex_lock(&p->common.mtx);")
+		cg.writeLine("    p->value = v;")
+		cg.writeLine("    pthread_mutex_unlock(&p->common.mtx);")
+		cg.writeLine("}")
+		cg.writeLine("")
+
+		cg.writeLine(fmt.Sprintf("static inline void sk_promise_finish_%s(sk_promise_%s* p, %s v) {", t, t, ctype))
+		cg.writeLine("    pthread_mutex_lock(&p->common.mtx);")
+		cg.writeLine("    p->value = v;")
+		cg.writeLine("    atomic_store(&p->common.done, 1);")
+		cg.writeLine("    pthread_cond_broadcast(&p->common.cv);")
+		cg.writeLine("    pthread_mutex_unlock(&p->common.mtx);")
+		cg.writeLine("}")
+		cg.writeLine("")
+
+		cg.writeLine(fmt.Sprintf("static inline void sk_promise_fail_%s(sk_promise_%s* p, void* err) {", t, t))
+		cg.writeLine("    pthread_mutex_lock(&p->common.mtx);")
+		cg.writeLine("    p->error = err;")
+		cg.writeLine("    atomic_store(&p->common.done, 1);")
+		cg.writeLine("    pthread_cond_broadcast(&p->common.cv);")
+		cg.writeLine("    pthread_mutex_unlock(&p->common.mtx);")
+		cg.writeLine("}")
+		cg.writeLine("")
+
+		cg.writeLine(fmt.Sprintf("static inline %s sk_promise_read_%s(sk_promise_%s* p) {", ctype, t, t))
+		cg.writeLine("    pthread_mutex_lock(&p->common.mtx);")
+		cg.writeLine(fmt.Sprintf("    %s v = p->value;", ctype))
+		cg.writeLine("    pthread_mutex_unlock(&p->common.mtx);")
+		cg.writeLine("    return v;")
+		cg.writeLine("}")
+		cg.writeLine("")
+
+		cg.writeLine(fmt.Sprintf("static inline %s sk_promise_await_%s(sk_promise_%s* p) {", ctype, t, t))
+		cg.writeLine("    pthread_mutex_lock(&p->common.mtx);")
+		cg.writeLine("    while (!atomic_load(&p->common.done)) {")
+		cg.writeLine("        pthread_cond_wait(&p->common.cv, &p->common.mtx);")
+		cg.writeLine("    }")
+		cg.writeLine("    if (p->error) {")
+		cg.writeLine("        void* err = p->error;")
+		cg.writeLine("        pthread_mutex_unlock(&p->common.mtx);")
+		cg.writeLine("        sk_throw(err, \"<await>\", 0, 0);")
+		cg.writeLine("    }")
+		cg.writeLine(fmt.Sprintf("    %s v = p->value;", ctype))
+		cg.writeLine("    pthread_mutex_unlock(&p->common.mtx);")
+		cg.writeLine("    return v;")
+		cg.writeLine("}")
+		cg.writeLine("")
+
+		cg.writeLine(fmt.Sprintf("static inline sk_bool sk_promise_ended_%s(sk_promise_%s* p) {", t, t))
+		cg.writeLine("    sk_bool r; r.value = atomic_load(&p->common.done) ? 1 : 0; r.__is_null = 0; return r;")
+		cg.writeLine("}")
+		cg.writeLine("")
+
+		cg.writeLine(fmt.Sprintf("static inline void sk_promise_release_%s(sk_promise_%s* p) {", t, t))
+		cg.writeLine("    if (!p) return;")
+		cg.writeLine("    atomic_fetch_sub(&p->common.owner_ref, 1);")
+		cg.writeLine("    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {")
+		cg.writeLine("        sk_promise_common_destroy(&p->common);")
+		cg.writeLine("        free(p);")
+		cg.writeLine("    }")
+		cg.writeLine("}")
+		cg.writeLine("")
+	}
+	cg.writeLine("")
+}
+
 func (cg *CodeGenerator) generateFunction(fn *IRFunction) {
 	isMain := fn.Name == "main"
+	isAsync := fn.IsAsync
 
 	var returnType string
 	if isMain {
 		returnType = "int"
+	} else if isAsync {
+		returnType = "void"
 	} else {
 		returnType = cg.typeToC(fn.ReturnType)
 	}
 
-	var paramsStr string
+	params := []string{}
+	if isAsync {
+		params = append(params, fmt.Sprintf("sk_promise_%s* __promise",
+			cg.promiseSuffix(fn.ReturnType)))
+	}
 	if isMain {
-		paramsStr = "int argc, char** argv"
+		params = append(params, "int argc", "char** argv")
 	} else {
-		params := []string{}
 		for _, p := range fn.Params {
 			params = append(params, fmt.Sprintf("%s %s", cg.typeToC(p.Type), p.Name))
 		}
-		paramsStr = strings.Join(params, ", ")
-		if paramsStr == "" {
-			paramsStr = "void"
-		}
+	}
+	paramsStr := strings.Join(params, ", ")
+	if paramsStr == "" {
+		paramsStr = "void"
 	}
 
 	cg.writeLine(fmt.Sprintf("%s %s(%s) {", returnType, fn.CName, paramsStr))
@@ -1115,7 +1255,6 @@ func (cg *CodeGenerator) generateFunction(fn *IRFunction) {
 		cg.writeLine("    (void)argc;")
 		cg.writeLine("    (void)argv;")
 
-		// main(arr NAME) — создать NAME из argv[1..] (без пути к exe)
 		if len(fn.Params) == 1 && isArrayTypeC(fn.Params[0].Type) {
 			argName := fn.Params[0].Name
 			cg.writeLine(fmt.Sprintf("    sk_array* %s__arr = sk_array_new(sizeof(sk_string), 1);", argName))
@@ -1139,7 +1278,26 @@ func (cg *CodeGenerator) generateFunction(fn *IRFunction) {
 		cg.generateInstruction(&ins, fn)
 	}
 
-	if fn.ReturnType == "void" && len(fn.Instructions) > 0 {
+	if isAsync {
+		// Проверяем: последняя значимая инструкция — promise_finish/promise_fail?
+		finished := false
+		for i := len(fn.Instructions) - 1; i >= 0; i-- {
+			op := fn.Instructions[i].Op
+			if op == "promise_finish" || op == "promise_fail" {
+				finished = true
+				break
+			}
+			if op == "ret" {
+				continue // ret может идти после finish
+			}
+			break
+		}
+		if !finished {
+			suffix := cg.promiseSuffix(fn.ReturnType)
+			cg.writeLine(fmt.Sprintf("    sk_promise_finish_%s(__promise, SK_NULL_%s);", suffix, suffix))
+		}
+		cg.writeLine("    return;")
+	} else if fn.ReturnType == "void" && len(fn.Instructions) > 0 {
 		lastIns := fn.Instructions[len(fn.Instructions)-1]
 		if lastIns.Op != "ret" {
 			if isMain {
@@ -1149,7 +1307,6 @@ func (cg *CodeGenerator) generateFunction(fn *IRFunction) {
 			}
 		}
 	}
-
 	cg.writeLine("}")
 	cg.writeLine("")
 }
@@ -1183,12 +1340,52 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 			indent, ins.Result, ins.Arg1, ins.Arg2, ins.Arg3))
 
 	case "throw":
-		fileArg := ins.Arg2
-		if fileArg == "" {
-			fileArg = `"<unknown>"`
+		if fn.IsAsync {
+			suffix := cg.promiseSuffix(fn.ReturnType)
+			cg.writeLine(fmt.Sprintf("%ssk_promise_fail_%s(__promise, %s);",
+				indent, suffix, ins.Arg1))
+			cg.writeLine(fmt.Sprintf("%sreturn;", indent))
+		} else {
+			fileArg := ins.Arg2
+			if fileArg == "" {
+				fileArg = `"<unknown>"`
+			}
+			cg.writeLine(fmt.Sprintf("%ssk_throw(%s, %s, %d, %d);",
+				indent, ins.Arg1, fileArg, ins.Line, ins.Column))
 		}
-		cg.writeLine(fmt.Sprintf("%ssk_throw(%s, %s, %d, %d);",
-			indent, ins.Arg1, fileArg, ins.Line, ins.Column))
+
+	case "promise_new":
+		cg.writeLine(fmt.Sprintf("%s%s = sk_promise_new_%s();", indent, ins.Result, ins.Arg1))
+
+	case "promise_set":
+		cg.writeLine(fmt.Sprintf("%ssk_promise_set_%s(__promise, %s);",
+			indent, ins.ReturnType, ins.Arg1))
+
+	case "promise_finish":
+		cg.writeLine(fmt.Sprintf("%ssk_promise_finish_%s(__promise, %s);",
+			indent, ins.ReturnType, ins.Arg1))
+
+	case "promise_fail":
+		cg.writeLine(fmt.Sprintf("%ssk_promise_fail_%s(__promise, %s);",
+			indent, ins.ReturnType, ins.Arg1))
+
+	case "promise_read":
+		cg.writeLine(fmt.Sprintf("%s%s = sk_promise_read_%s(%s);",
+			indent, ins.Result, ins.Arg2, ins.Arg1))
+
+	case "promise_await":
+		cg.writeLine(fmt.Sprintf("%s%s = sk_promise_await_%s(%s);",
+			indent, ins.Result, ins.Arg2, ins.Arg1))
+
+	case "promise_ended":
+		cg.writeLine(fmt.Sprintf("%s%s = sk_promise_ended_%s(%s);",
+			indent, ins.Result, ins.Arg2, ins.Arg1))
+
+	case "promise_release":
+		cg.writeLine(fmt.Sprintf("%ssk_promise_release_%s(%s);", indent, ins.Arg2, ins.Arg1))
+
+	case "async_spawn":
+		cg.generateAsyncSpawn(ins, fn)
 
 	case "try_push":
 		cg.writeLine(fmt.Sprintf("%ssk_try_push(&%s);", indent, ins.Result))
@@ -1239,7 +1436,9 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 		cg.writeLine(fmt.Sprintf("%s%s", indent, ins.Arg1))
 
 	case "ret":
-		if ins.Arg1 != "" {
+		if fn.IsAsync {
+			cg.writeLine(fmt.Sprintf("%sreturn;", indent))
+		} else if ins.Arg1 != "" {
 			cg.writeLine(fmt.Sprintf("%sreturn %s;", indent, ins.Arg1))
 		} else if fn.Name == "main" {
 			cg.writeLine(fmt.Sprintf("%sreturn 0;", indent))
@@ -1627,4 +1826,104 @@ func sanitizeCName(s string) string {
 		}
 	}
 	return out.String()
+}
+
+func (cg *CodeGenerator) generateAsyncSpawn(ins *IRInstruction, fn *IRFunction) {
+	indent := "    "
+	suffix := ins.ReturnType
+	promiseVar := ins.Result
+	funcName := sanitizeCName(ins.Arg1)
+	args := ins.Arg2
+
+	cg.writeLine(fmt.Sprintf("%s%s = sk_promise_new_%s();", indent, promiseVar, suffix))
+
+	ctxVar := "__ctx_" + promiseVar
+	cg.writeLine(fmt.Sprintf("%s__sk__async_ctx_%s* %s = malloc(sizeof(__sk__async_ctx_%s));",
+		indent, funcName, ctxVar, funcName))
+	cg.writeLine(fmt.Sprintf("%s%s->p = %s;", indent, ctxVar, promiseVar))
+
+	if args != "" {
+		argList := strings.Split(args, ", ")
+		for i, a := range argList {
+			cg.writeLine(fmt.Sprintf("%s%s->arg%d = %s;", indent, ctxVar, i, a))
+		}
+	}
+
+	cg.writeLine(fmt.Sprintf("%spthread_t __tid_%s;", indent, promiseVar))
+	cg.writeLine(fmt.Sprintf("%spthread_create(&__tid_%s, NULL, __sk__async_runner_%s, %s);",
+		indent, promiseVar, funcName, ctxVar))
+	cg.writeLine(fmt.Sprintf("%spthread_detach(__tid_%s);", indent, promiseVar))
+}
+
+func (cg *CodeGenerator) generateAsyncWrappers() {
+	for _, fn := range cg.IR.Functions {
+		if !fn.IsAsync {
+			continue
+		}
+		suffix := cg.promiseSuffix(fn.ReturnType)
+		cName := sanitizeCName(fn.CName)
+
+		cg.writeLine(fmt.Sprintf("typedef struct {"))
+		cg.writeLine(fmt.Sprintf("    sk_promise_%s* p;", suffix))
+		for i, p := range fn.Params {
+			cg.writeLine(fmt.Sprintf("    %s arg%d;  // %s",
+				cg.typeToC(p.Type), i, p.Name))
+		}
+		cg.writeLine(fmt.Sprintf("} __sk__async_ctx_%s;", cName))
+		cg.writeLine("")
+
+		cg.writeLine(fmt.Sprintf("void* __sk__async_runner_%s(void* __arg) {", cName))
+		cg.writeLine(fmt.Sprintf("    __sk__async_ctx_%s* ctx = (__sk__async_ctx_%s*)__arg;",
+			cName, cName))
+		cg.writeLine(fmt.Sprintf("    sk_promise_%s* p = ctx->p;", suffix))
+		cg.writeLine("")
+		cg.writeLine("    SkTryFrame frame;")
+		cg.writeLine("    sk_try_push(&frame);")
+		cg.writeLine("    if (setjmp(sk_try_stack->env) != 0) {")
+		cg.writeLine("        void* err = frame.error;")
+		cg.writeLine("        sk_try_pop(&frame);")
+		cg.writeLine(fmt.Sprintf("        sk_promise_fail_%s(p, err);", suffix))
+		cg.writeLine("        free(ctx);")
+		// task_ref-- и, возможно, освобождение
+		cg.writeLine("        atomic_fetch_sub(&p->common.task_ref, 1);")
+		cg.writeLine("        if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {")
+		cg.writeLine("            sk_promise_common_destroy(&p->common);")
+		cg.writeLine("            free(p);")
+		cg.writeLine("        }")
+		cg.writeLine("        return NULL;")
+		cg.writeLine("    }")
+		cg.writeLine("")
+
+		callArgs := []string{"p"}
+		for i := range fn.Params {
+			callArgs = append(callArgs, fmt.Sprintf("ctx->arg%d", i))
+		}
+		cg.writeLine(fmt.Sprintf("    %s(%s);", fn.CName, strings.Join(callArgs, ", ")))
+		cg.writeLine("")
+		cg.writeLine("    sk_try_pop(&frame);")
+		cg.writeLine("    free(ctx);")
+		// task_ref-- и, возможно, освобождение
+		cg.writeLine("    atomic_fetch_sub(&p->common.task_ref, 1);")
+		cg.writeLine("    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {")
+		cg.writeLine("        sk_promise_common_destroy(&p->common);")
+		cg.writeLine("        free(p);")
+		cg.writeLine("    }")
+		cg.writeLine("    return NULL;")
+		cg.writeLine("}")
+		cg.writeLine("")
+	}
+}
+
+func (cg *CodeGenerator) promiseSuffix(t string) string {
+	if isUnionTypeC(t) {
+		return "any"
+	}
+	if isArrayTypeC(t) {
+		return "arr"
+	}
+	switch t {
+	case "int", "char", "float", "double", "bool", "string", "dict", "any":
+		return t
+	}
+	return "int"
 }

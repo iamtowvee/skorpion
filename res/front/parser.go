@@ -174,7 +174,8 @@ func (p *Parser) Parse() *Program {
 			continue
 		}
 
-		if p.isType(p.peek) {
+		isAsyncStart := p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "async"
+		if p.isType(p.peek) || isAsyncStart {
 			debug.Debug("Found type: '%s', parsing function...", p.peek.Literal)
 			fn := p.parseFunction()
 			if fn != nil {
@@ -328,7 +329,13 @@ func (p *Parser) parseFunction() *Function {
 
 	pos := p.pos()
 
-	// Проверяем, что начинается с типа
+	// NEW: async до типа
+	isAsync := false
+	if p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "async" {
+		isAsync = true
+		p.advance()
+	}
+
 	if !p.isType(p.peek) {
 		p.hasErrors = true
 		errors.NewFatalError("0500",
@@ -337,15 +344,22 @@ func (p *Parser) parseFunction() *Function {
 		return nil
 	}
 
-	// Тип возврата (может быть arr[int], arr[arr[int]] и т.д.)
 	retType := p.parseType()
 	if p.hasErrors || errors.HasFatal() {
 		return nil
 	}
 	if retType == "" {
 		p.hasErrors = true
-		errors.NewFatalError("0500",
-			"Expected return type",
+		errors.NewFatalError("0500", "Expected return type",
+			pos.Line, pos.Column, p.FileName)
+		return nil
+	}
+
+	// async void запрещён — Promise должен иметь тип
+	if isAsync && retType == "void" {
+		p.hasErrors = true
+		errors.NewFatalError("0665",
+			"async function cannot return 'void' — Promise must have a concrete type",
 			pos.Line, pos.Column, p.FileName)
 		return nil
 	}
@@ -501,6 +515,7 @@ func (p *Parser) parseFunction() *Function {
 		Params:     params,
 		Body:       body,
 		IsExport:   isExport,
+		IsAsync:    isAsync,
 		File:       p.FileName,
 	}
 }
@@ -593,6 +608,46 @@ func (p *Parser) parseStatement() Node {
 			return p.parseTry()
 		case "throw":
 			return p.parseThrow()
+
+		case "Promise":
+			// Promise[expr] как statement
+			pos := p.pos()
+			p.advance() // Promise
+			if p.peek.Type != TOKEN_LBRACKET {
+				p.hasErrors = true
+				errors.NewFatalError("0660",
+					"Expected '[' after 'Promise'", p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			p.advance()
+			val := p.parseExpression()
+			if val == nil {
+				return nil
+			}
+			if p.peek.Type != TOKEN_RBRACKET {
+				p.hasErrors = true
+				errors.NewFatalError("0661",
+					"Expected ']' after Promise value", p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			p.advance()
+			if p.peek.Type == TOKEN_SEMICOLON {
+				p.advance()
+			}
+			return &PromiseSet{Position: pos, Value: val}
+
+		case "await":
+			// await expr как statement
+			pos := p.pos()
+			p.advance()
+			expr := p.parseUnary()
+			if expr == nil {
+				return nil
+			}
+			if p.peek.Type == TOKEN_SEMICOLON {
+				p.advance()
+			}
+			return &AwaitExpr{Position: pos, Expr: expr}
 
 		case "const":
 			// Различаем: const Type name = ... (переменная)
@@ -2138,6 +2193,52 @@ func (p *Parser) parsePrimary() Node {
 		}
 		if p.peek.Literal == "type" {
 			return p.parseTypeOf()
+		}
+		if p.peek.Literal == "Error" {
+			pos := p.pos()
+			p.advance() // Error
+			if p.peek.Type != TOKEN_LBRACE {
+				p.hasErrors = true
+				errors.NewFatalError("0590",
+					"Expected '{' after 'Error'",
+					p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			return p.parseErrorInstance("Error", pos)
+		}
+		// в case TOKEN_KEYWORD:
+		if p.peek.Literal == "Promise" {
+			pos := p.pos()
+			p.advance()
+			if p.peek.Type != TOKEN_LBRACKET {
+				p.hasErrors = true
+				errors.NewFatalError("0660",
+					"Expected '[' after 'Promise'", p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			p.advance()
+			value := p.parseExpression()
+			if value == nil {
+				return nil
+			}
+			if p.peek.Type != TOKEN_RBRACKET {
+				p.hasErrors = true
+				errors.NewFatalError("0661",
+					"Expected ']' after Promise value", p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			p.advance()
+			return &PromiseSet{Position: pos, Value: value}
+		}
+
+		if p.peek.Literal == "await" {
+			pos := p.pos()
+			p.advance()
+			expr := p.parseUnary() // await связывает сильнее бинарных операций
+			if expr == nil {
+				return nil
+			}
+			return &AwaitExpr{Position: pos, Expr: expr}
 		}
 		p.hasErrors = true
 		errors.NewFatalError("0505",

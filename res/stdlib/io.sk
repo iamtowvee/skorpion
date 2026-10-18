@@ -12,6 +12,7 @@ void *__sk__std_io_send(string line) {
         } else {
             printf("%s", line.value);
         }
+        fflush(stdout);
     ~~~
 }
 

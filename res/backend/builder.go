@@ -121,9 +121,9 @@ func (b *Builder) buildForTarget(targetOS string, cFile string) bool {
 	case "windows":
 		flags = append(flags, "-DSK_OS_WINDOWS=1")
 	case "linux":
-		flags = append(flags, "-DSK_OS_LINUX=1", "-lm")
+		flags = append(flags, "-DSK_OS_LINUX=1", "-lm", "-lpthread")
 	case "darwin":
-		flags = append(flags, "-DSK_OS_DARWIN=1", "-lm")
+		flags = append(flags, "-DSK_OS_DARWIN=1", "-lm", "-lpthread")
 	}
 
 	// Выходной файл

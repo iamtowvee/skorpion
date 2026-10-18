@@ -43,6 +43,9 @@ const (
 	NODE_FIELD_ACCESS   NodeType = "FieldAccess"
 	NODE_TRY            NodeType = "Try"
 	NODE_CATCH          NodeType = "Catch"
+	NODE_AWAIT_EXPR     NodeType = "AwaitExpr"
+	NODE_PROMISE_SET    NodeType = "PromiseSet"
+	NODE_ISAE           NodeType = "IsAsyncEnded"
 )
 
 type Node interface {
@@ -105,13 +108,35 @@ type Function struct {
 	Position
 	NamePos     Position
 	Name        string
-	ReturnType  string   // declared
-	ReturnUnion []string // если union — список типов; пусто = не union
+	ReturnType  string
+	ReturnUnion []string
 	Params      []*Param
 	Body        *Block
 	IsExport    bool
+	IsAsync     bool
 	File        string
 }
+
+type PromiseSet struct {
+	Position
+	Value Node
+}
+
+func (p *PromiseSet) GetType() NodeType { return NODE_PROMISE_SET }
+
+type AwaitExpr struct {
+	Position
+	Expr Node
+}
+
+func (a *AwaitExpr) GetType() NodeType { return NODE_AWAIT_EXPR }
+
+type IsAsyncEnded struct {
+	Position
+	FuncName string
+}
+
+func (i *IsAsyncEnded) GetType() NodeType { return NODE_ISAE }
 
 func (f *Function) GetType() NodeType { return NODE_FUNCTION }
 
