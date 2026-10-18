@@ -1,57 +1,34 @@
+use #lib:iamtowvee/MyLib
+use std/os
 use std/io
 
-async int *compute(int x) {
-    Promise[0]
-    int acc = 0
-    int i = 0
-    while (i < x) {
-        acc = acc + i
-        i = i + 1
+void foo(int a, ...some) {
+    println(a)
+    for (any f in some) {
+        println(f)
     }
-    return acc * 2
 }
 
-async string *greet(string name) {
-    Promise["..."]
-    string result = "Hello, " + name + "!"
-    return result
-}
-
-int *fail_later(int n) {
-    if (n < 0) {
-        io.sendln(greet("hi"))
-    }
-    return n * n
+async dict f() {
+    return {age: 25}
 }
 
 void main(arr args) {
-    // 1. Базовый async + await
-    int a = await compute(5)
-    io.sendln("compute(5) = " + $a)          // 20
+    const int MAX = 100
 
-    // 2. Промежуточное значение без await
-    int b = compute(10)
-    if (isAsyncEnded("compute")) {
-        io.sendln("still running (impossible)") // обычно не сработает
-    }
-    int b_final = await b
-    io.sendln("compute(10) = " + $b_final)    // 90
+    int i = 0
+    i += 1               // i = 1
+    i -= 2               // i = -1
+    i *= 3               // i = -3
+    i /= 2               // i = -1
+    i %= 2               // i = -1
+    i **= 2              // i = 1
 
-    // 3. Async строка
-    string g = await greet("Skorpion")
-    io.sendln(g)                              // Hello, Skorpion!
+    io.sendln(await f())
 
-    fail_later(-5)
+    string s = "hello"
+    s += " world"        // "hello world"
+    s += '!'             // "hello world!"
 
-    // 6. Несколько параллельных async
-    int p1 = compute(3)
-    int p2 = compute(4)
-    int r1 = await p1
-    int r2 = await p2
-    io.sendln("p1=" + $r1 + " p2=" + $r2)    // p1=6 p2=12
-
-    // 7. isAsyncEnded после await
-    if (isAsyncEnded("compute")) {
-        io.sendln("compute ended")
-    }
+    const string name = "Skorpion"
 }

@@ -2908,11 +2908,16 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 			return rawResult
 
 		case "dict":
-			errors.NewError("0676",
-				fmt.Sprintf("async function '%s' returning 'dict' cannot be used in expression context — use 'await %s(...)' or 'dict x = %s(...)'",
-					simpleName, simpleName, simpleName),
-				call.GetLine(), call.GetColumn(), irFn.File)
-			return "SK_NULL_dict"
+			result := p.newTemp()
+			irFn.Locals = append(irFn.Locals, "sk_dict_ref "+result)
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:         "call",
+				Result:     result,
+				Arg1:       "sk_dict_ref_new",
+				Arg2:       "sk_dict_deep_copy(" + rawResult + ".value)",
+				ReturnType: "sk_dict_ref",
+			})
+			return result
 
 		default:
 			return rawResult

@@ -738,6 +738,8 @@ func (gc *GCAnalyzer) applyInsertions(fn *IRFunction, insertions []gcInsertion, 
 					op = "free_arr"
 				case "sk_arr":
 					op = "free_arr_field"
+				case "sk_dict_ref":
+					op = "free_dict_field"
 				default:
 					op = "free"
 				}
