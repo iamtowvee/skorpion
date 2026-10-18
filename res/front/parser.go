@@ -810,7 +810,6 @@ func (p *Parser) parseDoWhile() Node {
 	pos := p.pos()
 	p.advance() // do
 
-	// Тело
 	if p.peek.Type != TOKEN_LBRACE {
 		p.hasErrors = true
 		errors.NewFatalError("0627",
@@ -823,7 +822,6 @@ func (p *Parser) parseDoWhile() Node {
 		return nil
 	}
 
-	// while
 	if p.peek.Type != TOKEN_KEYWORD || p.peek.Literal != "while" {
 		p.hasErrors = true
 		errors.NewFatalError("0627",
@@ -833,11 +831,10 @@ func (p *Parser) parseDoWhile() Node {
 	}
 	p.advance() // while
 
-	// Опциональные скобки вокруг условия
-	hasParen := false
-	if p.peek.Type == TOKEN_LPAREN {
-		hasParen = true
-		p.advance()
+	// Скобки вокруг условия обязательны
+	p.expect(TOKEN_LPAREN)
+	if p.hasErrors || errors.HasFatal() {
+		return nil
 	}
 
 	cond := p.parseExpression()
@@ -845,16 +842,14 @@ func (p *Parser) parseDoWhile() Node {
 		return nil
 	}
 
-	if hasParen {
-		if p.peek.Type != TOKEN_RPAREN {
-			p.hasErrors = true
-			errors.NewFatalError("0627",
-				fmt.Sprintf("Expected ')' after do-while condition, got '%s'", p.peek.Literal),
-				p.peek.Line, p.peek.Column, p.FileName)
-			return nil
-		}
-		p.advance()
+	if p.peek.Type != TOKEN_RPAREN {
+		p.hasErrors = true
+		errors.NewFatalError("0627",
+			fmt.Sprintf("Expected ')' after do-while condition, got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
 	}
+	p.advance()
 
 	if p.peek.Type == TOKEN_SEMICOLON {
 		p.advance()
@@ -1041,10 +1036,26 @@ func (p *Parser) parseIf() Node {
 
 	pos := p.pos()
 	p.advance() // if
+
+	// Условие обязательно в скобках
+	p.expect(TOKEN_LPAREN)
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
 	cond := p.parseExpression()
 	if cond == nil {
 		return nil
 	}
+
+	if p.peek.Type != TOKEN_RPAREN {
+		p.hasErrors = true
+		errors.NewFatalError("0541",
+			fmt.Sprintf("Expected ')' after if condition, got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
+	}
+	p.advance()
 
 	then := p.parseBlock()
 	if then == nil {
@@ -1057,10 +1068,24 @@ func (p *Parser) parseIf() Node {
 		elsifPos := p.pos()
 		p.advance()
 
+		p.expect(TOKEN_LPAREN)
+		if p.hasErrors || errors.HasFatal() {
+			return nil
+		}
+
 		elsifCond := p.parseExpression()
 		if elsifCond == nil {
 			return nil
 		}
+
+		if p.peek.Type != TOKEN_RPAREN {
+			p.hasErrors = true
+			errors.NewFatalError("0541",
+				fmt.Sprintf("Expected ')' after elsif condition, got '%s'", p.peek.Literal),
+				p.peek.Line, p.peek.Column, p.FileName)
+			return nil
+		}
+		p.advance()
 
 		elsifThen := p.parseBlock()
 		if elsifThen == nil {
@@ -1243,10 +1268,25 @@ func (p *Parser) parseWhile() Node {
 
 	pos := p.pos()
 	p.advance() // while
+
+	p.expect(TOKEN_LPAREN)
+	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
 	cond := p.parseExpression()
 	if cond == nil {
 		return nil
 	}
+
+	if p.peek.Type != TOKEN_RPAREN {
+		p.hasErrors = true
+		errors.NewFatalError("0541",
+			fmt.Sprintf("Expected ')' after while condition, got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
+	}
+	p.advance()
 
 	body := p.parseBlock()
 	if body == nil {

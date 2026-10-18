@@ -24,6 +24,10 @@ void main(arr args) {
     i %= 2               // i = -1
     i **= 2              // i = 1
 
+    if MAX == 100 {
+        io.sendln(MAX)
+    }
+
     io.sendln(await f())
 
     string s = "hello"
