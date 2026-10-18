@@ -137,7 +137,19 @@ func (p *Pipeline) processFunction(fn *front.Function) {
 	p.PromiseOwners = make(map[string]string)
 
 	if fn.Body != nil {
-		p.processBlock(fn.Body, &irFn)
+		if fn.IsAsync && len(fn.Body.Statements) > 0 {
+			// Promise[...] в async-функции уже выставлен в processAsyncCall
+			// (до pthread_create). Пропускаем первый statement, если это PromiseSet.
+			startIdx := 0
+			if _, ok := fn.Body.Statements[0].(*front.PromiseSet); ok {
+				startIdx = 1
+			}
+			for i := startIdx; i < len(fn.Body.Statements); i++ {
+				p.processNode(fn.Body.Statements[i], &irFn)
+			}
+		} else {
+			p.processBlock(fn.Body, &irFn)
+		}
 	}
 
 	if fn.ReturnType == "void" && len(irFn.Instructions) > 0 && !fn.IsAsync {
@@ -265,15 +277,14 @@ func (p *Pipeline) processAwaitExpr(aw *front.AwaitExpr, irFn *IRFunction) strin
 		return p.emitPromiseAwait(promiseVar, aw, irFn)
 
 	case *front.Ident:
-		// await some
-		pVar := e.Name + "__p"
-		if !p.isPromiseVar(pVar, irFn) {
+		handle, ok := p.PromiseOwners[e.Name]
+		if !ok {
 			errors.NewError("0663",
 				fmt.Sprintf("'await' applied to '%s', which is not a promise", e.Name),
 				aw.GetLine(), aw.GetColumn(), irFn.File)
 			return "SK_NULL_int"
 		}
-		return p.emitPromiseAwait(pVar, aw, irFn)
+		return p.emitPromiseAwait(handle, aw, irFn)
 	}
 
 	errors.NewError("0663",
@@ -308,7 +319,6 @@ func (p *Pipeline) processAsyncCall(call *front.CallExpr, irFn *IRFunction) stri
 	argIndex := 0
 	for _, param := range targetFunc.Params {
 		if param.IsVariadic {
-			// variadic — собираем остаток в arr[any]
 			variadicArr := p.newTemp()
 			irFn.Locals = append(irFn.Locals, "sk_arr "+variadicArr)
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
@@ -351,6 +361,35 @@ func (p *Pipeline) processAsyncCall(call *front.CallExpr, irFn *IRFunction) stri
 	promiseVar := p.newTemp()
 	irFn.Locals = append(irFn.Locals, fmt.Sprintf("sk_promise_%s* %s", suffix, promiseVar))
 
+	// 1. promise_new — ДО promise_set_var и async_spawn
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:         "promise_new",
+		Result:     promiseVar,
+		Arg1:       suffix,
+		ReturnType: suffix,
+	})
+
+	// 2. Стартовое значение Promise[literal] ДО pthread_create
+	if targetFunc.Body != nil && len(targetFunc.Body.Statements) > 0 {
+		if ps, ok := targetFunc.Body.Statements[0].(*front.PromiseSet); ok {
+			litType := p.getExprType(ps.Value, irFn)
+			if litType == "" {
+				litType = targetFunc.ReturnType
+			}
+			litVal := p.processExpression(ps.Value, irFn)
+			if litType != targetFunc.ReturnType {
+				litVal = p.convertToType(litVal, litType, targetFunc.ReturnType, irFn)
+			}
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:         "promise_set_var",
+				Arg1:       promiseVar,
+				Arg2:       litVal,
+				ReturnType: suffix,
+			})
+		}
+	}
+
+	// 3. async_spawn — БЕЗ promise_new внутри
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:         "async_spawn",
 		Result:     promiseVar,
@@ -1035,26 +1074,16 @@ func (p *Pipeline) processAsyncVarDecl(decl *front.VarDecl, call *front.CallExpr
 		return
 	}
 
-	suffix := p.typeToPromiseSuffix(targetFunc.ReturnType)
-
-	// <name>__p — promise-указатель
-	pVar := decl.Name + "__p"
-	irFn.Locals = append(irFn.Locals, fmt.Sprintf("sk_promise_%s* %s", suffix, pVar))
-	irFn.Instructions = append(irFn.Instructions, IRInstruction{
-		Op:     "=",
-		Result: pVar,
-		Arg1:   promiseVar,
-	})
-
 	irFn.VarTypes[decl.Name] = decl.Type
 
-	// Регистрируем владельца для isAsyncEnded("funcName")
 	simpleName := call.Name
 	if strings.Contains(simpleName, ".") {
 		parts := strings.Split(simpleName, ".")
 		simpleName = parts[len(parts)-1]
 	}
-	p.PromiseOwners[simpleName] = decl.Name
+	// handle = promiseVar (t18), не b__p
+	p.PromiseOwners[simpleName] = promiseVar
+	p.PromiseOwners[decl.Name] = promiseVar // для await b / чтения b
 }
 
 func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
@@ -2380,8 +2409,7 @@ func (p *Pipeline) processExpression(expr front.Node, irFn *IRFunction) string {
 		}
 
 		// Promise-переменная? Читаем через sk_promise_read_<T>
-		pVar := n.Name + "__p"
-		if p.isPromiseVar(pVar, irFn) {
+		if handle, ok := p.PromiseOwners[n.Name]; ok {
 			skType := irFn.VarTypes[n.Name]
 			if skType == "" {
 				skType = "int"
@@ -2393,7 +2421,7 @@ func (p *Pipeline) processExpression(expr front.Node, irFn *IRFunction) string {
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op:         "promise_read",
 				Result:     tmp,
-				Arg1:       pVar,
+				Arg1:       handle,
 				Arg2:       suffix,
 				ReturnType: cType,
 			})
@@ -2703,12 +2731,8 @@ func (p *Pipeline) processReturn(ret *front.ReturnStmt, irFn *IRFunction) {
 	}
 }
 
-// processFireAndForget — запуск async-функции без await, результат discard.
 func (p *Pipeline) processFireAndForget(call *front.CallExpr, targetFunc *front.Function, irFn *IRFunction) {
-	promiseVar := p.processAsyncCall(call, irFn)
-	if promiseVar == "" {
-		return
-	}
+	p.processAsyncCall(call, irFn)
 }
 
 func (p *Pipeline) processCall(call *front.CallExpr, irFn *IRFunction) {
@@ -2725,7 +2749,7 @@ func (p *Pipeline) processCall(call *front.CallExpr, irFn *IRFunction) {
 		simpleName = parts[len(parts)-1]
 	}
 
-	// NEW: fire-and-forget для async-вызова в statement-позиции
+	// fire-and-forget для async-вызова в statement-позиции
 	if targetFunc != nil && targetFunc.IsAsync {
 		p.processFireAndForget(call, targetFunc, irFn)
 		return
@@ -2736,7 +2760,6 @@ func (p *Pipeline) processCall(call *front.CallExpr, irFn *IRFunction) {
 	if targetFunc != nil {
 		argIndex := 0
 		for _, param := range targetFunc.Params {
-			// === Variadic ===
 			if param.IsVariadic {
 				variadicArr := p.newTemp()
 				irFn.Locals = append(irFn.Locals, "sk_arr "+variadicArr)
@@ -2763,7 +2786,6 @@ func (p *Pipeline) processCall(call *front.CallExpr, irFn *IRFunction) {
 				break
 			}
 
-			// === Обычный параметр ===
 			var argExpr front.Node
 			if argIndex < len(call.Args) {
 				argExpr = call.Args[argIndex]
@@ -2774,7 +2796,6 @@ func (p *Pipeline) processCall(call *front.CallExpr, irFn *IRFunction) {
 				args = append(args, "SK_NULL_int")
 				continue
 			}
-
 			args = append(args, p.prepareArg(argExpr, param.Type, irFn))
 		}
 	} else {
@@ -2837,142 +2858,7 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 		simpleName = parts[len(parts)-1]
 	}
 
-	// === getConfig / getConfigField (compile-time) ===
-	switch simpleName {
-	case "getConfig":
-		result := p.newTemp()
-		irFn.Locals = append(irFn.Locals, "sk_dict_ref "+result)
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:         "call",
-			Result:     result,
-			Arg1:       "__sk__get_config",
-			ReturnType: "sk_dict_ref",
-		})
-		return result
-
-	case "isAsyncEnded":
-		if len(args) != 1 {
-			errors.NewError("0666",
-				"isAsyncEnded requires exactly one argument (async function name as string)",
-				call.GetLine(), call.GetColumn(), irFn.File)
-			return "SK_NULL_bool"
-		}
-		lit, ok := args[0].(*front.String)
-		if !ok {
-			errors.NewError("0667",
-				"isAsyncEnded argument must be a string literal with the async function name",
-				call.GetLine(), call.GetColumn(), irFn.File)
-			return "SK_NULL_bool"
-		}
-
-		// Ищем владельца promise по имени функции
-		ownerVar, found := p.PromiseOwners[lit.Value]
-		if !found {
-			// Fallback: ищем по IR-инструкциям
-			ownerVar = p.findPromiseOwnerForFunc(lit.Value, irFn)
-		}
-		if ownerVar == "" {
-			errors.NewError("0668",
-				fmt.Sprintf("isAsyncEnded(\"%s\"): no async call to '%s' found in this scope",
-					lit.Value, lit.Value),
-				call.GetLine(), call.GetColumn(), irFn.File)
-			return "SK_NULL_bool"
-		}
-
-		pVar := ownerVar + "__p"
-		skType := irFn.VarTypes[ownerVar]
-		if skType == "" {
-			skType = "int"
-		}
-		suffix := p.typeToPromiseSuffix(skType)
-		result := p.newTemp()
-		irFn.Locals = append(irFn.Locals, "sk_bool "+result)
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:         "promise_ended",
-			Result:     result,
-			Arg1:       pVar,
-			Arg2:       suffix,
-			ReturnType: "sk_bool",
-		})
-		return result
-
-	case "getConfigField":
-		if len(args) != 1 {
-			break
-		}
-		lit, ok := args[0].(*front.String)
-		if !ok {
-			break
-		}
-
-		dictVar := p.newTemp()
-		irFn.Locals = append(irFn.Locals, "sk_dict_ref "+dictVar)
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:         "call",
-			Result:     dictVar,
-			Arg1:       "__sk__get_config",
-			ReturnType: "sk_dict_ref",
-		})
-
-		keyVar := p.newTemp()
-		irFn.Locals = append(irFn.Locals, "sk_string "+keyVar)
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:         "call",
-			Result:     keyVar,
-			Arg1:       "sk_string_new",
-			Arg2:       fmt.Sprintf("%q", lit.Value),
-			ReturnType: "sk_string",
-		})
-
-		result := p.newTemp()
-		irFn.Locals = append(irFn.Locals, "sk_any "+result)
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:         "call",
-			Result:     result,
-			Arg1:       "sk_dict_get",
-			Arg2:       dictVar + ".value, " + keyVar,
-			ReturnType: "sk_any",
-		})
-		return result
-	}
-
-	// Builtins
-	switch simpleName {
-	case "to_int":
-		return p.processToInt(&front.CallExpr{Name: "to_int", Args: args}, irFn)
-	case "to_float":
-		return p.processToFloat(&front.CallExpr{Name: "to_float", Args: args}, irFn)
-	case "to_char":
-		return p.processToChar(&front.CallExpr{Name: "to_char", Args: args}, irFn)
-	case "to_double":
-		return p.processToDouble(&front.CallExpr{Name: "to_double", Args: args}, irFn)
-	case "to_string":
-		return p.processToString(&front.CallExpr{Name: "to_string", Args: args}, irFn)
-	case "to_bool":
-		return p.processToBool(&front.CallExpr{Name: "to_bool", Args: args}, irFn)
-	case "to_arr":
-		// Если один аргумент и он any — распаковываем через any_to_arr
-		if len(args) == 1 {
-			argType := p.getExprType(args[0], irFn)
-			if argType == "any" || isUnionTypeP(argType) {
-				arg := p.processExpression(args[0], irFn)
-				result := p.newTemp()
-				irFn.Locals = append(irFn.Locals, "sk_arr "+result)
-				irFn.Instructions = append(irFn.Instructions, IRInstruction{
-					Op:         "call",
-					Result:     result,
-					Arg1:       "any_to_arr",
-					Arg2:       arg,
-					ReturnType: "sk_arr",
-				})
-				return result
-			}
-		}
-		return p.processToArr(&front.CallExpr{Name: "to_arr", Args: args}, irFn)
-	case "detruncate":
-		return p.processDetruncate(&front.CallExpr{Name: "detruncate", Args: args}, irFn)
-	}
-
+	// === Async-функция в expression-контексте: read текущего значения ===
 	if targetFunc := p.findFunction(simpleName); targetFunc != nil && targetFunc.IsAsync {
 		promiseVar := p.processAsyncCall(call, irFn)
 		if promiseVar == "" {
@@ -3018,20 +2904,10 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 			})
 			return result
 
-		case "int":
-			// скаляр — rawResult уже независимая копия значения
-			return rawResult
-		case "char":
-			return rawResult
-		case "float":
-			return rawResult
-		case "double":
-			return rawResult
-		case "bool":
+		case "int", "char", "float", "double", "bool":
 			return rawResult
 
 		case "dict":
-			// deep copy dict нет в runtime — запрещаем
 			errors.NewError("0676",
 				fmt.Sprintf("async function '%s' returning 'dict' cannot be used in expression context — use 'await %s(...)' or 'dict x = %s(...)'",
 					simpleName, simpleName, simpleName),
@@ -3039,9 +2915,134 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 			return "SK_NULL_dict"
 
 		default:
-			// any и прочее — возвращаем как есть (лучше, чем ничего)
 			return rawResult
 		}
+	}
+
+	// === getConfig / getConfigField ===
+	switch simpleName {
+	case "getConfig":
+		result := p.newTemp()
+		irFn.Locals = append(irFn.Locals, "sk_dict_ref "+result)
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "call",
+			Result:     result,
+			Arg1:       "__sk__get_config",
+			ReturnType: "sk_dict_ref",
+		})
+		return result
+
+	case "isAsyncEnded":
+		if len(args) != 1 {
+			errors.NewError("0666",
+				"isAsyncEnded requires exactly one argument (async function name as string)",
+				call.GetLine(), call.GetColumn(), irFn.File)
+			return "SK_NULL_bool"
+		}
+		lit, ok := args[0].(*front.String)
+		if !ok {
+			errors.NewError("0667",
+				"isAsyncEnded argument must be a string literal with the async function name",
+				call.GetLine(), call.GetColumn(), irFn.File)
+			return "SK_NULL_bool"
+		}
+		handle, found := p.PromiseOwners[lit.Value]
+		if !found {
+			handle = p.findPromiseOwnerForFunc(lit.Value, irFn)
+		}
+		if handle == "" {
+			errors.NewError("0668", fmt.Sprintf("isAsyncEnded(\"%s\"): no async call to '%s' found in this scope",
+				lit.Value, lit.Value),
+				call.GetLine(), call.GetColumn(), irFn.File)
+			return "SK_NULL_bool"
+		}
+		skType := irFn.VarTypes[lit.Value]
+		if skType == "" {
+			skType = "int"
+		}
+		suffix := p.typeToPromiseSuffix(skType)
+		result := p.newTemp()
+		irFn.Locals = append(irFn.Locals, "sk_bool "+result)
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "promise_ended",
+			Result:     result,
+			Arg1:       handle,
+			Arg2:       suffix,
+			ReturnType: "sk_bool",
+		})
+		return result
+
+	case "getConfigField":
+		if len(args) != 1 {
+			break
+		}
+		lit, ok := args[0].(*front.String)
+		if !ok {
+			break
+		}
+		dictVar := p.newTemp()
+		irFn.Locals = append(irFn.Locals, "sk_dict_ref "+dictVar)
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "call",
+			Result:     dictVar,
+			Arg1:       "__sk__get_config",
+			ReturnType: "sk_dict_ref",
+		})
+		keyVar := p.newTemp()
+		irFn.Locals = append(irFn.Locals, "sk_string "+keyVar)
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "call",
+			Result:     keyVar,
+			Arg1:       "sk_string_new",
+			Arg2:       fmt.Sprintf("%q", lit.Value),
+			ReturnType: "sk_string",
+		})
+		result := p.newTemp()
+		irFn.Locals = append(irFn.Locals, "sk_any "+result)
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "call",
+			Result:     result,
+			Arg1:       "sk_dict_get",
+			Arg2:       dictVar + ".value, " + keyVar,
+			ReturnType: "sk_any",
+		})
+		return result
+	}
+
+	// Builtins
+	switch simpleName {
+	case "to_int":
+		return p.processToInt(&front.CallExpr{Name: "to_int", Args: args}, irFn)
+	case "to_float":
+		return p.processToFloat(&front.CallExpr{Name: "to_float", Args: args}, irFn)
+	case "to_char":
+		return p.processToChar(&front.CallExpr{Name: "to_char", Args: args}, irFn)
+	case "to_double":
+		return p.processToDouble(&front.CallExpr{Name: "to_double", Args: args}, irFn)
+	case "to_string":
+		return p.processToString(&front.CallExpr{Name: "to_string", Args: args}, irFn)
+	case "to_bool":
+		return p.processToBool(&front.CallExpr{Name: "to_bool", Args: args}, irFn)
+	case "to_arr":
+		if len(args) == 1 {
+			argType := p.getExprType(args[0], irFn)
+			if argType == "any" || isUnionTypeP(argType) {
+				arg := p.processExpression(args[0], irFn)
+				result := p.newTemp()
+				irFn.Locals = append(irFn.Locals, "sk_arr "+result)
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op:         "call",
+					Result:     result,
+					Arg1:       "any_to_arr",
+					Arg2:       arg,
+					ReturnType: "sk_arr",
+				})
+				return result
+			}
+		}
+		return p.processToArr(&front.CallExpr{Name: "to_arr", Args: args}, irFn)
+	case "detruncate":
+		return p.processDetruncate(&front.CallExpr{Name: "detruncate", Args: args}, irFn)
 	}
 
 	// Ищем целевую функцию
@@ -3057,7 +3058,6 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 		argIndex := 0
 		for _, param := range targetFunc.Params {
 			if param.IsVariadic {
-				// Собираем все оставшиеся args в arr[any]
 				variadicArr := p.newTemp()
 				irFn.Locals = append(irFn.Locals, "sk_arr "+variadicArr)
 				irFn.Instructions = append(irFn.Instructions, IRInstruction{
@@ -3152,12 +3152,7 @@ func (p *Pipeline) findPromiseOwnerForFunc(funcName string, irFn *IRFunction) st
 	cName := p.cNameForFunc(funcName)
 	for _, ins := range irFn.Instructions {
 		if ins.Op == "async_spawn" && ins.Arg1 == cName {
-			for _, ins2 := range irFn.Instructions {
-				if ins2.Op == "=" && ins2.Arg1 == ins.Result &&
-					strings.HasSuffix(ins2.Result, "__p") {
-					return strings.TrimSuffix(ins2.Result, "__p")
-				}
-			}
+			return ins.Result // promise-переменная
 		}
 	}
 	return ""

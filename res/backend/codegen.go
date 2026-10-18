@@ -1335,6 +1335,10 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 			}
 		}
 
+	case "promise_set_var":
+		cg.writeLine(fmt.Sprintf("%ssk_promise_set_%s(%s, %s);",
+			indent, ins.ReturnType, ins.Arg1, ins.Arg2))
+
 	case "ternary":
 		cg.writeLine(fmt.Sprintf("%s%s = %s ? %s : %s;",
 			indent, ins.Result, ins.Arg1, ins.Arg2, ins.Arg3))
@@ -1830,12 +1834,13 @@ func sanitizeCName(s string) string {
 
 func (cg *CodeGenerator) generateAsyncSpawn(ins *IRInstruction, fn *IRFunction) {
 	indent := "    "
-	suffix := ins.ReturnType
+	// suffix := ins.ReturnType
 	promiseVar := ins.Result
 	funcName := sanitizeCName(ins.Arg1)
 	args := ins.Arg2
 
-	cg.writeLine(fmt.Sprintf("%s%s = sk_promise_new_%s();", indent, promiseVar, suffix))
+	// promise_new уже сгенерирован отдельной инструкцией ДО
+	// (см. processAsyncCall → promise_new + promise_set_var + async_spawn)
 
 	ctxVar := "__ctx_" + promiseVar
 	cg.writeLine(fmt.Sprintf("%s__sk__async_ctx_%s* %s = malloc(sizeof(__sk__async_ctx_%s));",

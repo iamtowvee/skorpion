@@ -1727,7 +1727,6 @@ void __sk__compute(sk_promise_int* __promise, sk_int x) {
     sk_int t3;
     sk_int t4;
 
-    sk_promise_set_int(__promise, sk_int_new(0));
     acc = sk_int_new(0);
     i = sk_int_new(0);
 L1:
@@ -1756,7 +1755,6 @@ void __sk__greet(sk_promise_string* __promise, sk_string name) {
     sk_string t5;
     sk_string t6;
 
-    sk_promise_set_string(__promise, sk_string_new("..."));
     t5 = sk_string_concat(sk_string_new("Hello, "), name);
     t6 = sk_string_concat(t5, sk_string_new("!"));
     free(t5.value);
@@ -1783,6 +1781,7 @@ sk_int __sk__fail_later(sk_int n) {
     }
 L4:
     t8 = sk_promise_new_string();
+    sk_promise_set_string(t8, sk_string_new("..."));
     __sk__async_ctx___sk__greet* __ctx_t8 = malloc(sizeof(__sk__async_ctx___sk__greet));
     __ctx_t8->p = t8;
     __ctx_t8->arg0 = sk_string_new("hi");
@@ -1824,7 +1823,6 @@ int main(int argc, char** argv) {
     sk_string t16;
     sk_any t17;
     sk_promise_int* t18;
-    sk_promise_int* b__p;
     sk_bool t19;
     sk_any t20;
     sk_int b_final;
@@ -1837,9 +1835,7 @@ int main(int argc, char** argv) {
     sk_string t26;
     sk_any t27;
     sk_promise_int* t28;
-    sk_promise_int* p1__p;
     sk_promise_int* t29;
-    sk_promise_int* p2__p;
     sk_int r1;
     sk_int t30;
     sk_int r2;
@@ -1854,6 +1850,7 @@ int main(int argc, char** argv) {
     sk_any t39;
 
     t13 = sk_promise_new_int();
+    sk_promise_set_int(t13, sk_int_new(0));
     __sk__async_ctx___sk__compute* __ctx_t13 = malloc(sizeof(__sk__async_ctx___sk__compute));
     __ctx_t13->p = t13;
     __ctx_t13->arg0 = sk_int_new(5);
@@ -1872,14 +1869,14 @@ int main(int argc, char** argv) {
     __sk__sendln(t17);
     sk_call_pop();
     t18 = sk_promise_new_int();
+    sk_promise_set_int(t18, sk_int_new(0));
     __sk__async_ctx___sk__compute* __ctx_t18 = malloc(sizeof(__sk__async_ctx___sk__compute));
     __ctx_t18->p = t18;
     __ctx_t18->arg0 = sk_int_new(10);
     pthread_t __tid_t18;
     pthread_create(&__tid_t18, NULL, __sk__async_runner___sk__compute, __ctx_t18);
     pthread_detach(__tid_t18);
-    b__p = t18;
-    t19 = sk_promise_ended_int(b__p);
+    t19 = sk_promise_ended_int(t18);
     if (t19.value) {
         goto L7;
     } else {
@@ -1893,7 +1890,7 @@ L7:
     goto L9;
 L8:
 L9:
-    t21 = sk_promise_await_int(b__p);
+    t21 = sk_promise_await_int(t18);
     b_final = t21;
     t22 = sk_int_to_string(b_final);
     t23 = sk_string_concat(sk_string_new("compute(10) = "), t22);
@@ -1902,6 +1899,7 @@ L9:
     __sk__sendln(t24);
     sk_call_pop();
     t25 = sk_promise_new_string();
+    sk_promise_set_string(t25, sk_string_new("..."));
     __sk__async_ctx___sk__greet* __ctx_t25 = malloc(sizeof(__sk__async_ctx___sk__greet));
     __ctx_t25->p = t25;
     __ctx_t25->arg0 = sk_string_new("Skorpion");
@@ -1918,24 +1916,24 @@ L9:
     __sk__fail_later(sk_int_new(-5));
     sk_call_pop();
     t28 = sk_promise_new_int();
+    sk_promise_set_int(t28, sk_int_new(0));
     __sk__async_ctx___sk__compute* __ctx_t28 = malloc(sizeof(__sk__async_ctx___sk__compute));
     __ctx_t28->p = t28;
     __ctx_t28->arg0 = sk_int_new(3);
     pthread_t __tid_t28;
     pthread_create(&__tid_t28, NULL, __sk__async_runner___sk__compute, __ctx_t28);
     pthread_detach(__tid_t28);
-    p1__p = t28;
     t29 = sk_promise_new_int();
+    sk_promise_set_int(t29, sk_int_new(0));
     __sk__async_ctx___sk__compute* __ctx_t29 = malloc(sizeof(__sk__async_ctx___sk__compute));
     __ctx_t29->p = t29;
     __ctx_t29->arg0 = sk_int_new(4);
     pthread_t __tid_t29;
     pthread_create(&__tid_t29, NULL, __sk__async_runner___sk__compute, __ctx_t29);
     pthread_detach(__tid_t29);
-    p2__p = t29;
-    t30 = sk_promise_await_int(p1__p);
+    t30 = sk_promise_await_int(t28);
     r1 = t30;
-    t31 = sk_promise_await_int(p2__p);
+    t31 = sk_promise_await_int(t29);
     r2 = t31;
     t32 = sk_int_to_string(r1);
     t33 = sk_string_concat(sk_string_new("p1="), t32);
@@ -1946,7 +1944,7 @@ L9:
     sk_call_push("main.sk", 51, 5);
     __sk__sendln(t37);
     sk_call_pop();
-    t38 = sk_promise_ended_int(p2__p);
+    t38 = sk_promise_ended_int(t29);
     if (t38.value) {
         goto L10;
     } else {
@@ -1964,12 +1962,12 @@ L11:
     free(t34.value);
     free(t33.value);
     free(t32.value);
-    sk_promise_release_int(p2__p);
-    sk_promise_release_int(p1__p);
+    sk_promise_release_int(t29);
+    sk_promise_release_int(t28);
     sk_promise_release_string(t25);
     free(t23.value);
     free(t22.value);
-    sk_promise_release_int(b__p);
+    sk_promise_release_int(t18);
 L12:
     return 0;
 }
