@@ -55,62 +55,9 @@ func (p *Pipeline) Process() *IRProgram {
 		})
 	}
 
+	// NEW: глобальные константы
 	for _, g := range p.Program.GlobalVars {
-		varType := g.Type
-		if g.IsArray {
-			elem := g.ElemType
-			if elem == "" {
-				elem = "any"
-			}
-			varType = "arr[" + elem + "]"
-		}
-
-		irG := IRGlobal{
-			Name:    g.Name,
-			Type:    varType,
-			IsConst: g.IsConst,
-		}
-
-		// Инициализатор: либо литерал → строка в C, либо ошибка.
-		// Глобальные инициализаторы в C должны быть константными выражениями,
-		// поэтому поддерживаем только литералы; сложные выражения — отдельная задача.
-		switch e := g.Expr.(type) {
-		case *front.Number:
-			switch varType {
-			case "int":
-				irG.Value = e.Value
-			case "float":
-				irG.Value = e.Value // уже с суффиксом f
-			case "double":
-				irG.Value = e.Value
-			case "char":
-				irG.Value = fmt.Sprintf("sk_char_new(%s)", e.Value)
-			default:
-				irG.Value = e.Value
-			}
-		case *front.String:
-			irG.Value = fmt.Sprintf("sk_string_new(%q)", e.Value)
-		case *front.CharLiteral:
-			irG.Value = fmt.Sprintf("sk_char_new(%d)", e.Value)
-		case *front.Ident:
-			if e.Name == "true" {
-				irG.Value = "sk_bool_new(1)"
-			} else if e.Name == "false" {
-				irG.Value = "sk_bool_new(0)"
-			} else {
-				errors.NewError("3106",
-					fmt.Sprintf("Global constant '%s' initializer must be a literal", g.Name),
-					g.GetLine(), g.GetColumn(), "")
-				continue
-			}
-		default:
-			errors.NewError("3106",
-				fmt.Sprintf("Global constant '%s' initializer must be a literal", g.Name),
-				g.GetLine(), g.GetColumn(), "")
-			continue
-		}
-
-		p.IR.Globals = append(p.IR.Globals, irG)
+		p.processGlobalVar(g)
 	}
 
 	// Обрабатываем ErrorDecls
@@ -150,6 +97,514 @@ func (p *Pipeline) Process() *IRProgram {
 	gc.Analyze(p.IR)
 
 	return p.IR
+}
+
+// processGlobalVar превращает один *front.VarDecl в IRGlobal.
+// Поддерживаются все литеральные типы: int, float, double, bool, char,
+// string, arr[...] и dict.
+//
+// На файловом уровне C допускаются только константные выражения,
+// поэтому sk_*_new(...) использовать нельзя. Вместо этого:
+//   - скаляры      → brace-init ({ value, 0 } / { value, 0, -1 })
+//   - string       → статическая строка + sk_string{ (char*)s, 0 }
+//   - arr          → static sk_array + static sk_* elems[] + sk_arr{ &a, 0 }
+//   - dict         → static sk_dict + static sk_dict_entry[] + sk_dict_ref{ &d, 0 }
+//
+// Мутация таких глобалов запрещена на уровне семантики Skorpion (IsConst == true),
+// а GC их не освобождает (они не попадают в fn.Locals).
+func (p *Pipeline) processGlobalVar(g *front.VarDecl) {
+	if g == nil {
+		return
+	}
+
+	if g.Expr == nil {
+		errors.NewError("3106",
+			fmt.Sprintf("Global constant '%s' requires an initializer", g.Name),
+			g.GetLine(), g.GetColumn(), "")
+		return
+	}
+
+	// arr[N] / arr
+	varType := g.Type
+	elemType := ""
+	if g.IsArray {
+		elemType = g.ElemType
+		if elemType == "" {
+			elemType = "any"
+		}
+		varType = "arr[" + elemType + "]"
+	}
+
+	prelude := []string{}
+	value, errCode, errMsg, errLine, errCol := p.globalInitializer(
+		g.Name, varType, elemType, g.Expr, &prelude)
+
+	if errCode != "" {
+		errors.NewError(errCode, errMsg, errLine, errCol, "")
+		return
+	}
+
+	p.IR.Globals = append(p.IR.Globals, IRGlobal{
+		Name:    g.Name,
+		Type:    varType,
+		Value:   value,
+		IsConst: g.IsConst,
+		Prelude: prelude,
+	})
+}
+
+// globalInitializer возвращает:
+//   - готовый C-инициализатор (для `Type Name = <value>;`),
+//   - список prelude-деклараций (static-объекты для arr/dict/string),
+//   - код ошибки, если литерал не подходит (пустая строка = ok).
+//
+// Порядок инициализации в C гарантирует, что prelude напечатается до Name,
+// поэтому указатели в Value будут валидны.
+func (p *Pipeline) globalInitializer(
+	name, varType, elemType string,
+	expr front.Node,
+	prelude *[]string,
+) (value, errCode, errMsg string, errLine, errCol int) {
+
+	// ---------- скаляры ----------
+	switch varType {
+	case "int":
+		switch e := expr.(type) {
+		case *front.Number:
+			if strings.HasSuffix(e.Value, "f") || strings.HasSuffix(e.Value, "F") ||
+				strings.Contains(e.Value, ".") {
+				return "", "1507",
+					fmt.Sprintf("Type mismatch: cannot assign '%s' to global constant '%s' of type 'int'",
+						numberLiteralType(e.Value), name),
+					e.GetLine(), e.GetColumn()
+			}
+			return e.Value, "", "", 0, 0
+		case *front.CharLiteral:
+			return fmt.Sprintf("%d", e.Value), "", "", 0, 0
+		case *front.UnicodeLiteral:
+			return fmt.Sprintf("%d", e.Codepoint), "", "", 0, 0
+		}
+		return p.badGlobalInit(name, "int", expr)
+
+	case "char":
+		switch e := expr.(type) {
+		case *front.CharLiteral:
+			return fmt.Sprintf("%d", e.Value), "", "", 0, 0
+		case *front.UnicodeLiteral:
+			return fmt.Sprintf("%d", e.Codepoint), "", "", 0, 0
+		case *front.Number:
+			if strings.Contains(e.Value, ".") ||
+				strings.HasSuffix(e.Value, "f") ||
+				strings.HasSuffix(e.Value, "F") {
+				return "", "1507",
+					fmt.Sprintf("Type mismatch: cannot assign '%s' to global constant '%s' of type 'char'",
+						numberLiteralType(e.Value), name),
+					e.GetLine(), e.GetColumn()
+			}
+			return e.Value, "", "", 0, 0
+		}
+		return p.badGlobalInit(name, "char", expr)
+
+	case "bool":
+		if id, ok := expr.(*front.Ident); ok {
+			if id.Name == "true" {
+				return "1", "", "", 0, 0
+			}
+			if id.Name == "false" {
+				return "0", "", "", 0, 0
+			}
+		}
+		return p.badGlobalInit(name, "bool", expr)
+
+	case "float", "double":
+		num, ok := expr.(*front.Number)
+		if !ok {
+			return p.badGlobalInit(name, varType, expr)
+		}
+		s := num.Value
+		if strings.HasSuffix(s, "f") || strings.HasSuffix(s, "F") {
+			s = s[:len(s)-1]
+		}
+		return s, "", "", 0, 0
+
+	case "string":
+		str, ok := expr.(*front.String)
+		if !ok {
+			return p.badGlobalInit(name, "string", expr)
+		}
+		strName := "__sk__gstr_" + sanitizeGlobalName(name)
+		*prelude = append(*prelude, fmt.Sprintf(
+			"static const char %s[] = %q;", strName, str.Value))
+		return fmt.Sprintf("{ (char*)%s, 0 }", strName), "", "", 0, 0
+
+	case "any":
+		return p.globalAnyInitializer(name, expr, prelude)
+
+	case "dict":
+		return p.globalDictInitializer(name, expr, prelude)
+	}
+
+	// ---------- arr[...] ----------
+	if isArrayType(varType) {
+		return p.globalArrayInitializer(name, elemType, expr, prelude)
+	}
+
+	return p.badGlobalInit(name, varType, expr)
+}
+
+// badGlobalInit — общий путь для «не литерал» / «несовместимый тип».
+func (p *Pipeline) badGlobalInit(name, varType string, expr front.Node) (string, string, string, int, int) {
+	// Пытаемся понять: это литерал, но не того типа — 1507; иначе — 3106.
+	if lt := p.globalLiteralType(expr); lt != "" {
+		return "", "1507",
+			fmt.Sprintf("Type mismatch: cannot assign '%s' to global constant '%s' of type '%s'",
+				lt, name, varType),
+			expr.GetLine(), expr.GetColumn()
+	}
+	return "", "3106",
+		fmt.Sprintf("Global constant '%s' initializer must be a literal (got %T)", name, expr),
+		expr.GetLine(), expr.GetColumn()
+}
+
+// globalLiteralType возвращает Skorpion-тип литерала (или "" для не-литерала).
+func (p *Pipeline) globalLiteralType(expr front.Node) string {
+	switch e := expr.(type) {
+	case *front.Number:
+		return numberLiteralType(e.Value)
+	case *front.String:
+		return "string"
+	case *front.CharLiteral, *front.UnicodeLiteral:
+		return "char"
+	case *front.Ident:
+		if e.Name == "true" || e.Name == "false" {
+			return "bool"
+		}
+	}
+	return ""
+}
+
+func numberLiteralType(v string) string {
+	if strings.HasSuffix(v, "f") || strings.HasSuffix(v, "F") {
+		return "float"
+	}
+	if strings.Contains(v, ".") {
+		return "double"
+	}
+	return "int"
+}
+
+// globalArrayInitializer генерирует для глобального const arr:
+//
+//	static sk_int __sk__garr_NAME_elems[] = { {1,0}, {2,0}, ... };
+//	static sk_array __sk__garr_NAME_arr = {
+//	    (void*)__sk__garr_NAME_elems, N, N, sizeof(sk_int), 0
+//	};
+//
+// а возвращает значение для `sk_arr NAME = <value>;`:
+//
+//	{ &__sk__garr_NAME_arr, 0 }
+func (p *Pipeline) globalArrayInitializer(
+	name, elemType string,
+	expr front.Node,
+	prelude *[]string,
+) (value, errCode, errMsg string, errLine, errCol int) {
+
+	arrLit, ok := expr.(*front.ArrayLiteral)
+	if !ok {
+		return p.badGlobalInit(name, "arr["+elemType+"]", expr)
+	}
+
+	if elemType == "" {
+		elemType = "any"
+	}
+
+	// C-тип элемента и elem_type-код для sk_array.
+	cElem, elemTypeCode, ok := cElemTypeForArray(elemType)
+	if !ok {
+		return "", "3107",
+			fmt.Sprintf("Global constant '%s': array element type '%s' is not supported",
+				name, elemType),
+			arrLit.GetLine(), arrLit.GetColumn()
+	}
+
+	baseName := "__sk__garr_" + sanitizeGlobalName(name)
+	elemsName := baseName + "_elems"
+	arrName := baseName + "_arr"
+
+	var builder strings.Builder
+	builder.WriteString(fmt.Sprintf("static %s %s[] = {", cElem, elemsName))
+
+	for i, el := range arrLit.Elements {
+		elValue, code, msg, ln, cl := p.globalArrayElemInitializer(
+			name, elemType, el, prelude)
+		if code != "" {
+			return "", code, msg, ln, cl
+		}
+		if i > 0 {
+			builder.WriteString(", ")
+		}
+		builder.WriteString(elValue)
+	}
+	// Пустой массив — C не разрешает `[] = {}` для zero-size; добавляем
+	// dummy-элемент, но length = 0.
+	if len(arrLit.Elements) == 0 {
+		builder.WriteString(fmt.Sprintf("%s", cZeroInitForArrayElem(elemType)))
+	}
+	builder.WriteString("};\n")
+
+	n := len(arrLit.Elements)
+
+	builder.WriteString(fmt.Sprintf(
+		"static sk_array %s = { (void*)%s, %d, %d, sizeof(%s), %d };",
+		arrName, elemsName, n, n, cElem, elemTypeCode))
+
+	*prelude = append(*prelude, builder.String())
+
+	return fmt.Sprintf("{ &%s, 0 }", arrName), "", "", 0, 0
+}
+
+// globalArrayElemInitializer возвращает C-инициализатор одного элемента массива
+// (без обрамляющих скобок). Для вложенных массивов рекурсивно создаёт prelude.
+func (p *Pipeline) globalArrayElemInitializer(
+	parentName, elemType string,
+	el front.Node,
+	prelude *[]string,
+) (string, string, string, int, int) {
+
+	// Вложенный массив
+	if isArrayType(elemType) {
+		sub := "__sk__" + sanitizeGlobalName(parentName) + "_sub"
+		v, code, msg, ln, cl := p.globalArrayInitializer(sub, parseArrayElemType(elemType), el, prelude)
+		if code != "" {
+			return "", code, msg, ln, cl
+		}
+		// v = "{ &<static arr>, 0 }" — это уже sk_arr, можно вставить как есть.
+		return v, "", "", 0, 0
+	}
+
+	// any
+	if elemType == "any" {
+		return p.globalAnyInitializer(parentName, el, prelude)
+	}
+
+	// dict
+	if elemType == "dict" {
+		return p.globalDictInitializer(parentName, el, prelude)
+	}
+
+	// Скаляр / string — используем тот же диспетчер, но без prelude-дублей.
+	// Для строки возвращаем sk_string{ (char*)static, 0 }, а не обёртку.
+	v, code, msg, ln, cl := p.globalInitializer(parentName, elemType, "", el, prelude)
+	if code != "" {
+		return "", code, msg, ln, cl
+	}
+	return v, "", "", 0, 0
+}
+
+// cElemTypeForArray возвращает C-тип элемента и elem_type-код для sk_array.
+// Второй результат — false, если тип не поддерживается в глобальном контексте.
+func cElemTypeForArray(elemType string) (string, int, bool) {
+	if isArrayType(elemType) {
+		return "sk_arr", 6, true
+	}
+	switch elemType {
+	case "int":
+		return "sk_int", 0, true
+	case "string":
+		return "sk_string", 1, true
+	case "float":
+		return "sk_float", 2, true
+	case "double":
+		return "sk_double", 3, true
+	case "bool":
+		return "sk_bool", 4, true
+	case "any":
+		return "sk_any", 5, true
+	case "char":
+		return "sk_char", 7, true
+	case "dict":
+		return "sk_dict_ref", 8, true
+	}
+	return "", 0, false
+}
+
+// cZeroInitForArrayElem — «нулевой» инициализатор для пустого массива.
+func cZeroInitForArrayElem(elemType string) string {
+	if isArrayType(elemType) {
+		return "{ NULL, 1 }" // sk_arr NULL
+	}
+	switch elemType {
+	case "int":
+		return "{ 0, 1 }"
+	case "char":
+		return "{ 0, 1 }"
+	case "bool":
+		return "{ 0, 1 }"
+	case "float":
+		return "{ 0, 1, -1 }"
+	case "double":
+		return "{ 0, 1, -1 }"
+	case "string":
+		return "{ NULL, 1 }"
+	case "any":
+		return "{ 6, -1, { .p = NULL } }" // sk_any null
+	case "dict":
+		return "{ NULL, 1 }"
+	}
+	return "0"
+}
+
+// globalDictInitializer генерирует для глобального const dict:
+//
+//	static sk_string __sk__gdict_NAME_key0 = { (char*)"k0", 0 };
+//	static sk_any    __sk__gdict_NAME_val0 = { ... };
+//	static sk_dict_entry __sk__gdict_NAME_entries[] = {
+//	    { __sk__gdict_NAME_key0, __sk__gdict_NAME_val0 },
+//	    ...
+//	};
+//	static sk_dict __sk__gdict_NAME_d = { __sk__gdict_NAME_entries, N, N };
+//
+// а возвращает:
+//
+//	{ &__sk__gdict_NAME_d, 0 }
+func (p *Pipeline) globalDictInitializer(
+	name string,
+	expr front.Node,
+	prelude *[]string,
+) (value, errCode, errMsg string, errLine, errCol int) {
+
+	dictLit, ok := expr.(*front.DictLiteral)
+	if !ok {
+		return p.badGlobalInit(name, "dict", expr)
+	}
+
+	base := "__sk__gdict_" + sanitizeGlobalName(name)
+
+	var entries strings.Builder
+	entries.WriteString(fmt.Sprintf("static sk_dict_entry %s_entries[] = {", base))
+
+	for i, el := range dictLit.Elements {
+		// Ключ
+		keyName := fmt.Sprintf("%s_key%d", base, i)
+		*prelude = append(*prelude, fmt.Sprintf(
+			"static sk_string %s = { (char*)%q, 0 };", keyName, el.Key))
+
+		// Значение
+		valName := fmt.Sprintf("%s_val%d", base, i)
+		valVal, code, msg, ln, cl := p.globalAnyInitializer(valName, el.Value, prelude)
+		if code != "" {
+			return "", code, msg, ln, cl
+		}
+		*prelude = append(*prelude, fmt.Sprintf(
+			"static sk_any %s = %s;", valName, valVal))
+
+		if i > 0 {
+			entries.WriteString(",")
+		}
+		entries.WriteString(fmt.Sprintf("\n    { %s, %s }", keyName, valName))
+	}
+	if len(dictLit.Elements) == 0 {
+		entries.WriteString("{ { NULL, 1 }, { 6, -1, { .p = NULL } } }")
+	}
+	entries.WriteString("\n};\n")
+
+	n := len(dictLit.Elements)
+	entries.WriteString(fmt.Sprintf(
+		"static sk_dict %s_d = { %s_entries, %d, %d };",
+		base, base, n, n))
+	*prelude = append(*prelude, entries.String())
+
+	return fmt.Sprintf("{ &%s_d, 0 }", base), "", "", 0, 0
+}
+
+// globalAnyInitializer генерирует статический sk_any для литерала.
+// Для вложенных arr/dict/string создаёт соответствующий prelude и
+// возвращает brace-init `sk_any`.
+func (p *Pipeline) globalAnyInitializer(
+	name string,
+	expr front.Node,
+	prelude *[]string,
+) (value, errCode, errMsg string, errLine, errCol int) {
+
+	switch e := expr.(type) {
+	case *front.Number:
+		t := numberLiteralType(e.Value)
+		switch t {
+		case "int":
+			return fmt.Sprintf("{ 0, -1, { .i = %s } }", e.Value), "", "", 0, 0
+		case "float":
+			v := strings.TrimSuffix(strings.TrimSuffix(e.Value, "f"), "F")
+			return fmt.Sprintf("{ 2, -1, { .f = %sf } }", v), "", "", 0, 0
+		case "double":
+			return fmt.Sprintf("{ 3, -1, { .d = %s } }", e.Value), "", "", 0, 0
+		}
+
+	case *front.String:
+		strName := "__sk__gstr_" + sanitizeGlobalName(name)
+		*prelude = append(*prelude, fmt.Sprintf(
+			"static const char %s[] = %q;", strName, e.Value))
+		return fmt.Sprintf("{ 1, -1, { .s = (char*)%s } }", strName), "", "", 0, 0
+
+	case *front.CharLiteral:
+		return fmt.Sprintf("{ 7, -1, { .i = %d } }", e.Value), "", "", 0, 0
+
+	case *front.UnicodeLiteral:
+		return fmt.Sprintf("{ 7, -1, { .i = %d } }", e.Codepoint), "", "", 0, 0
+
+	case *front.Ident:
+		if e.Name == "true" {
+			return "{ 4, -1, { .b = 1 } }", "", "", 0, 0
+		}
+		if e.Name == "false" {
+			return "{ 4, -1, { .b = 0 } }", "", "", 0, 0
+		}
+
+	case *front.NullLiteral:
+		return "{ 6, -1, { .p = NULL } }", "", "", 0, 0
+
+	case *front.ArrayLiteral:
+		innerName := "__sk__gany_" + sanitizeGlobalName(name)
+		_, code, msg, ln, cl := p.globalArrayInitializer(innerName, "", e, prelude)
+		if code != "" {
+			return "", code, msg, ln, cl
+		}
+		// globalArrayInitializer для innerName создал:
+		//   __sk__garr_<innerName>_arr
+		// Значит, тут фиксированное имя:
+		arrVar := "__sk__garr_" + sanitizeGlobalName(innerName) + "_arr"
+		return fmt.Sprintf("{ 5, -1, { .p = (void*)&%s } }", arrVar), "", "", 0, 0
+
+	case *front.DictLiteral:
+		innerName := "__sk__gany_" + sanitizeGlobalName(name)
+		_, code, msg, ln, cl := p.globalDictInitializer(innerName, e, prelude)
+		if code != "" {
+			return "", code, msg, ln, cl
+		}
+		dictVar := "__sk__gdict_" + sanitizeGlobalName(innerName) + "_d"
+		return fmt.Sprintf("{ 8, -1, { .p = (void*)&%s } }", dictVar), "", "", 0, 0
+	}
+
+	return p.badGlobalInit(name, "any", expr)
+}
+
+// sanitizeGlobalName приводит имя к валидному C-идентификатору.
+func sanitizeGlobalName(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z',
+			r >= 'A' && r <= 'Z',
+			r >= '0' && r <= '9',
+			r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	if b.Len() == 0 {
+		return "v"
+	}
+	return b.String()
 }
 
 func (p *Pipeline) processFunction(fn *front.Function) {
@@ -4637,6 +5092,12 @@ func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 						return "dict"
 					}
 				}
+			}
+		}
+		// NEW: глобальные константы
+		for _, g := range p.IR.Globals {
+			if g.Name == n.Name {
+				return g.Type
 			}
 		}
 		return ""

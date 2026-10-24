@@ -119,9 +119,10 @@ func (p *Parser) Parse() *Program {
 	}
 
 	prog := &Program{
-		Position:  p.pos(),
-		Imports:   []*Import{},
-		Functions: []*Function{},
+		Position:   p.pos(),
+		Imports:    []*Import{},
+		Functions:  []*Function{},
+		GlobalVars: []*VarDecl{},
 	}
 
 	debug.Debug("Starting parse, first token: %s type: %s", p.peek.Literal, p.peek.Type.String())
@@ -139,7 +140,10 @@ func (p *Parser) Parse() *Program {
 		}
 	}
 
-	// Обработка const-объявлений ошибок (до функций)
+	// const на верхнем уровне:
+	//   const int PI = ...             → глобальная константа (экспортируемая)
+	//   const int *PI = ...            → глобальная константа (приватная)
+	//   const MyError{...} = new ...   → объявление error-типа
 	for p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "const" {
 		if p.hasErrors || errors.HasFatal() {
 			break
@@ -148,18 +152,13 @@ func (p *Parser) Parse() *Program {
 		p.advance() // const
 
 		if p.isType(p.peek) {
-			// const-переменная: const int PI = 3.14
-			node := p.parseConstVarDeclAfterConst(pos)
+			node := p.parseConstVarDeclAfterConst(pos, true)
 			if vd, ok := node.(*VarDecl); ok && vd != nil {
-				if prog.GlobalVars == nil {
-					prog.GlobalVars = []*VarDecl{}
-				}
 				prog.GlobalVars = append(prog.GlobalVars, vd)
 			}
 		} else {
-			// error-тип: const MyError{...} = new Error
 			node := p.parseErrorDeclAfterConst(pos)
-			if ed, ok := node.(*ErrorDecl); ok {
+			if ed, ok := node.(*ErrorDecl); ok && ed != nil {
 				prog.ErrorDecls = append(prog.ErrorDecls, ed)
 			}
 		}
@@ -623,7 +622,6 @@ func (p *Parser) parseStatement() Node {
 			return p.parseThrow()
 
 		case "Promise":
-			// Promise[expr] как statement
 			pos := p.pos()
 			p.advance() // Promise
 			if p.peek.Type != TOKEN_LBRACKET {
@@ -650,7 +648,6 @@ func (p *Parser) parseStatement() Node {
 			return &PromiseSet{Position: pos, Value: val}
 
 		case "await":
-			// await expr как statement
 			pos := p.pos()
 			p.advance()
 			expr := p.parseUnary()
@@ -669,8 +666,8 @@ func (p *Parser) parseStatement() Node {
 			p.advance() // const
 
 			if p.isType(p.peek) {
-				// const-переменная
-				return p.parseConstVarDeclAfterConst(pos)
+				// const-переменная внутри функции: `*` запрещён
+				return p.parseConstVarDeclAfterConst(pos, false)
 			}
 
 			// error-тип
@@ -715,10 +712,16 @@ func (p *Parser) parseStatement() Node {
 
 // parseConstVarDeclAfterConst разбирает const-переменную после того,
 // как `const` уже съеден.
+//
 // Формат: const Type name = expr
 //
+//	const Type *name = expr       (только allowStar == true)
 //	const arr[T] name = expr
-func (p *Parser) parseConstVarDeclAfterConst(pos Position) Node {
+//	const arr[T] *name = expr     (только allowStar == true)
+//
+// allowStar == true  — `*` разрешён (верхний уровень, приватная глобальная константа).
+// allowStar == false — `*` запрещён (внутри функции).
+func (p *Parser) parseConstVarDeclAfterConst(pos Position, allowStar bool) Node {
 	if p.hasErrors || errors.HasFatal() {
 		return nil
 	}
@@ -727,6 +730,20 @@ func (p *Parser) parseConstVarDeclAfterConst(pos Position) Node {
 	varType := p.parseType()
 	if varType == "" {
 		return nil
+	}
+
+	// `*` после типа — приватная константа (по аналогии с func)
+	isExport := true
+	if p.peek.Type == TOKEN_STAR {
+		if !allowStar {
+			p.hasErrors = true
+			errors.NewFatalError("0562",
+				"Unexpected '*' — private constants are only allowed at module level",
+				p.peek.Line, p.peek.Column, p.FileName)
+			return nil
+		}
+		isExport = false
+		p.advance()
 	}
 
 	// arr[int] / arr / arr[arr[int]]
@@ -772,6 +789,7 @@ func (p *Parser) parseConstVarDeclAfterConst(pos Position) Node {
 			Expr:     expr,
 			IsArray:  true,
 			IsConst:  true,
+			IsExport: isExport,
 		}
 	}
 
@@ -811,6 +829,7 @@ func (p *Parser) parseConstVarDeclAfterConst(pos Position) Node {
 		Expr:     expr,
 		IsArray:  false,
 		IsConst:  true,
+		IsExport: isExport,
 	}
 }
 

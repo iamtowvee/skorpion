@@ -285,6 +285,7 @@ type VarDecl struct {
 	Expr        Node
 	IsArray     bool
 	IsConst     bool
+	IsExport    bool
 }
 
 func (v *VarDecl) GetType() NodeType     { return NODE_VAR_DECL }

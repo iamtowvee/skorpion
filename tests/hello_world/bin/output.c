@@ -1714,6 +1714,9 @@ sk_string __sk__getExePath(void);
 sk_arr __sk__getArgs(void);
 void __sk__exit(sk_int code, sk_string msg);
 
+// Global variables
+sk_float PI = { 3.141592, 0, -1 };
+
 typedef struct {
     sk_promise_dict* p;
 } __sk__async_ctx___sk__f;
@@ -1818,14 +1821,16 @@ int main(int argc, char** argv) {
     sk_int t13;
     sk_int t14;
     sk_bool t15;
-    sk_any t16;
-    sk_promise_dict* t17;
-    sk_dict_ref t18;
-    sk_any t19;
+    sk_float t16;
+    sk_float t17;
+    sk_any t18;
+    sk_promise_dict* t19;
+    sk_dict_ref t20;
+    sk_any t21;
     sk_string s;
-    sk_string t20;
-    sk_string t21;
     sk_string t22;
+    sk_string t23;
+    sk_string t24;
 
     MAX = sk_int_new(100);
     i = sk_int_new(0);
@@ -1848,34 +1853,36 @@ int main(int argc, char** argv) {
         goto L5;
     }
 L4:
-    t16 = any_int(MAX);
+    t16 = sk_float_new((float)MAX.value);
+    t17 = sk_float_add(t16, PI);
+    t18 = any_float(t17);
     sk_call_push("main.sk", 28, 9);
-    __sk__println(t16);
+    __sk__println(t18);
     sk_call_pop();
     goto L6;
 L5:
 L6:
-    t17 = sk_promise_new_dict();
-    __sk__async_ctx___sk__f* __ctx_t17 = malloc(sizeof(__sk__async_ctx___sk__f));
-    __ctx_t17->p = t17;
-    pthread_t __tid_t17;
-    pthread_create(&__tid_t17, NULL, __sk__async_runner___sk__f, __ctx_t17);
-    pthread_detach(__tid_t17);
-    t18 = sk_promise_await_dict(t17);
-    t19 = any_dict(t18);
+    t19 = sk_promise_new_dict();
+    __sk__async_ctx___sk__f* __ctx_t19 = malloc(sizeof(__sk__async_ctx___sk__f));
+    __ctx_t19->p = t19;
+    pthread_t __tid_t19;
+    pthread_create(&__tid_t19, NULL, __sk__async_runner___sk__f, __ctx_t19);
+    pthread_detach(__tid_t19);
+    t20 = sk_promise_await_dict(t19);
+    t21 = any_dict(t20);
     sk_call_push("main.sk", 31, 5);
-    __sk__sendln(t19);
+    __sk__sendln(t21);
     sk_call_pop();
     s = sk_string_new("hello");
-    t20 = sk_string_concat(s, sk_string_new(" world"));
-    s = t20;
-    t21 = sk_char_to_string(sk_char_new(33));
-    t22 = sk_string_concat(s, t21);
+    t22 = sk_string_concat(s, sk_string_new(" world"));
     s = t22;
+    t23 = sk_char_to_string(sk_char_new(33));
+    t24 = sk_string_concat(s, t23);
+    s = t24;
     return 0;
-    free(t21.value);
+    free(t23.value);
     free(s.value);
-    sk_promise_release_dict(t17);
+    sk_promise_release_dict(t19);
     return 0;
 }
 
@@ -1906,38 +1913,38 @@ sk_string __sk__std_io_input(sk_string prompt) {
 }
 
 void __sk__sendln(sk_any msg) {
-    sk_string t23;
-    sk_string t24;
+    sk_string t25;
+    sk_string t26;
 
-    t23 = any_to_string(msg);
-    t24 = sk_string_concat(t23, sk_string_new("\n"));
-    free(t23.value);
+    t25 = any_to_string(msg);
+    t26 = sk_string_concat(t25, sk_string_new("\n"));
+    free(t25.value);
     sk_call_push("<builtin:std/io>", 37, 5);
-    __sk__std_io_send(t24);
+    __sk__std_io_send(t26);
     sk_call_pop();
-    free(t24.value);
+    free(t26.value);
     return;
 }
 
 void __sk__sendf(sk_any msg) {
-    sk_string t25;
+    sk_string t27;
 
-    t25 = any_to_string(msg);
+    t27 = any_to_string(msg);
     sk_call_push("<builtin:std/io>", 41, 5);
-    __sk__std_io_send(t25);
+    __sk__std_io_send(t27);
     sk_call_pop();
-    free(t25.value);
+    free(t27.value);
     return;
 }
 
 sk_string __sk__input(sk_string prefix) {
-    sk_string t26;
+    sk_string t28;
 
     sk_call_push("<builtin:std/io>", 45, 12);
-    t26 = __sk__std_io_input(prefix);
+    t28 = __sk__std_io_input(prefix);
     sk_call_pop();
-    return t26;
-    return t26;
+    return t28;
+    return t28;
 }
 
 void __sk__print(sk_any line) {
@@ -1975,10 +1982,10 @@ void __sk__setEnv(sk_string env, sk_string val) {
 }
 
 void __sk__setClearEnv(sk_string env, sk_string val, sk_bool confirm) {
-    sk_bool t27;
+    sk_bool t29;
 
-    t27 = sk_bool_not(confirm);
-    if (t27.value) {
+    t29 = sk_bool_not(confirm);
+    if (t29.value) {
         goto L7;
     } else {
         goto L8;
@@ -2008,7 +2015,7 @@ sk_string __sk__getExePath(void) {
 }
 
 sk_arr __sk__getArgs(void) {
-    sk_arr t28;
+    sk_arr t30;
 
     sk_array* arr = sk_array_new(sizeof(sk_string), 1);
             for (int i = 0; i < __sk__argc; i++) {
@@ -2016,9 +2023,9 @@ sk_arr __sk__getArgs(void) {
                 sk_array_push(arr, &s);
             }
             return sk_arr_new(arr);
-    t28 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t28;
-    return t28;
+    t30 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    return t30;
+    return t30;
 }
 
 void __sk__exit(sk_int code, sk_string msg) {

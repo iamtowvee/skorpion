@@ -54,6 +54,18 @@ func (im *ImportManager) SetLibraryConfig(projectDir, libsDir string, dependenci
 	im.dependencies = dependencies
 }
 
+func appendUniqueGlobalVars(dst []*VarDecl, src *VarDecl) []*VarDecl {
+	if src == nil {
+		return dst
+	}
+	for _, v := range dst {
+		if v.Name == src.Name {
+			return dst
+		}
+	}
+	return append(dst, src)
+}
+
 func (im *ImportManager) LoadMain(path string) (*Program, error) {
 	// Сбрасываем кеш для новой сборки
 	im.loaded = make(map[string]*LoadedModule)
@@ -90,6 +102,13 @@ func (im *ImportManager) LoadMain(path string) (*Program, error) {
 		// Переносим ErrorDecls из модуля в main (с дедупликацией)
 		mainProg.ErrorDecls = appendUniqueErrors(mainProg.ErrorDecls, subProg.ErrorDecls)
 
+		// NEW: переносим только экспортируемые глобальные константы
+		for _, gv := range subProg.GlobalVars {
+			if gv.IsExport {
+				mainProg.GlobalVars = appendUniqueGlobalVars(mainProg.GlobalVars, gv)
+			}
+		}
+
 		// Добавляем ТОЛЬКО экспортируемые функции
 		for _, fn := range subProg.Functions {
 			if fn.IsExport {
@@ -98,13 +117,13 @@ func (im *ImportManager) LoadMain(path string) (*Program, error) {
 		}
 	}
 
-	// NEW: собираем полный список функций (локальные + импортированные)
+	// Собираем полный список функций (локальные + импортированные)
 	mainProg.AllFunctions = make([]*Function, 0, len(mainProg.Functions)+len(im.importedFuncs))
 	mainProg.AllFunctions = append(mainProg.AllFunctions, mainProg.Functions...)
 	mainProg.AllFunctions = append(mainProg.AllFunctions, im.importedFuncs...)
 
-	debug.Debug("LoadMain: Functions=%d ImportedFuncs=%d AllFunctions=%d",
-		len(mainProg.Functions), len(im.importedFuncs), len(mainProg.AllFunctions))
+	debug.Debug("LoadMain: Functions=%d ImportedFuncs=%d GlobalVars=%d AllFunctions=%d",
+		len(mainProg.Functions), len(im.importedFuncs), len(mainProg.GlobalVars), len(mainProg.AllFunctions))
 	for _, fn := range mainProg.AllFunctions {
 		debug.Debug("  AllFunctions: %s -> %s", fn.Name, fn.ReturnType)
 	}
@@ -176,14 +195,20 @@ func (im *ImportManager) loadModuleInternal(path string, visited map[string]bool
 		// Переносим ErrorDecls из вложенных модулей (с дедупликацией)
 		prog.ErrorDecls = appendUniqueErrors(prog.ErrorDecls, subProg.ErrorDecls)
 
+		// NEW: переносим только экспортируемые глобальные константы
+		for _, gv := range subProg.GlobalVars {
+			if gv.IsExport {
+				prog.GlobalVars = appendUniqueGlobalVars(prog.GlobalVars, gv)
+			}
+		}
+
 		// Функции — как было
 		prog.Functions = append(prog.Functions, subProg.Functions...)
 	}
 	delete(visited, path)
 
 	// === Заполняем Module для СВОИХ ErrorDecl ===
-	// Вложенные уже заполнены, у них Module != ""
-	moduleName := GetModuleName(path) // "std/strings" → "strings"
+	moduleName := GetModuleName(path)
 	for _, d := range prog.ErrorDecls {
 		if d.Module == "" {
 			d.Module = moduleName

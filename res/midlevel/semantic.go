@@ -162,6 +162,9 @@ func (sa *SemanticAnalyzer) Analyze() bool {
 		sa.registerErrorDecl(decl)
 	}
 
+	// NEW: регистрируем глобальные константы
+	sa.registerGlobalVars()
+
 	debug.Debug("Registering %d functions from main\n", len(sa.Program.Functions))
 	for _, fn := range sa.Program.Functions {
 		sa.registerFunction(fn)
@@ -207,6 +210,106 @@ func (sa *SemanticAnalyzer) Analyze() bool {
 	}
 
 	return len(sa.Errors) == 0
+}
+
+func (sa *SemanticAnalyzer) registerGlobalVars() {
+	for _, g := range sa.Program.GlobalVars {
+		if g == nil {
+			continue
+		}
+
+		if existing := sa.GlobalScope.ResolveLocal(g.Name); existing != nil {
+			sa.addError("1500",
+				fmt.Sprintf("Global constant '%s' already declared", g.Name),
+				g.GetLine(), g.GetColumn(), "")
+			continue
+		}
+
+		if g.Type == "void" {
+			sa.addError("1558",
+				fmt.Sprintf("Cannot declare global constant '%s' of type 'void'", g.Name),
+				g.GetLine(), g.GetColumn(), "")
+			continue
+		}
+
+		if !sa.isValidType(g.Type) && !isUnionType(g.Type) && !isArrayTypeSemantic(g.Type) {
+			sa.addError("1506",
+				fmt.Sprintf("Unknown type '%s' for global constant '%s'", g.Type, g.Name),
+				g.GetLine(), g.GetColumn(), "")
+			continue
+		}
+
+		if g.Expr == nil {
+			sa.addError("1557",
+				fmt.Sprintf("Global constant '%s' requires an initializer", g.Name),
+				g.GetLine(), g.GetColumn(), "")
+			continue
+		}
+
+		// Проверка инициализатора — литерал и его тип должен совпадать с declared.
+		// Global-константы инициализируются только литералами (см. pipeline.processGlobalVar),
+		// поэтому проверяем именно литеральный тип.
+		exprType := sa.getGlobalInitType(g.Expr)
+		if exprType == "" {
+			sa.addError("1557",
+				fmt.Sprintf("Global constant '%s' initializer must be a literal (number, string, char, bool)", g.Name),
+				g.Expr.GetLine(), g.Expr.GetColumn(), sa.CurrentFile)
+			continue
+		}
+
+		if exprType == "void" {
+			sa.addError("1557",
+				fmt.Sprintf("Cannot assign null to global constant '%s'", g.Name),
+				g.Expr.GetLine(), g.Expr.GetColumn(), sa.CurrentFile)
+			continue
+		}
+
+		// Разрешаем char↔int (как для локальных), any принимает всё.
+		if g.Type == "any" {
+			// ok
+		} else if g.Type == "int" && exprType == "char" {
+			// ok
+		} else if g.Type == "char" && exprType == "int" {
+			// ok
+		} else if g.Type != exprType {
+			sa.addError("1507",
+				fmt.Sprintf("Type mismatch: cannot assign '%s' to global constant '%s' of type '%s'",
+					exprType, g.Name, g.Type),
+				g.Expr.GetLine(), g.Expr.GetColumn(), sa.CurrentFile)
+			continue
+		}
+
+		sym := sa.GlobalScope.Define(g.Name, SYM_CONST, g.Type, g.IsExport)
+		sym.IsConst = true
+	}
+}
+
+// getGlobalInitType возвращает тип литерала (или "", если это не литерал).
+func (sa *SemanticAnalyzer) getGlobalInitType(node front.Node) string {
+	switch n := node.(type) {
+	case *front.Number:
+		if strings.HasSuffix(n.Value, "f") || strings.HasSuffix(n.Value, "F") {
+			return "float"
+		}
+		if strings.Contains(n.Value, ".") {
+			return "double"
+		}
+		return "int"
+	case *front.String:
+		return "string"
+	case *front.CharLiteral:
+		return "char"
+	case *front.UnicodeLiteral:
+		return "char"
+	case *front.NullLiteral:
+		return "void"
+	case *front.Ident:
+		if n.Name == "true" || n.Name == "false" {
+			return "bool"
+		}
+		return ""
+	}
+	return ""
 }
 
 func (sa *SemanticAnalyzer) isImportedFunction(name string) bool {

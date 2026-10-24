@@ -66,6 +66,7 @@ type IRGlobal struct {
 	Type    string
 	Value   string
 	IsConst bool
+	Prelude []string
 }
 
 type IRImport struct {

@@ -529,6 +529,7 @@ func buildProject() {
 		Imports:        mainProg.Imports,
 		Functions:      visibleFunctions,
 		ErrorDecls:     mainProg.ErrorDecls,
+		GlobalVars:     mainProg.GlobalVars,
 		GlobalIncludeC: mainProg.GlobalIncludeC,
 		AllFunctions:   allFunctions,
 	}
@@ -681,6 +682,7 @@ func buildLib(projectPath string) {
 		Imports:        mainProg.Imports,
 		Functions:      visibleFunctions,
 		ErrorDecls:     mainProg.ErrorDecls,
+		GlobalVars:     mainProg.GlobalVars,
 		GlobalIncludeC: mainProg.GlobalIncludeC,
 		AllFunctions:   allFunctions,
 	}
@@ -709,6 +711,7 @@ func buildLib(projectPath string) {
 		Imports:        mergedProg.Imports,
 		Functions:      mergedProg.AllFunctions,
 		ErrorDecls:     mergedProg.ErrorDecls,
+		GlobalVars:     mergedProg.GlobalVars,
 		GlobalIncludeC: mergedProg.GlobalIncludeC,
 		AllFunctions:   mergedProg.AllFunctions,
 	}
@@ -738,7 +741,6 @@ func buildLib(projectPath string) {
 			"Library has no exportable functions (all functions are marked with '*' — the library will be empty for consumers)",
 			0, 0, mainFile)
 		printErrorReport(startTime, mainFile, sourceLines)
-		os.Exit(1)
 		return
 	}
 
@@ -746,6 +748,7 @@ func buildLib(projectPath string) {
 		Imports:        []*front.Import{},
 		Functions:      libFunctions,
 		ErrorDecls:     optProg.ErrorDecls,
+		GlobalVars:     optProg.GlobalVars,
 		GlobalIncludeC: optProg.GlobalIncludeC,
 		AllFunctions:   nil,
 	}

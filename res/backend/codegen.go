@@ -1138,11 +1138,11 @@ func (cg *CodeGenerator) Generate() string {
 	if len(cg.IR.Globals) > 0 {
 		cg.writeLine("// Global variables")
 		for _, g := range cg.IR.Globals {
-			qualifier := ""
-			if g.IsConst {
-				qualifier = "const "
+			for _, pre := range g.Prelude {
+				cg.writeLine(pre)
 			}
-			cg.writeLine(fmt.Sprintf("%s%s %s = %s;", qualifier, cg.typeToC(g.Type), g.Name, g.Value))
+			cg.writeLine(fmt.Sprintf("%s %s = %s;",
+				cg.typeToC(g.Type), g.Name, cg.globalInitializer(g.Type, g.Value)))
 		}
 		cg.writeLine("")
 	}
@@ -1994,4 +1994,31 @@ func (cg *CodeGenerator) promiseSuffix(t string) string {
 		return t
 	}
 	return "int"
+}
+
+// globalInitializer формирует C-инициализатор для глобальной переменной.
+// На файловом уровне C допускаются только константные выражения,
+// поэтому sk_*_new(...) использовать нельзя — только brace-init.
+//
+// Формат sk_*:
+//
+//	sk_int    { int value; int __is_null; }
+//	sk_char   { int value; int __is_null; }
+//	sk_bool   { int value; int __is_null; }
+//	sk_float  { float value; int __is_null; int prec; }
+//	sk_double { double value; int __is_null; int prec; }
+//
+// prec = -1 означает «без явной точности» (как в SK_NULL_float/SK_NULL_double).
+//
+// string / arr / dict / any из pipeline.processGlobalVar приходят уже
+// в виде готового brace-init (`{ ... }`) — их трогать не нужно.
+func (cg *CodeGenerator) globalInitializer(skType, value string) string {
+	switch skType {
+	case "int", "char", "bool":
+		return fmt.Sprintf("{ %s, 0 }", value)
+	case "float", "double":
+		return fmt.Sprintf("{ %s, 0, -1 }", value)
+	default:
+		return value
+	}
 }

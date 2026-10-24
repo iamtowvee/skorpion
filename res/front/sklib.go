@@ -127,11 +127,13 @@ import (
 
 // Версия формата .sklib.
 //
-//	1 — старый формат на основе encoding/gob (не поддерживается).
-//	2 — собственный бинарный формат (текущий, language-agnostic).
+//   - Версия формата .sklib.
+//   - 1 — gob (не поддерживается)
+//   - 2 — собственный бинарный формат (без GlobalVars)
+//   - 3 — + Program.GlobalVars и VarDecl.IsExport
 //
 // Увеличивайте при любых несовместимых изменениях структуры.
-const SKLibFormatVersion = 2
+const SKLibFormatVersion = 3
 
 // sklibMagic — магические байты в начале .sklib.
 var sklibMagic = []byte{'S', 'K', 'L', 'B'}
@@ -395,6 +397,7 @@ func (w *binWriter) node(n Node) error {
 		}
 		w.bool(v.IsArray)
 		w.bool(v.IsConst)
+		w.bool(v.IsExport) // NEW (v3)
 		return nil
 	case *Assign:
 		w.u8(tagAssign)
@@ -704,6 +707,16 @@ func (w *binWriter) program(p *Program) error {
 	}
 
 	w.strs(p.GlobalIncludeC)
+
+	// NEW (v3): GlobalVars — пишем в конец payload, чтобы v2-файлы
+	// не были «случайно совместимы».
+	w.uvarint(uint64(len(p.GlobalVars)))
+	for _, gv := range p.GlobalVars {
+		if err := w.node(gv); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -1066,6 +1079,25 @@ func (r *binReader) program() (*Program, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// NEW (v3): GlobalVars
+	nVars, err := r.count()
+	if err != nil {
+		return nil, err
+	}
+	p.GlobalVars = make([]*VarDecl, 0, nVars)
+	for i := 0; i < nVars; i++ {
+		n, err := r.node()
+		if err != nil {
+			return nil, err
+		}
+		vd, ok := n.(*VarDecl)
+		if !ok {
+			return nil, fmt.Errorf("program: expected *VarDecl, got %T", n)
+		}
+		p.GlobalVars = append(p.GlobalVars, vd)
+	}
+
 	return p, nil
 }
 
@@ -1358,6 +1390,9 @@ func (r *binReader) varDeclNode() (*VarDecl, error) {
 		return nil, err
 	}
 	if v.IsConst, err = r.bool(); err != nil {
+		return nil, err
+	}
+	if v.IsExport, err = r.bool(); err != nil {
 		return nil, err
 	}
 	return v, nil
