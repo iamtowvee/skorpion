@@ -24,8 +24,8 @@ void main(arr args) {
     i %= 2               // i = -1
     i **= 2              // i = 1
 
-    if MAX == 100 {
-        io.sendln(MAX)
+    if (MAX == 100) {
+        println(MAX + PI)
     }
 
     io.sendln(await f())

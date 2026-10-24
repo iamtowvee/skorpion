@@ -80,6 +80,7 @@ type Program struct {
 	Imports        []*Import
 	Functions      []*Function
 	ErrorDecls     []*ErrorDecl
+	GlobalVars     []*VarDecl
 	AllFunctions   []*Function
 	GlobalIncludeC []string
 }

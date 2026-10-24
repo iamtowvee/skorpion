@@ -1700,12 +1700,6 @@ sk_dict_ref __sk__get_config(void) {
 // Function prototypes
 void __sk__foo(sk_int a, sk_arr some);
 void __sk__f(sk_promise_dict* __promise);
-sk_string __sk__getEnv(sk_string env);
-void __sk__setEnv(sk_string env, sk_string val);
-void __sk__setClearEnv(sk_string env, sk_string val, sk_bool confirm);
-sk_string __sk__getExePath(void);
-sk_arr __sk__getArgs(void);
-void __sk__exit(sk_int code, sk_string msg);
 void __sk__std_io_send(sk_string line);
 sk_string __sk__std_io_input(sk_string prompt);
 void __sk__sendln(sk_any msg);
@@ -1713,6 +1707,12 @@ void __sk__sendf(sk_any msg);
 sk_string __sk__input(sk_string prefix);
 void __sk__print(sk_any line);
 void __sk__println(sk_any msg);
+sk_string __sk__getEnv(sk_string env);
+void __sk__setEnv(sk_string env, sk_string val);
+void __sk__setClearEnv(sk_string env, sk_string val, sk_bool confirm);
+sk_string __sk__getExePath(void);
+sk_arr __sk__getArgs(void);
+void __sk__exit(sk_int code, sk_string msg);
 
 typedef struct {
     sk_promise_dict* p;
@@ -1850,7 +1850,7 @@ int main(int argc, char** argv) {
 L4:
     t16 = any_int(MAX);
     sk_call_push("main.sk", 28, 9);
-    __sk__sendln(t16);
+    __sk__println(t16);
     sk_call_pop();
     goto L6;
 L5:
@@ -1877,81 +1877,6 @@ L6:
     free(s.value);
     sk_promise_release_dict(t17);
     return 0;
-}
-
-sk_string __sk__getEnv(sk_string env) {
-    if (env.__is_null) return sk_string_new("");
-        char* val = getenv(env.value);
-        return sk_string_new(val ? val : "");
-    return sk_string_new("");
-    return sk_string_new("");
-}
-
-void __sk__setEnv(sk_string env, sk_string val) {
-    if (env.__is_null || val.__is_null) return;
-        #if defined(_WIN32)
-            if (getenv(env.value) == NULL) {
-                _putenv_s(env.value, val.value);
-            }
-        #elif defined(__linux__)
-            setenv(env.value, val.value, 0);
-        #endif
-    return;
-}
-
-void __sk__setClearEnv(sk_string env, sk_string val, sk_bool confirm) {
-    sk_bool t23;
-
-    t23 = sk_bool_not(confirm);
-    if (t23.value) {
-        goto L7;
-    } else {
-        goto L8;
-    }
-L7:
-    return;
-    return;
-    goto L9;
-L8:
-L9:
-    if (env.__is_null || val.__is_null) return;
-        #if defined(_WIN32)
-            _putenv_s(env.value, val.value);
-        #elif defined(__linux__)
-            setenv(env.value, val.value, 1);
-        #endif
-    return;
-}
-
-sk_string __sk__getExePath(void) {
-    if (__sk__argc > 0 && __sk__argv[0]) {
-                return sk_string_new(__sk__argv[0]);
-            }
-            return sk_string_new("");
-    return sk_string_new("");
-    return sk_string_new("");
-}
-
-sk_arr __sk__getArgs(void) {
-    sk_arr t24;
-
-    sk_array* arr = sk_array_new(sizeof(sk_string), 1);
-            for (int i = 0; i < __sk__argc; i++) {
-                sk_string s = sk_string_new(__sk__argv[i]);
-                sk_array_push(arr, &s);
-            }
-            return sk_arr_new(arr);
-    t24 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t24;
-    return t24;
-}
-
-void __sk__exit(sk_int code, sk_string msg) {
-    if (msg.value != NULL && msg.value[0] != '\0') {
-          fprintf(stderr, "%s\n", msg.value);
-        }
-        exit(code.value);
-    return;
 }
 
 void __sk__std_io_send(sk_string line) {
@@ -1981,51 +1906,126 @@ sk_string __sk__std_io_input(sk_string prompt) {
 }
 
 void __sk__sendln(sk_any msg) {
-    sk_string t25;
-    sk_string t26;
+    sk_string t23;
+    sk_string t24;
 
-    t25 = any_to_string(msg);
-    t26 = sk_string_concat(t25, sk_string_new("\n"));
-    free(t25.value);
+    t23 = any_to_string(msg);
+    t24 = sk_string_concat(t23, sk_string_new("\n"));
+    free(t23.value);
     sk_call_push("<builtin:std/io>", 37, 5);
-    __sk__std_io_send(t26);
+    __sk__std_io_send(t24);
     sk_call_pop();
-    free(t26.value);
+    free(t24.value);
     return;
 }
 
 void __sk__sendf(sk_any msg) {
-    sk_string t27;
+    sk_string t25;
 
-    t27 = any_to_string(msg);
+    t25 = any_to_string(msg);
     sk_call_push("<builtin:std/io>", 41, 5);
-    __sk__std_io_send(t27);
+    __sk__std_io_send(t25);
     sk_call_pop();
-    free(t27.value);
+    free(t25.value);
     return;
 }
 
 sk_string __sk__input(sk_string prefix) {
-    sk_string t28;
+    sk_string t26;
 
     sk_call_push("<builtin:std/io>", 45, 12);
-    t28 = __sk__std_io_input(prefix);
+    t26 = __sk__std_io_input(prefix);
     sk_call_pop();
-    return t28;
-    return t28;
+    return t26;
+    return t26;
 }
 
 void __sk__print(sk_any line) {
-    sk_call_push("lib.sk", 4, 5);
+    sk_call_push("lib.sk", 6, 5);
     __sk__sendln(line);
     sk_call_pop();
     return;
 }
 
 void __sk__println(sk_any msg) {
-    sk_call_push("lib.sk", 8, 5);
+    sk_call_push("lib.sk", 10, 5);
     __sk__print(msg);
     sk_call_pop();
+    return;
+}
+
+sk_string __sk__getEnv(sk_string env) {
+    if (env.__is_null) return sk_string_new("");
+        char* val = getenv(env.value);
+        return sk_string_new(val ? val : "");
+    return sk_string_new("");
+    return sk_string_new("");
+}
+
+void __sk__setEnv(sk_string env, sk_string val) {
+    if (env.__is_null || val.__is_null) return;
+        #if defined(_WIN32)
+            if (getenv(env.value) == NULL) {
+                _putenv_s(env.value, val.value);
+            }
+        #elif defined(__linux__)
+            setenv(env.value, val.value, 0);
+        #endif
+    return;
+}
+
+void __sk__setClearEnv(sk_string env, sk_string val, sk_bool confirm) {
+    sk_bool t27;
+
+    t27 = sk_bool_not(confirm);
+    if (t27.value) {
+        goto L7;
+    } else {
+        goto L8;
+    }
+L7:
+    return;
+    return;
+    goto L9;
+L8:
+L9:
+    if (env.__is_null || val.__is_null) return;
+        #if defined(_WIN32)
+            _putenv_s(env.value, val.value);
+        #elif defined(__linux__)
+            setenv(env.value, val.value, 1);
+        #endif
+    return;
+}
+
+sk_string __sk__getExePath(void) {
+    if (__sk__argc > 0 && __sk__argv[0]) {
+                return sk_string_new(__sk__argv[0]);
+            }
+            return sk_string_new("");
+    return sk_string_new("");
+    return sk_string_new("");
+}
+
+sk_arr __sk__getArgs(void) {
+    sk_arr t28;
+
+    sk_array* arr = sk_array_new(sizeof(sk_string), 1);
+            for (int i = 0; i < __sk__argc; i++) {
+                sk_string s = sk_string_new(__sk__argv[i]);
+                sk_array_push(arr, &s);
+            }
+            return sk_arr_new(arr);
+    t28 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    return t28;
+    return t28;
+}
+
+void __sk__exit(sk_int code, sk_string msg) {
+    if (msg.value != NULL && msg.value[0] != '\0') {
+          fprintf(stderr, "%s\n", msg.value);
+        }
+        exit(code.value);
     return;
 }
 

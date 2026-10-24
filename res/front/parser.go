@@ -144,9 +144,22 @@ func (p *Parser) Parse() *Program {
 		if p.hasErrors || errors.HasFatal() {
 			break
 		}
-		errDecl := p.parseErrorDecl()
-		if errDecl != nil {
-			if ed, ok := errDecl.(*ErrorDecl); ok {
+		pos := p.pos()
+		p.advance() // const
+
+		if p.isType(p.peek) {
+			// const-переменная: const int PI = 3.14
+			node := p.parseConstVarDeclAfterConst(pos)
+			if vd, ok := node.(*VarDecl); ok && vd != nil {
+				if prog.GlobalVars == nil {
+					prog.GlobalVars = []*VarDecl{}
+				}
+				prog.GlobalVars = append(prog.GlobalVars, vd)
+			}
+		} else {
+			// error-тип: const MyError{...} = new Error
+			node := p.parseErrorDeclAfterConst(pos)
+			if ed, ok := node.(*ErrorDecl); ok {
 				prog.ErrorDecls = append(prog.ErrorDecls, ed)
 			}
 		}

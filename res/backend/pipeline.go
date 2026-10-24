@@ -55,6 +55,64 @@ func (p *Pipeline) Process() *IRProgram {
 		})
 	}
 
+	for _, g := range p.Program.GlobalVars {
+		varType := g.Type
+		if g.IsArray {
+			elem := g.ElemType
+			if elem == "" {
+				elem = "any"
+			}
+			varType = "arr[" + elem + "]"
+		}
+
+		irG := IRGlobal{
+			Name:    g.Name,
+			Type:    varType,
+			IsConst: g.IsConst,
+		}
+
+		// Инициализатор: либо литерал → строка в C, либо ошибка.
+		// Глобальные инициализаторы в C должны быть константными выражениями,
+		// поэтому поддерживаем только литералы; сложные выражения — отдельная задача.
+		switch e := g.Expr.(type) {
+		case *front.Number:
+			switch varType {
+			case "int":
+				irG.Value = e.Value
+			case "float":
+				irG.Value = e.Value // уже с суффиксом f
+			case "double":
+				irG.Value = e.Value
+			case "char":
+				irG.Value = fmt.Sprintf("sk_char_new(%s)", e.Value)
+			default:
+				irG.Value = e.Value
+			}
+		case *front.String:
+			irG.Value = fmt.Sprintf("sk_string_new(%q)", e.Value)
+		case *front.CharLiteral:
+			irG.Value = fmt.Sprintf("sk_char_new(%d)", e.Value)
+		case *front.Ident:
+			if e.Name == "true" {
+				irG.Value = "sk_bool_new(1)"
+			} else if e.Name == "false" {
+				irG.Value = "sk_bool_new(0)"
+			} else {
+				errors.NewError("3106",
+					fmt.Sprintf("Global constant '%s' initializer must be a literal", g.Name),
+					g.GetLine(), g.GetColumn(), "")
+				continue
+			}
+		default:
+			errors.NewError("3106",
+				fmt.Sprintf("Global constant '%s' initializer must be a literal", g.Name),
+				g.GetLine(), g.GetColumn(), "")
+			continue
+		}
+
+		p.IR.Globals = append(p.IR.Globals, irG)
+	}
+
 	// Обрабатываем ErrorDecls
 	for _, decl := range p.Program.ErrorDecls {
 		irDecl := IRErrorDecl{

@@ -1,5 +1,7 @@
 use std/io
 
+const int PI = 3.141592
+
 void *print(any line) {
     io.sendln(line)
 }

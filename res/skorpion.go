@@ -734,8 +734,8 @@ func buildLib(projectPath string) {
 		}
 	}
 	if !hasExported {
-		errors.NewFatalError("3105",
-			"Library has no exportable functions (all functions are marked with '*')",
+		errors.NewWarning("3105",
+			"Library has no exportable functions (all functions are marked with '*' — the library will be empty for consumers)",
 			0, 0, mainFile)
 		printErrorReport(startTime, mainFile, sourceLines)
 		os.Exit(1)
