@@ -929,6 +929,18 @@ func (p *Pipeline) emitPromiseAwait(promiseVar string, aw *front.AwaitExpr, irFn
 	}
 
 	suffix := p.typeToPromiseSuffix(resultSkType)
+
+	if suffix == "void" {
+		// await async_void: ждём завершения, значения нет.
+		// Генерируем отдельную IR-инструкцию, codegen знает, что делать.
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         "promise_await_void",
+			Arg1:       promiseVar,
+			ReturnType: "void",
+		})
+		return "" // ничего не возвращаем как C-значение
+	}
+
 	cType := p.typeToC(resultSkType)
 	result := p.newTemp()
 	irFn.Locals = append(irFn.Locals, cType+" "+result)
@@ -3170,8 +3182,6 @@ func (p *Pipeline) processReturn(ret *front.ReturnStmt, irFn *IRFunction) {
 
 		if isUnionTypeP(irFn.ReturnType) {
 			expr := p.processExpression(ret.Expr, irFn)
-
-			// Если expr уже sk_any (any или union) — не оборачивать
 			if exprType == "any" || isUnionTypeP(exprType) {
 				exprResult = expr
 			} else {
@@ -3208,28 +3218,25 @@ func (p *Pipeline) processReturn(ret *front.ReturnStmt, irFn *IRFunction) {
 
 	if irFn.IsAsync {
 		suffix := p.typeToPromiseSuffix(irFn.ReturnType)
-		if exprResult != "" {
+		if suffix == "void" {
+			// async void: нет значения, finish без аргумента
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:         "promise_finish",
-				Arg1:       exprResult,
-				ReturnType: suffix,
+				Op:         "promise_finish_void",
+				ReturnType: "void",
 			})
 		} else {
+			finishArg := exprResult
+			if finishArg == "" {
+				finishArg = "SK_NULL_" + suffix
+			}
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op:         "promise_finish",
-				Arg1:       "SK_NULL_" + suffix,
+				Arg1:       finishArg,
 				ReturnType: suffix,
 			})
 		}
-		// физический return void
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{Op: "ret"})
-	} else if exprResult != "" {
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:   "ret",
-			Arg1: exprResult,
-		})
-	} else {
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{Op: "ret"})
+		return
 	}
 
 	if exprResult != "" {
@@ -3238,9 +3245,7 @@ func (p *Pipeline) processReturn(ret *front.ReturnStmt, irFn *IRFunction) {
 			Arg1: exprResult,
 		})
 	} else {
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op: "ret",
-		})
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{Op: "ret"})
 	}
 }
 
@@ -3684,7 +3689,7 @@ func (p *Pipeline) typeToPromiseSuffix(t string) string {
 		return "arr"
 	}
 	switch t {
-	case "int", "char", "float", "double", "bool", "string", "dict", "any":
+	case "int", "char", "float", "double", "bool", "string", "dict", "any", "void":
 		return t
 	}
 	return "int"

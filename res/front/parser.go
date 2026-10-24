@@ -341,7 +341,6 @@ func (p *Parser) parseFunction() *Function {
 
 	pos := p.pos()
 
-	// NEW: async до типа
 	isAsync := false
 	if p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "async" {
 		isAsync = true
@@ -367,23 +366,14 @@ func (p *Parser) parseFunction() *Function {
 		return nil
 	}
 
-	// async void запрещён — Promise должен иметь тип
-	if isAsync && retType == "void" {
-		p.hasErrors = true
-		errors.NewFatalError("0665",
-			"async function cannot return 'void' — Promise must have a concrete type",
-			pos.Line, pos.Column, p.FileName)
-		return nil
-	}
+	// async void разрешён — это Task без значения.
 
-	// Звёздочка неэкспортируемости
 	isExport := true
 	if p.peek.Type == TOKEN_STAR {
 		isExport = false
 		p.advance()
 	}
 
-	// Имя функции
 	if p.peek.Type != TOKEN_IDENT {
 		p.hasErrors = true
 		errors.NewFatalError("0501",
@@ -391,11 +381,10 @@ func (p *Parser) parseFunction() *Function {
 			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
 	}
-	namePos := p.pos() // позиция peek ДО advance
+	namePos := p.pos()
 	name := p.peek.Literal
 	p.advance()
 
-	// Открывающая скобка
 	if p.peek.Type != TOKEN_LPAREN {
 		p.hasErrors = true
 		errors.NewFatalError("0507",
@@ -405,13 +394,11 @@ func (p *Parser) parseFunction() *Function {
 	}
 	p.advance()
 
-	// Параметры
 	params := []*Param{}
 	if p.peek.Type != TOKEN_RPAREN {
 		for {
 			paramPos := p.pos()
 
-			// ...name — variadic
 			if p.peek.Type == TOKEN_ELLIPSIS {
 				p.advance()
 				if p.peek.Type != TOKEN_IDENT {
@@ -431,7 +418,6 @@ func (p *Parser) parseFunction() *Function {
 					IsVariadic: true,
 				})
 
-				// ... должен быть последним
 				if p.peek.Type == TOKEN_COMMA {
 					p.hasErrors = true
 					errors.NewFatalError("0503",
@@ -456,8 +442,7 @@ func (p *Parser) parseFunction() *Function {
 			}
 			if paramType == "" {
 				p.hasErrors = true
-				errors.NewFatalError("0502",
-					"Expected parameter type",
+				errors.NewFatalError("0502", "Expected parameter type",
 					paramPos.Line, paramPos.Column, p.FileName)
 				return nil
 			}

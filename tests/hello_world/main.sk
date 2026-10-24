@@ -13,6 +13,10 @@ async dict f() {
     return {age: 25}
 }
 
+async void something(string msg) {
+    println(msg)
+}
+
 void main(arr args) {
     const int MAX = 100
 
@@ -35,4 +39,6 @@ void main(arr args) {
     s += '!'             // "hello world!"
 
     const string name = "Skorpion"
+
+    await something(name)
 }

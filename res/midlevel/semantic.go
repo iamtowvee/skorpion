@@ -611,11 +611,6 @@ func (sa *SemanticAnalyzer) analyzeFunction(fn *front.Function) {
 
 	// === ASYNC checks ===
 	if fn.IsAsync {
-		if fn.ReturnType == "void" {
-			sa.addError("0665",
-				"async function cannot return 'void' — Promise must have a concrete type",
-				fn.GetLine(), fn.GetColumn(), sa.CurrentFile)
-		}
 		if isUnionType(fn.ReturnType) {
 			for _, t := range parseUnionTypes(fn.ReturnType) {
 				if t == "any" {
@@ -626,12 +621,20 @@ func (sa *SemanticAnalyzer) analyzeFunction(fn *front.Function) {
 			}
 		}
 
-		// Promise[...] — ровно один, только первым statement'ом, только литерал
+		// Promise[...] — только для async T, где T != void.
+		// Для async void Promise[...] запрещён: результат некуда девать.
+		// Правило «ровно один» применяется только к async T (T != void).
 		if fn.Body != nil {
 			promiseCount := 0
 			for i, stmt := range fn.Body.Statements {
 				if ps, isPromise := stmt.(*front.PromiseSet); isPromise {
 					promiseCount++
+					if fn.ReturnType == "void" {
+						sa.addError("0676",
+							fmt.Sprintf("'Promise[...]' cannot be used in async void function '%s' — the result is discarded", fn.Name),
+							ps.GetLine(), ps.GetColumn(), sa.CurrentFile)
+						continue
+					}
 					if i != 0 {
 						sa.addError("0670",
 							fmt.Sprintf("'Promise[...]' must be the first statement in async function '%s'", fn.Name),
@@ -644,15 +647,13 @@ func (sa *SemanticAnalyzer) analyzeFunction(fn *front.Function) {
 					}
 				}
 			}
-			if promiseCount > 1 {
+			if promiseCount > 1 && fn.ReturnType != "void" {
 				sa.addError("0675",
 					fmt.Sprintf("async function '%s' must have exactly one 'Promise[...]'", fn.Name),
 					fn.GetNameLine(), fn.GetNameColumn(), sa.CurrentFile)
 			}
 		}
 	} else {
-		// В не-async функциях Promise запрещён (ловится в analyzePromiseSet,
-		// но проверим раньше — чтобы не генерировать каскад ошибок)
 		if fn.Body != nil {
 			for _, stmt := range fn.Body.Statements {
 				if _, isPromise := stmt.(*front.PromiseSet); isPromise {
@@ -669,27 +670,25 @@ func (sa *SemanticAnalyzer) analyzeFunction(fn *front.Function) {
 		sa.analyzeBlock(fn.Body, true)
 		debug.Debug("Body of %s analyzed\n", fn.Name)
 
-		// Проверка: non-void функция должна иметь return
+		// Проверка: non-void функция должна иметь return.
+		// Для async void — не требуется (это Task без значения).
 		if fn.ReturnType != "void" && !sa.hasReturn(fn.Body) {
 			sa.addError("1535",
 				fmt.Sprintf("Function '%s' must return a value of type '%s'", fn.Name, fn.ReturnType),
 				fn.GetNameLine(), fn.GetNameColumn(), sa.CurrentFile)
 		}
 
-		// Проверка: пустое тело функции
 		if len(fn.Body.Statements) == 0 {
 			errors.NewWarning("2003",
 				fmt.Sprintf("Empty function body in '%s'", fn.Name),
 				fn.GetNameLine(), fn.GetNameColumn(), sa.CurrentFile)
 		}
 
-		// Проверка: неиспользуемые параметры
 		used := make(map[string]bool)
 		sa.collectUsedIdents(fn.Body, used)
 
 		hasIncludeC := sa.containsIncludeC(fn.Body)
 
-		// Для main не проверяем args — он может быть не нужен
 		unusedParams := []*front.Param{}
 		if fn.Name != "main" {
 			for _, param := range fn.Params {
@@ -726,7 +725,6 @@ func (sa *SemanticAnalyzer) analyzeFunction(fn *front.Function) {
 			sa.checkUselessAsync(fn)
 		}
 
-		// Проверка: неиспользуемые переменные
 		sa.checkUnusedVariables(fn.Body, used)
 	} else {
 		debug.Debug("Function %s has no body\n", fn.Name)
@@ -1051,6 +1049,14 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 			simpleName = parts[len(parts)-1]
 		}
 		if target := sa.resolveFunction(simpleName); target != nil && target.IsAsync {
+			// async void нельзя присвоить переменной
+			if target.ReturnType == "void" {
+				sa.addError("0678",
+					fmt.Sprintf("Cannot assign result of async void function '%s' to variable '%s' — it has no value",
+						simpleName, decl.Name),
+					decl.GetLine(), decl.GetColumn(), sa.CurrentFile)
+				return decl
+			}
 			// Тип-чек: decl.Type должен совпадать с target.ReturnType
 			if decl.Type != target.ReturnType {
 				sa.addError("1507",
@@ -1073,7 +1079,6 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 					}
 				}
 			}
-			// Регистрируем x как promise-переменную
 			sym := sa.CurrentScope.Define(decl.Name, SYM_VARIABLE, decl.Type, false)
 			sym.RealType = "promise"
 			return decl
@@ -3273,7 +3278,9 @@ func (sa *SemanticAnalyzer) analyzeAwait(aw *front.AwaitExpr) front.Node {
 			sa.addError("0664",
 				fmt.Sprintf("'await' applied to '%s', which is not an async function", simpleName),
 				aw.GetLine(), aw.GetColumn(), sa.CurrentFile)
+			return aw
 		}
+		// async void разрешён: await дождётся завершения, значения нет.
 		sa.analyzeNode(e)
 	case *front.Ident:
 		sym := sa.CurrentScope.Resolve(e.Name)
@@ -3281,7 +3288,10 @@ func (sa *SemanticAnalyzer) analyzeAwait(aw *front.AwaitExpr) front.Node {
 			sa.addError("1514",
 				fmt.Sprintf("Undefined identifier '%s'", e.Name),
 				aw.GetLine(), aw.GetColumn(), sa.CurrentFile)
+			return aw
 		}
+		// если это promise-переменная (RealType == "promise"), её Type — declared тип.
+		// async void переменных быть не может (0678), так что здесь Type != "void".
 	default:
 		sa.addError("0663",
 			"'await' requires a function call or a promise variable",

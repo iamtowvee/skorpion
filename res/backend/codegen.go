@@ -1173,10 +1173,77 @@ func (cg *CodeGenerator) generateAsyncRuntime() {
 	cg.writeLine("}")
 	cg.writeLine("")
 
+	// ===== sk_promise_void — отдельно, без поля value =====
+	cg.writeLine("typedef struct {")
+	cg.writeLine("    sk_promise_common common;")
+	cg.writeLine("    void* error;")
+	cg.writeLine("} sk_promise_void;")
+	cg.writeLine("")
+
+	cg.writeLine("static inline sk_promise_void* sk_promise_new_void(void) {")
+	cg.writeLine("    sk_promise_void* p = malloc(sizeof(sk_promise_void));")
+	cg.writeLine("    atomic_store(&p->common.owner_ref, 1);")
+	cg.writeLine("    atomic_store(&p->common.task_ref, 1);")
+	cg.writeLine("    atomic_store(&p->common.done, 0);")
+	cg.writeLine("    pthread_mutex_init(&p->common.mtx, NULL);")
+	cg.writeLine("    pthread_cond_init(&p->common.cv, NULL);")
+	cg.writeLine("    p->error = NULL;")
+	cg.writeLine("    return p;")
+	cg.writeLine("}")
+	cg.writeLine("")
+
+	cg.writeLine("static inline void sk_promise_finish_void(sk_promise_void* p) {")
+	cg.writeLine("    pthread_mutex_lock(&p->common.mtx);")
+	cg.writeLine("    atomic_store(&p->common.done, 1);")
+	cg.writeLine("    pthread_cond_broadcast(&p->common.cv);")
+	cg.writeLine("    pthread_mutex_unlock(&p->common.mtx);")
+	cg.writeLine("}")
+	cg.writeLine("")
+
+	cg.writeLine("static inline void sk_promise_await_void(sk_promise_void* p) {")
+	cg.writeLine("    pthread_mutex_lock(&p->common.mtx);")
+	cg.writeLine("    while (!atomic_load(&p->common.done)) {")
+	cg.writeLine("        pthread_cond_wait(&p->common.cv, &p->common.mtx);")
+	cg.writeLine("    }")
+	cg.writeLine("    if (p->error) {")
+	cg.writeLine("        void* err = p->error;")
+	cg.writeLine("        p->error = NULL;")
+	cg.writeLine("        pthread_mutex_unlock(&p->common.mtx);")
+	cg.writeLine("        sk_throw(err, \"<await>\", 0, 0);")
+	cg.writeLine("    }")
+	cg.writeLine("    pthread_mutex_unlock(&p->common.mtx);")
+	cg.writeLine("}")
+	cg.writeLine("")
+
+	cg.writeLine("static inline void sk_promise_fail_void(sk_promise_void* p, void* err) {")
+	cg.writeLine("    pthread_mutex_lock(&p->common.mtx);")
+	cg.writeLine("    p->error = err;")
+	cg.writeLine("    atomic_store(&p->common.done, 1);")
+	cg.writeLine("    pthread_cond_broadcast(&p->common.cv);")
+	cg.writeLine("    pthread_mutex_unlock(&p->common.mtx);")
+	cg.writeLine("}")
+	cg.writeLine("")
+
+	cg.writeLine("static inline sk_bool sk_promise_ended_void(sk_promise_void* p) {")
+	cg.writeLine("    sk_bool r; r.value = atomic_load(&p->common.done) ? 1 : 0; r.__is_null = 0; return r;")
+	cg.writeLine("}")
+	cg.writeLine("")
+
+	cg.writeLine("static inline void sk_promise_release_void(sk_promise_void* p) {")
+	cg.writeLine("    if (!p) return;")
+	cg.writeLine("    atomic_fetch_sub(&p->common.owner_ref, 1);")
+	cg.writeLine("    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {")
+	cg.writeLine("        sk_promise_common_destroy(&p->common);")
+	cg.writeLine("        free(p);")
+	cg.writeLine("    }")
+	cg.writeLine("}")
+	cg.writeLine("")
+	// sk_promise_await_void / sk_promise_read_void / sk_promise_set_void
+	// НЕ генерируются — семантика запрещает их использование.
+
+	// ===== остальные типы =====
 	types := []string{"int", "char", "float", "double", "bool", "string", "arr", "dict", "any"}
 	for _, t := range types {
-		// C-тип значения Promise = C-тип переменной Skorpion этого типа.
-		// dict → sk_dict_ref (обёртка), any → sk_any, остальные → sk_<t>.
 		var ctype string
 		switch t {
 		case "dict":
@@ -1340,22 +1407,25 @@ func (cg *CodeGenerator) generateFunction(fn *IRFunction) {
 	}
 
 	if isAsync {
-		// Проверяем: последняя значимая инструкция — promise_finish/promise_fail?
 		finished := false
 		for i := len(fn.Instructions) - 1; i >= 0; i-- {
 			op := fn.Instructions[i].Op
-			if op == "promise_finish" || op == "promise_fail" {
+			if op == "promise_finish" || op == "promise_fail" || op == "promise_finish_void" {
 				finished = true
 				break
 			}
 			if op == "ret" {
-				continue // ret может идти после finish
+				continue
 			}
 			break
 		}
 		if !finished {
 			suffix := cg.promiseSuffix(fn.ReturnType)
-			cg.writeLine(fmt.Sprintf("    sk_promise_finish_%s(__promise, SK_NULL_%s);", suffix, suffix))
+			if suffix == "void" {
+				cg.writeLine("    sk_promise_finish_void(__promise);")
+			} else {
+				cg.writeLine(fmt.Sprintf("    sk_promise_finish_%s(__promise, SK_NULL_%s);", suffix, suffix))
+			}
 		}
 		cg.writeLine("    return;")
 	} else if fn.ReturnType == "void" && len(fn.Instructions) > 0 {
@@ -1406,6 +1476,9 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 		cg.writeLine(fmt.Sprintf("%s%s = %s ? %s : %s;",
 			indent, ins.Result, ins.Arg1, ins.Arg2, ins.Arg3))
 
+	case "promise_finish_void":
+		cg.writeLine(fmt.Sprintf("%ssk_promise_finish_void(__promise);", indent))
+
 	case "throw":
 		if fn.IsAsync {
 			suffix := cg.promiseSuffix(fn.ReturnType)
@@ -1443,6 +1516,9 @@ func (cg *CodeGenerator) generateInstruction(ins *IRInstruction, fn *IRFunction)
 	case "promise_await":
 		cg.writeLine(fmt.Sprintf("%s%s = sk_promise_await_%s(%s);",
 			indent, ins.Result, ins.Arg2, ins.Arg1))
+
+	case "promise_await_void":
+		cg.writeLine(fmt.Sprintf("%ssk_promise_await_void(%s);", indent, ins.Arg1))
 
 	case "promise_ended":
 		cg.writeLine(fmt.Sprintf("%s%s = sk_promise_ended_%s(%s);",
@@ -1990,7 +2066,7 @@ func (cg *CodeGenerator) promiseSuffix(t string) string {
 		return "arr"
 	}
 	switch t {
-	case "int", "char", "float", "double", "bool", "string", "dict", "any":
+	case "int", "char", "float", "double", "bool", "string", "dict", "any", "void":
 		return t
 	}
 	return "int"
