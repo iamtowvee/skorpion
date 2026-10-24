@@ -1759,13 +1759,13 @@ sk_dict_ref __sk__get_config(void) {
 void __sk__foo(sk_int a, sk_arr some);
 void __sk__f(sk_promise_dict* __promise);
 void __sk__something(sk_promise_void* __promise, sk_string msg);
+void __sk__print(sk_any line);
+void __sk__println(sk_any msg);
 void __sk__std_io_send(sk_string line);
 sk_string __sk__std_io_input(sk_string prompt);
 void __sk__sendln(sk_any msg);
 void __sk__sendf(sk_any msg);
 sk_string __sk__input(sk_string prefix);
-void __sk__print(sk_any line);
-void __sk__println(sk_any msg);
 sk_string __sk__getEnv(sk_string env);
 void __sk__setEnv(sk_string env, sk_string val);
 void __sk__setClearEnv(sk_string env, sk_string val, sk_bool confirm);
@@ -1774,6 +1774,9 @@ sk_arr __sk__getArgs(void);
 void __sk__exit(sk_int code, sk_string msg);
 
 // Global variables
+static sk_any __sk__garr_X_elems[] = {{ 0, -1, { .i = 15 } }};
+static sk_array __sk__garr_X_arr = { (void*)__sk__garr_X_elems, 1, 1, sizeof(sk_any), 5 };
+sk_arr X = { &__sk__garr_X_arr, 0 };
 sk_float PI = { 3.141592, 0, -1 };
 
 typedef struct {
@@ -1855,7 +1858,7 @@ void __sk__foo(sk_int a, sk_arr some) {
     sk_bool t4;
 
     t1 = any_int(a);
-    sk_call_push("main.sk", 6, 5);
+    sk_call_push("main.sk", 8, 5);
     __sk__println(t1);
     sk_call_pop();
     t2 = sk_int_new(0);
@@ -1869,7 +1872,7 @@ L1:
     }
 L2:
     f = *(sk_any*)sk_array_get(some.value, t2.value);
-    sk_call_push("main.sk", 8, 9);
+    sk_call_push("main.sk", 10, 9);
     __sk__println(f);
     sk_call_pop();
     t2 = sk_int_add(t2, sk_int_new(1));
@@ -1898,7 +1901,7 @@ void __sk__something(sk_promise_void* __promise, sk_string msg) {
     sk_any t9;
 
     t9 = any_string(msg);
-    sk_call_push("main.sk", 17, 5);
+    sk_call_push("main.sk", 19, 5);
     __sk__println(t9);
     sk_call_pop();
     sk_promise_finish_void(__promise);
@@ -1963,7 +1966,7 @@ L4:
     t17 = sk_float_new((float)MAX.value);
     t18 = sk_float_add(t17, PI);
     t19 = any_float(t18);
-    sk_call_push("main.sk", 32, 9);
+    sk_call_push("main.sk", 34, 9);
     __sk__println(t19);
     sk_call_pop();
     goto L6;
@@ -1977,7 +1980,7 @@ L6:
     pthread_detach(__tid_t20);
     t21 = sk_promise_await_dict(t20);
     t22 = any_dict(t21);
-    sk_call_push("main.sk", 35, 5);
+    sk_call_push("main.sk", 37, 5);
     __sk__sendln(t22);
     sk_call_pop();
     s = sk_string_new("hello");
@@ -2001,6 +2004,20 @@ L6:
     free(s.value);
     sk_promise_release_dict(t20);
     return 0;
+}
+
+void __sk__print(sk_any line) {
+    sk_call_push("lib.sk", 6, 5);
+    __sk__sendln(line);
+    sk_call_pop();
+    return;
+}
+
+void __sk__println(sk_any msg) {
+    sk_call_push("lib.sk", 10, 5);
+    __sk__print(msg);
+    sk_call_pop();
+    return;
 }
 
 void __sk__std_io_send(sk_string line) {
@@ -2060,20 +2077,6 @@ sk_string __sk__input(sk_string prefix) {
     t30 = __sk__std_io_input(prefix);
     sk_call_pop();
     return t30;
-}
-
-void __sk__print(sk_any line) {
-    sk_call_push("lib.sk", 6, 5);
-    __sk__sendln(line);
-    sk_call_pop();
-    return;
-}
-
-void __sk__println(sk_any msg) {
-    sk_call_push("lib.sk", 10, 5);
-    __sk__print(msg);
-    sk_call_pop();
-    return;
 }
 
 sk_string __sk__getEnv(sk_string env) {

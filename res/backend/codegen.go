@@ -1238,8 +1238,6 @@ func (cg *CodeGenerator) generateAsyncRuntime() {
 	cg.writeLine("    }")
 	cg.writeLine("}")
 	cg.writeLine("")
-	// sk_promise_await_void / sk_promise_read_void / sk_promise_set_void
-	// НЕ генерируются — семантика запрещает их использование.
 
 	// ===== остальные типы =====
 	types := []string{"int", "char", "float", "double", "bool", "string", "arr", "dict", "any"}

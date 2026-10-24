@@ -212,6 +212,12 @@ func (sa *SemanticAnalyzer) Analyze() bool {
 	return len(sa.Errors) == 0
 }
 
+// registerGlobalVars регистрирует глобальные константы в GlobalScope
+// и проверяет их инициализаторы.
+//
+// Разрешены все литеральные типы: int, float, double, bool, char,
+// string, arr[...], dict. Инициализатор должен быть литералом
+// (число, строка, символ, true/false, null, array literal, dict literal).
 func (sa *SemanticAnalyzer) registerGlobalVars() {
 	for _, g := range sa.Program.GlobalVars {
 		if g == nil {
@@ -232,7 +238,21 @@ func (sa *SemanticAnalyzer) registerGlobalVars() {
 			continue
 		}
 
-		if !sa.isValidType(g.Type) && !isUnionType(g.Type) && !isArrayTypeSemantic(g.Type) {
+		// Определяем declared-тип: для arr[...] — это arr, elemType = g.ElemType.
+		// Для проверки литерала нам нужен полный тип, чтобы понять, что arr
+		// соответствует arr, dict — dict, и т.д.
+		declType := g.Type
+		if g.IsArray {
+			elem := g.ElemType
+			if elem == "" {
+				elem = "any"
+			}
+			declType = "arr[" + elem + "]"
+		}
+
+		if !sa.isValidType(g.Type) &&
+			!isUnionType(g.Type) &&
+			!isArrayTypeSemantic(declType) {
 			sa.addError("1506",
 				fmt.Sprintf("Unknown type '%s' for global constant '%s'", g.Type, g.Name),
 				g.GetLine(), g.GetColumn(), "")
@@ -246,13 +266,10 @@ func (sa *SemanticAnalyzer) registerGlobalVars() {
 			continue
 		}
 
-		// Проверка инициализатора — литерал и его тип должен совпадать с declared.
-		// Global-константы инициализируются только литералами (см. pipeline.processGlobalVar),
-		// поэтому проверяем именно литеральный тип.
 		exprType := sa.getGlobalInitType(g.Expr)
 		if exprType == "" {
 			sa.addError("1557",
-				fmt.Sprintf("Global constant '%s' initializer must be a literal (number, string, char, bool)", g.Name),
+				fmt.Sprintf("Global constant '%s' initializer must be a literal (number, string, char, bool, null, array, dict)", g.Name),
 				g.Expr.GetLine(), g.Expr.GetColumn(), sa.CurrentFile)
 			continue
 		}
@@ -264,27 +281,21 @@ func (sa *SemanticAnalyzer) registerGlobalVars() {
 			continue
 		}
 
-		// Разрешаем char↔int (как для локальных), any принимает всё.
-		if g.Type == "any" {
-			// ok
-		} else if g.Type == "int" && exprType == "char" {
-			// ok
-		} else if g.Type == "char" && exprType == "int" {
-			// ok
-		} else if g.Type != exprType {
+		if !sa.globalInitCompatible(declType, g.Expr) {
 			sa.addError("1507",
 				fmt.Sprintf("Type mismatch: cannot assign '%s' to global constant '%s' of type '%s'",
-					exprType, g.Name, g.Type),
+					sa.getGlobalInitType(g.Expr), g.Name, declType),
 				g.Expr.GetLine(), g.Expr.GetColumn(), sa.CurrentFile)
 			continue
 		}
 
-		sym := sa.GlobalScope.Define(g.Name, SYM_CONST, g.Type, g.IsExport)
+		sym := sa.GlobalScope.Define(g.Name, SYM_CONST, declType, g.IsExport)
 		sym.IsConst = true
 	}
 }
 
-// getGlobalInitType возвращает тип литерала (или "", если это не литерал).
+// getGlobalInitType возвращает Skorpion-тип литерала
+// (или "", если это не литерал).
 func (sa *SemanticAnalyzer) getGlobalInitType(node front.Node) string {
 	switch n := node.(type) {
 	case *front.Number:
@@ -297,9 +308,7 @@ func (sa *SemanticAnalyzer) getGlobalInitType(node front.Node) string {
 		return "int"
 	case *front.String:
 		return "string"
-	case *front.CharLiteral:
-		return "char"
-	case *front.UnicodeLiteral:
+	case *front.CharLiteral, *front.UnicodeLiteral:
 		return "char"
 	case *front.NullLiteral:
 		return "void"
@@ -308,8 +317,73 @@ func (sa *SemanticAnalyzer) getGlobalInitType(node front.Node) string {
 			return "bool"
 		}
 		return ""
+	case *front.ArrayLiteral:
+		// arr[any] как «сырой» литерал; ниже уточняем по declared ElemType.
+		return "arr[any]"
+	case *front.DictLiteral:
+		return "dict"
 	}
 	return ""
+}
+
+func (sa *SemanticAnalyzer) globalInitCompatible(declType string, expr front.Node) bool {
+	exprType := sa.getGlobalInitType(expr)
+	if exprType == "" {
+		return false
+	}
+
+	// точное совпадение / any / int↔char
+	if declType == exprType {
+		return true
+	}
+	if declType == "any" {
+		return exprType != "void"
+	}
+	if declType == "int" && exprType == "char" {
+		return true
+	}
+	if declType == "char" && exprType == "int" {
+		return true
+	}
+
+	// arr[T] ← ArrayLiteral: поэлементная проверка
+	if isArrayTypeSemantic(declType) {
+		arrLit, ok := expr.(*front.ArrayLiteral)
+		if !ok {
+			return false
+		}
+		elemDecl := parseArrayElemTypeSemantic(declType)
+		if elemDecl == "" {
+			elemDecl = "any"
+		}
+		for _, el := range arrLit.Elements {
+			elType := sa.getGlobalInitType(el)
+			if elType == "" {
+				return false
+			}
+			// рекурсивно: arr[arr[T]] / arr[any] / скаляр
+			if !sa.globalInitCompatible(elemDecl, el) {
+				return false
+			}
+		}
+		return true
+	}
+
+	// dict ← DictLiteral: для каждого value проверяем, что это литерал
+	if declType == "dict" {
+		dictLit, ok := expr.(*front.DictLiteral)
+		if !ok {
+			return false
+		}
+		for _, el := range dictLit.Elements {
+			if sa.getGlobalInitType(el.Value) == "" {
+				return false
+			}
+		}
+		return true
+	}
+
+	return false
 }
 
 func (sa *SemanticAnalyzer) isImportedFunction(name string) bool {

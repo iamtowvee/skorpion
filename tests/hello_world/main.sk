@@ -2,6 +2,8 @@ use #lib:iamtowvee/MyLib
 use std/os
 use std/io
 
+const arr X = [15]
+
 void foo(int a, ...some) {
     println(a)
     for (any f in some) {
