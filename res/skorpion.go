@@ -17,6 +17,7 @@ import (
 	"skrp/res/cli"
 	"skrp/res/errors"
 	"skrp/res/front"
+	"skrp/res/log"
 	"skrp/res/midlevel"
 	"sort"
 	"strconv"
@@ -27,7 +28,7 @@ import (
 )
 
 // currentSkorpionVersion — текущая версия Skorpion.
-const currentSkorpionVersion = "1.0.0"
+var currentSkorpionVersion string
 
 // skorpionRepo — GitHub-репозиторий для проверки обновлений.
 // Формат: "<owner>/<repo>".
@@ -183,13 +184,23 @@ var (
 	buildPath         string
 	noCheckZigUpdates bool
 	noCheckUpdates    bool
+	logsOnly          bool
+	dryRun            bool
+	assumeYes         bool
+	removeAll         bool
+	projectDir        string
 )
+
+var commandFailed bool
+
+func CommandFailed() bool { return commandFailed }
 
 // ============================================================
 // Entry point
 // ============================================================
 
-func InitLang(args []string) {
+func InitLang(args []string, v string) {
+	currentSkorpionVersion = v
 	errors.InitErrors()
 	defer errors.CloseErrors()
 
@@ -289,6 +300,15 @@ func InitLang(args []string) {
 	case "--updates":
 		cli.HandleShowUpdates()
 
+	case "clear-cache":
+		if !handleClearCache(args[1:]) {
+			commandFailed = true
+		}
+	case "clear-local":
+		if !handleClearLocal(args[1:], projectPath) {
+			commandFailed = true
+		}
+
 	case "--help", "-h":
 		printHelp()
 	case "--version", "-v":
@@ -316,6 +336,11 @@ func parseFlags(args []string) []string {
 	buildPath = "."
 	noCheckZigUpdates = false
 	noCheckUpdates = false
+	logsOnly = false
+	dryRun = false
+	assumeYes = false
+	removeAll = false
+	projectDir = "."
 
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -335,9 +360,23 @@ func parseFlags(args []string) []string {
 			noOptimize = true
 		case "--noCheckZigUpdates":
 			noCheckZigUpdates = true
+		case "--local-log":
+			os.Setenv("SK_LOCAL_LOG", "1")
 		case "--noCheckUpdates":
 			noCheckUpdates = true
+		case "--logs-only":
+			logsOnly = true
+		case "--dry-run":
+			dryRun = true
+		case "--yes", "-y":
+			assumeYes = true
+		case "--all":
+			removeAll = true
 		default:
+			if strings.HasPrefix(arg, "--project=") {
+				projectDir = strings.TrimPrefix(arg, "--project=")
+				continue
+			}
 			if len(arg) > 7 && arg[:7] == "--path=" {
 				buildPath = arg[7:]
 				continue
@@ -347,6 +386,327 @@ func parseFlags(args []string) []string {
 	}
 
 	return result
+}
+
+// ============================================================
+// clear-cache
+// ============================================================
+
+// handleClearCache удаляет общий кэш Skorpion:
+//
+//	<CacheRoot>/logs/           (все проекты)
+//	<CacheRoot>/zig/            (если не --logs-only)
+//	<CacheRoot>/profiles.json   (если не --logs-only)
+//
+// Флаги берутся из parseFlags (глобальные):
+//
+//	logsOnly, dryRun, assumeYes
+//
+// Возвращает false, если что-то не удалилось.
+func handleClearCache(args []string) bool {
+	_ = args // флаги уже в parseFlags
+
+	currentLog := log.Path() // "" если лог не открыт (StartReadOnly / clear-*)
+	root := log.CacheRoot()
+
+	targets := []string{log.LogsRoot()}
+	if !logsOnly {
+		targets = append(targets,
+			filepath.Join(root, "zig"),
+			filepath.Join(root, "profiles.json"),
+		)
+	}
+
+	var existing []string
+	var totalBytes int64
+	for _, t := range targets {
+		if st, err := os.Stat(t); err == nil {
+			existing = append(existing, t)
+			totalBytes += dirSize(t, st)
+		}
+	}
+
+	if len(existing) == 0 {
+		fmt.Println(cli.Colors.Info("Nothing to clear — cache is already empty."))
+		return true
+	}
+
+	fmt.Printf(cli.Colors.Bold("Skorpion cache: %s\n"), root)
+	fmt.Printf(cli.Colors.Dim("Will remove %d item(s), %s:\n"),
+		len(existing), humanSize(totalBytes))
+	for _, t := range existing {
+		st, _ := os.Stat(t)
+		fmt.Printf("  %s %s %s\n",
+			cli.Colors.Red("×"), t,
+			cli.Colors.Dim("("+humanSize(dirSize(t, st))+")"))
+	}
+	fmt.Println()
+
+	if dryRun {
+		fmt.Println(cli.Colors.Warning("Dry run — nothing was removed."))
+		return true
+	}
+
+	if !assumeYes && !confirm("Remove these?") {
+		fmt.Println(cli.Colors.Info("Cancelled."))
+		return true
+	}
+
+	failed := false
+	for _, t := range existing {
+		// Не пытаемся удалить папку/файл, в котором лежит текущий лог.
+		// (На Windows открытый файл нельзя удалить — ERROR_SHARING_VIOLATION.)
+		var err error
+		if currentLog != "" &&
+			(t == currentLog || strings.HasPrefix(currentLog, t+string(os.PathSeparator))) {
+			err = removeAllExcept(t, currentLog)
+		} else {
+			err = os.RemoveAll(t)
+		}
+		if err != nil {
+			failed = true
+			fmt.Println(cli.Colors.Error("  failed: " + t + ": " + err.Error()))
+		}
+	}
+	if failed {
+		fmt.Println(cli.Colors.Error("Some cache entries could not be removed."))
+		return false
+	}
+
+	fmt.Println(cli.Colors.Success("Cache cleared."))
+	return true
+}
+
+// ============================================================
+// removeAllExcept
+// ============================================================
+
+// removeAllExcept удаляет path, но сохраняет файл keep и его родителей.
+// После удаления — пытается удалить пустые родительские папки keep,
+// если они пусты (сам keep и его прямые родители не трогаются).
+//
+// Если keep не внутри path — обычный os.RemoveAll(path).
+func removeAllExcept(path, keep string) error {
+	if keep == "" || !strings.HasPrefix(keep, path+string(os.PathSeparator)) {
+		return os.RemoveAll(path)
+	}
+
+	var firstErr error
+	err := filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			return nil // продолжаем обход
+		}
+		if p == keep {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if info.IsDir() {
+			return nil // папки удалим после обхода
+		}
+		if rmErr := os.Remove(p); rmErr != nil && firstErr == nil {
+			firstErr = rmErr
+		}
+		return nil
+	})
+	if err != nil && firstErr == nil {
+		firstErr = err
+	}
+
+	removeEmptyDirs(path, keep)
+	return firstErr
+}
+
+// removeEmptyDirs удаляет пустые папки внутри root, кроме тех,
+// в которых лежит keep (и самого keep).
+func removeEmptyDirs(root, keep string) {
+	var dirs []string
+	_ = filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
+		if err == nil && info != nil && info.IsDir() && p != root {
+			dirs = append(dirs, p)
+		}
+		return nil
+	})
+
+	// Глубокие — первыми, чтобы после удаления пустая родительская
+	// тоже стала пустой.
+	sort.Slice(dirs, func(i, j int) bool {
+		return strings.Count(dirs[i], string(os.PathSeparator)) >
+			strings.Count(dirs[j], string(os.PathSeparator))
+	})
+
+	for _, d := range dirs {
+		if keep != "" && strings.HasPrefix(keep, d+string(os.PathSeparator)) {
+			continue // keep внутри — не трогаем
+		}
+		_ = os.Remove(d) // удалит, только если пуста
+	}
+}
+
+// handleClearLocal удаляет логи ТЕКУЩЕГО проекта:
+//
+//	<projectDir>/logs/*.log           (локальные; с --all — всю папку)
+//	<CacheRoot>/logs/<proj>__<ver>/   (глобальные для этого проекта)
+//
+// Флаги берутся из parseFlags (глобальные):
+//
+//	projectDir, removeAll, dryRun, assumeYes
+//
+// Возвращает false, если что-то не удалилось.
+func handleClearLocal(args []string, defaultProject string) bool {
+	_ = args
+
+	currentLog := log.Path()
+
+	projDir := projectDir
+	if projDir == "" || projDir == "." {
+		projDir = defaultProject
+	}
+	if projDir == "" {
+		projDir = "."
+	}
+
+	var targets []string
+
+	// 1. Локальные логи.
+	local := log.LocalLogDir(projDir)
+	if _, err := os.Stat(local); err == nil {
+		if removeAll {
+			targets = append(targets, local)
+		} else {
+			entries, _ := os.ReadDir(local)
+			for _, e := range entries {
+				if e.IsDir() || !strings.HasSuffix(e.Name(), ".log") {
+					continue
+				}
+				targets = append(targets, filepath.Join(local, e.Name()))
+			}
+		}
+	}
+
+	// 2. Глобальные логи этого проекта.
+	cfg := front.ParseConfig(filepath.Join(projDir, "manifest.spc"))
+	if cfg != nil && (cfg.Name != "" || cfg.Version != "") {
+		global := log.ProjectLogDir(cfg.Name, cfg.Version)
+		if _, err := os.Stat(global); err == nil {
+			targets = append(targets, global)
+		}
+	}
+
+	if len(targets) == 0 {
+		fmt.Println(cli.Colors.Info("Nothing to clear — no logs for this project."))
+		return true
+	}
+
+	fmt.Println(cli.Colors.Bold("Will remove:"))
+	for _, t := range targets {
+		fmt.Printf("  %s %s\n", cli.Colors.Red("×"), t)
+	}
+	fmt.Println()
+
+	if dryRun {
+		fmt.Println(cli.Colors.Warning("Dry run — nothing was removed."))
+		return true
+	}
+
+	if !assumeYes && !confirm("Remove these?") {
+		fmt.Println(cli.Colors.Info("Cancelled."))
+		return true
+	}
+
+	failed := false
+	for _, t := range targets {
+		var err error
+		if currentLog != "" &&
+			(t == currentLog || strings.HasPrefix(currentLog, t+string(os.PathSeparator))) {
+			err = removeAllExcept(t, currentLog)
+		} else {
+			err = os.RemoveAll(t)
+		}
+		if err != nil {
+			failed = true
+			fmt.Println(cli.Colors.Error("  failed: " + t + ": " + err.Error()))
+		}
+	}
+	if failed {
+		fmt.Println(cli.Colors.Error("Some log entries could not be removed."))
+		return false
+	}
+
+	fmt.Println(cli.Colors.Success("Local logs cleared."))
+	return true
+}
+
+// ============================================================
+// Хелперы (в skorpion.go, рядом с остальными)
+// ============================================================
+
+func hasArg(args []string, name string) bool {
+	for _, a := range args {
+		if a == name {
+			return true
+		}
+	}
+	return false
+}
+
+func argValue(args []string, name, def string) string {
+	for i, a := range args {
+		if a == name && i+1 < len(args) {
+			return args[i+1]
+		}
+		if strings.HasPrefix(a, name+"=") {
+			return strings.TrimPrefix(a, name+"=")
+		}
+	}
+	return def
+}
+
+func confirm(question string) bool {
+	fmt.Printf("%s [y/N] ", cli.Colors.Warning(question))
+	var answer string
+	fmt.Scanln(&answer)
+	answer = strings.ToLower(strings.TrimSpace(answer))
+	return answer == "y" || answer == "yes"
+}
+
+func dirSize(path string, st os.FileInfo) int64 {
+	if st == nil {
+		return 0
+	}
+	if !st.IsDir() {
+		return st.Size()
+	}
+	var total int64
+	_ = filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+		if err == nil && info != nil && !info.IsDir() {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total
+}
+
+func humanSize(n int64) string {
+	const (
+		KB = 1024
+		MB = 1024 * KB
+		GB = 1024 * MB
+	)
+	switch {
+	case n >= GB:
+		return fmt.Sprintf("%.1f GB", float64(n)/GB)
+	case n >= MB:
+		return fmt.Sprintf("%.1f MB", float64(n)/MB)
+	case n >= KB:
+		return fmt.Sprintf("%.1f KB", float64(n)/KB)
+	default:
+		return fmt.Sprintf("%d B", n)
+	}
 }
 
 // ============================================================
@@ -1702,6 +2062,24 @@ func printHelp() {
 	fmt.Println("  setup-zig             Download and install Zig (C backend)")
 	fmt.Println("  setup-zig --force     Re-download Zig even if already installed")
 	fmt.Println()
+	fmt.Println(cli.Colors.Bold("LOG OPTIONS:"))
+	fmt.Println("  --log-dir=DIR             Write log to DIR (deleted on success)")
+	fmt.Println("  --local-log               Write log to <project>/logs/ (deleted on success)")
+	fmt.Println()
+	fmt.Println(cli.Colors.Bold("CACHE MANAGEMENT:"))
+	fmt.Println("  clear-cache [options]     Remove ALL Skorpion cache (logs, zig, profiles)")
+	fmt.Println("  clear-local [options]     Remove logs for the current project only")
+	fmt.Println()
+	fmt.Println(cli.Colors.Bold("CLEAR-CACHE OPTIONS:"))
+	fmt.Println("  --logs-only               Remove only logs, keep zig and profiles")
+	fmt.Println("  --dry-run                 Show what would be removed")
+	fmt.Println("  --yes, -y                 Don't ask for confirmation")
+	fmt.Println()
+	fmt.Println(cli.Colors.Bold("CLEAR-LOCAL OPTIONS:"))
+	fmt.Println("  --project=DIR             Project directory (default: .)")
+	fmt.Println("  --all                     Remove <project>/logs/ entirely")
+	fmt.Println("  --dry-run                 Show what would be removed")
+	fmt.Println("  --yes, -y                 Don't ask for confirmation")
 }
 
 func printVersion() {

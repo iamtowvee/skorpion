@@ -1381,14 +1381,8 @@ var ErrorCodes = map[string]ErrorCode{
 	// ============================================================================
 	// 2500-2599: Backend / Codegen
 	// ============================================================================
-	"2500": {
-		Code:        "2500",
-		Message:     "IR generation error",
-		Description: "Failed to generate intermediate representation.",
-		Tip:         "This is an internal error. Please report it.",
-	},
 	"2501": {
-		Code:    "2500",
+		Code:    "2501",
 		Message: "IR generation error",
 		Description: "An internal error occurred during IR generation. " +
 			"The compiler could not determine the type of an expression — " +

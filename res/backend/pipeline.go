@@ -1504,8 +1504,6 @@ func (p *Pipeline) processUnary(unary *front.UnaryExpr, irFn *IRFunction) string
 			fnName = "sk_float_neg"
 		case "double":
 			fnName = "sk_double_neg"
-		case "char":
-			fnName = "sk_char_neg"
 		}
 		if fnName != "" {
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
@@ -1530,68 +1528,62 @@ func (p *Pipeline) processUnary(unary *front.UnaryExpr, irFn *IRFunction) string
 		result := p.newTemp()
 		irFn.Locals = append(irFn.Locals, "sk_string "+result)
 
-		if exprType == "any" {
+		switch {
+		case exprType == "any" || isUnionTypeP(exprType):
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:         "call",
-				Result:     result,
-				Arg1:       "any_to_string",
-				Arg2:       expr,
-				ReturnType: "sk_string",
+				Op: "call", Result: result, Arg1: "any_to_string",
+				Arg2: expr, ReturnType: "sk_string",
 			})
-		} else if isArrayType(exprType) {
+		case isArrayType(exprType):
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:         "call",
-				Result:     result,
-				Arg1:       "sk_arr_to_string",
-				Arg2:       expr, // передаём sk_arr, а не expr.value
-				ReturnType: "sk_string",
+				Op: "call", Result: result, Arg1: "sk_arr_to_string",
+				Arg2: expr, ReturnType: "sk_string",
 			})
-		} else if exprType == "string" {
+		case exprType == "string":
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:     "=",
-				Result: result,
-				Arg1:   expr,
+				Op: "=", Result: result, Arg1: expr,
 			})
-		} else if exprType == "bool" {
+		case exprType == "bool":
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:         "call",
-				Result:     result,
-				Arg1:       "sk_bool_to_string",
-				Arg2:       expr,
-				ReturnType: "sk_string",
+				Op: "call", Result: result, Arg1: "sk_bool_to_string",
+				Arg2: expr, ReturnType: "sk_string",
 			})
-		} else if exprType == "char" {
+		case exprType == "char":
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:         "call",
-				Result:     result,
-				Arg1:       "sk_char_to_string",
-				Arg2:       expr,
-				ReturnType: "sk_string",
+				Op: "call", Result: result, Arg1: "sk_char_to_string",
+				Arg2: expr, ReturnType: "sk_string",
 			})
-		} else if exprType == "float" {
+		case exprType == "float":
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:         "call",
-				Result:     result,
-				Arg1:       "sk_float_to_string",
-				Arg2:       expr,
-				ReturnType: "sk_string",
+				Op: "call", Result: result, Arg1: "sk_float_to_string",
+				Arg2: expr, ReturnType: "sk_string",
 			})
-		} else if exprType == "double" {
+		case exprType == "double":
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:         "call",
-				Result:     result,
-				Arg1:       "sk_double_to_string",
-				Arg2:       expr,
-				ReturnType: "sk_string",
+				Op: "call", Result: result, Arg1: "sk_double_to_string",
+				Arg2: expr, ReturnType: "sk_string",
 			})
-		} else {
-			// int
+		case exprType == "dict":
+			anyVal := p.wrapToAny("dict", expr, irFn)
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:         "call",
-				Result:     result,
-				Arg1:       "sk_int_to_string",
-				Arg2:       expr,
-				ReturnType: "sk_string",
+				Op: "call", Result: result, Arg1: "any_to_string",
+				Arg2: anyVal, ReturnType: "sk_string",
+			})
+		case exprType == "int":
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op: "call", Result: result, Arg1: "sk_int_to_string",
+				Arg2: expr, ReturnType: "sk_string",
+			})
+		case exprType == "void":
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op: "=", Result: result, Arg1: `sk_string_new("null")`,
+			})
+		default:
+			errors.NewError("0633",
+				fmt.Sprintf("$ cannot be applied to value of type '%s'", exprType),
+				unary.GetLine(), unary.GetColumn(), irFn.File)
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op: "=", Result: result, Arg1: `sk_string_new("<error>")`,
 			})
 		}
 		return result
@@ -1852,30 +1844,6 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 
 		exprResult := p.processExpression(decl.Expr, irFn)
 
-		if decl.Type == "int" && exprType == "char" {
-			tmp := p.newTemp()
-			irFn.Locals = append(irFn.Locals, "sk_int "+tmp)
-			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:         "call",
-				Result:     tmp,
-				Arg1:       "sk_char_to_int",
-				Arg2:       exprResult,
-				ReturnType: "sk_int",
-			})
-			exprResult = tmp
-		} else if decl.Type == "char" && exprType == "int" {
-			tmp := p.newTemp()
-			irFn.Locals = append(irFn.Locals, "sk_char "+tmp)
-			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:         "call",
-				Result:     tmp,
-				Arg1:       "sk_int_to_char",
-				Arg2:       exprResult,
-				ReturnType: "sk_char",
-			})
-			exprResult = tmp
-		}
-
 		if decl.Type == "any" {
 			if exprType == "any" || isUnionTypeP(exprType) {
 				irFn.Instructions = append(irFn.Instructions, IRInstruction{
@@ -2026,31 +1994,6 @@ func (p *Pipeline) processAssign(assign *front.Assign, irFn *IRFunction) {
 	}
 
 	exprResult := p.processExpression(assign.Expr, irFn)
-
-	// char ↔ int
-	if varType == "int" && exprType == "char" {
-		tmp := p.newTemp()
-		irFn.Locals = append(irFn.Locals, "sk_int "+tmp)
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:         "call",
-			Result:     tmp,
-			Arg1:       "sk_char_to_int",
-			Arg2:       exprResult,
-			ReturnType: "sk_int",
-		})
-		exprResult = tmp
-	} else if varType == "char" && exprType == "int" {
-		tmp := p.newTemp()
-		irFn.Locals = append(irFn.Locals, "sk_char "+tmp)
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:         "call",
-			Result:     tmp,
-			Arg1:       "sk_int_to_char",
-			Arg2:       exprResult,
-			ReturnType: "sk_char",
-		})
-		exprResult = tmp
-	}
 
 	if varType == "any" {
 		if exprType == "any" || isUnionTypeP(exprType) {
@@ -2332,6 +2275,22 @@ func (p *Pipeline) processNullComparison(bin *front.BinaryExpr, leftType, rightT
 	}
 
 	valueVal := p.processExpression(valueNode, irFn)
+
+	if valueType == "char" {
+		// char — байт, не может быть null
+		result := p.newTemp()
+		irFn.Locals = append(irFn.Locals, "sk_bool "+result)
+		arg := "sk_bool_new(0)"
+		if bin.Op == "!=" {
+			arg = "sk_bool_new(1)"
+		}
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:     "=",
+			Result: result,
+			Arg1:   arg,
+		})
+		return result
+	}
 
 	result := p.newTemp()
 	irFn.Locals = append(irFn.Locals, "sk_bool "+result)
@@ -3844,33 +3803,6 @@ func (p *Pipeline) prepareArg(argExpr front.Node, paramType string, irFn *IRFunc
 		return tempVar
 	}
 
-	// char → int (неявно)
-	if argType == "char" && paramType == "int" {
-		tmp := p.newTemp()
-		irFn.Locals = append(irFn.Locals, "sk_int "+tmp)
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:         "call",
-			Result:     tmp,
-			Arg1:       "sk_char_to_int",
-			Arg2:       argValue,
-			ReturnType: "sk_int",
-		})
-		return tmp
-	}
-	// int → char (неявно)
-	if argType == "int" && paramType == "char" {
-		tmp := p.newTemp()
-		irFn.Locals = append(irFn.Locals, "sk_char "+tmp)
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:         "call",
-			Result:     tmp,
-			Arg1:       "sk_int_to_char",
-			Arg2:       argValue,
-			ReturnType: "sk_char",
-		})
-		return tmp
-	}
-
 	if argType == "void" {
 		cType := p.typeToC(paramType)
 		return "SK_NULL_" + strings.TrimPrefix(cType, "sk_")
@@ -4552,11 +4484,9 @@ func (p *Pipeline) processToInt(call *front.CallExpr, irFn *IRFunction) string {
 		})
 	case "char":
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:         "call",
-			Result:     result,
-			Arg1:       "sk_char_to_int",
-			Arg2:       arg,
-			ReturnType: "sk_int",
+			Op:     "=",
+			Result: result,
+			Arg1:   fmt.Sprintf("sk_int_new((int)%s)", arg),
 		})
 	case "float":
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
@@ -4851,7 +4781,7 @@ func (p *Pipeline) processToChar(call *front.CallExpr, irFn *IRFunction) string 
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:     "=",
 			Result: result,
-			Arg1:   "SK_NULL_char",
+			Arg1:   "0",
 		})
 		return result
 	}
@@ -4863,11 +4793,9 @@ func (p *Pipeline) processToChar(call *front.CallExpr, irFn *IRFunction) string 
 	switch argType {
 	case "int":
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:         "call",
-			Result:     result,
-			Arg1:       "sk_int_to_char",
-			Arg2:       arg,
-			ReturnType: "sk_char",
+			Op:     "=",
+			Result: result,
+			Arg1:   fmt.Sprintf("(sk_char)%s.value", arg),
 		})
 	case "string":
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
@@ -4877,27 +4805,17 @@ func (p *Pipeline) processToChar(call *front.CallExpr, irFn *IRFunction) string 
 			Arg2:       arg,
 			ReturnType: "sk_char",
 		})
-	case "float":
+	case "float", "double":
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:         "call",
-			Result:     result,
-			Arg1:       "sk_int_to_char",
-			Arg2:       fmt.Sprintf("sk_int_new((int)%s.value)", arg),
-			ReturnType: "sk_char",
-		})
-	case "double":
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:         "call",
-			Result:     result,
-			Arg1:       "sk_int_to_char",
-			Arg2:       fmt.Sprintf("sk_int_new((int)%s.value)", arg),
-			ReturnType: "sk_char",
+			Op:     "=",
+			Result: result,
+			Arg1:   fmt.Sprintf("(sk_char)((int)%s.value)", arg),
 		})
 	default:
 		irFn.Instructions = append(irFn.Instructions, IRInstruction{
 			Op:     "=",
 			Result: result,
-			Arg1:   "SK_NULL_char",
+			Arg1:   "0",
 		})
 	}
 	return result
@@ -5764,328 +5682,39 @@ func (p *Pipeline) cNameForFunc(name string) string {
 }
 
 func (p *Pipeline) processCharBinary(bin *front.BinaryExpr, leftType, rightType string, irFn *IRFunction) string {
+	// Разрешены только три формы конкатенации:
+	//   char + char   → string
+	//   char + string → string
+	//   string + char → string
+	if bin.Op != "+" || !(leftType == "char" || leftType == "string") || !(rightType == "char" || rightType == "string") {
+		errors.NewError("1520",
+			fmt.Sprintf("Operation '%s' is not supported for 'char' type "+
+				"(only char + char, char + string, string + char are allowed)", bin.Op),
+			bin.GetLine(), bin.GetColumn(), irFn.File)
+		return "SK_NULL_int"
+	}
+
 	left := p.processExpression(bin.Left, irFn)
 	right := p.processExpression(bin.Right, irFn)
 
-	// === Конкатенация ===
-	if bin.Op == "+" {
-		// char + char → string
-		if leftType == "char" && rightType == "char" {
-			result := p.newTemp()
-			irFn.Locals = append(irFn.Locals, "sk_string "+result)
-			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:         "call",
-				Result:     result,
-				Arg1:       "sk_char_add_char",
-				Arg2:       left + ", " + right,
-				ReturnType: "sk_string",
-			})
-			return result
-		}
-		// char + string → string
-		if leftType == "char" && rightType == "string" {
-			result := p.newTemp()
-			irFn.Locals = append(irFn.Locals, "sk_string "+result)
-			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:         "call",
-				Result:     result,
-				Arg1:       "sk_char_add_string",
-				Arg2:       left + ", " + right,
-				ReturnType: "sk_string",
-			})
-			return result
-		}
-		// string + char → string
-		if leftType == "string" && rightType == "char" {
-			result := p.newTemp()
-			irFn.Locals = append(irFn.Locals, "sk_string "+result)
-			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:         "call",
-				Result:     result,
-				Arg1:       "sk_string_add_char",
-				Arg2:       left + ", " + right,
-				ReturnType: "sk_string",
-			})
-			return result
-		}
-		// char + any → string (через any_to_string)
-		if leftType == "char" && (rightType == "any" || isUnionTypeP(rightType)) {
-			tmp := p.newTemp()
-			irFn.Locals = append(irFn.Locals, "sk_string "+tmp)
-			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:         "call",
-				Result:     tmp,
-				Arg1:       "sk_char_to_string",
-				Arg2:       left,
-				ReturnType: "sk_string",
-			})
-			tmpR := p.newTemp()
-			irFn.Locals = append(irFn.Locals, "sk_string "+tmpR)
-			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:         "call",
-				Result:     tmpR,
-				Arg1:       "any_to_string",
-				Arg2:       right,
-				ReturnType: "sk_string",
-			})
-			result := p.newTemp()
-			irFn.Locals = append(irFn.Locals, "sk_string "+result)
-			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:         "call",
-				Result:     result,
-				Arg1:       "sk_string_concat",
-				Arg2:       tmp + ", " + tmpR,
-				ReturnType: "sk_string",
-			})
-			return result
-		}
-		if (leftType == "any" || isUnionTypeP(leftType)) && rightType == "char" {
-			tmpL := p.newTemp()
-			irFn.Locals = append(irFn.Locals, "sk_string "+tmpL)
-			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:         "call",
-				Result:     tmpL,
-				Arg1:       "any_to_string",
-				Arg2:       left,
-				ReturnType: "sk_string",
-			})
-			tmpR := p.newTemp()
-			irFn.Locals = append(irFn.Locals, "sk_string "+tmpR)
-			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:         "call",
-				Result:     tmpR,
-				Arg1:       "sk_char_to_string",
-				Arg2:       right,
-				ReturnType: "sk_string",
-			})
-			result := p.newTemp()
-			irFn.Locals = append(irFn.Locals, "sk_string "+result)
-			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:         "call",
-				Result:     result,
-				Arg1:       "sk_string_concat",
-				Arg2:       tmpL + ", " + tmpR,
-				ReturnType: "sk_string",
-			})
-			return result
-		}
-	}
-
-	// === Сравнения ===
-	if bin.Op == "==" || bin.Op == "!=" || bin.Op == "<" || bin.Op == ">" || bin.Op == "<=" || bin.Op == ">=" {
-		// Приводим оба к int-функциям: char_to_int → sk_int_*
-		leftInt := left
-		rightInt := right
-		if leftType == "char" {
-			tmp := p.newTemp()
-			irFn.Locals = append(irFn.Locals, "sk_int "+tmp)
-			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:         "call",
-				Result:     tmp,
-				Arg1:       "sk_char_to_int",
-				Arg2:       left,
-				ReturnType: "sk_int",
-			})
-			leftInt = tmp
-		}
-		if rightType == "char" {
-			tmp := p.newTemp()
-			irFn.Locals = append(irFn.Locals, "sk_int "+tmp)
-			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:         "call",
-				Result:     tmp,
-				Arg1:       "sk_char_to_int",
-				Arg2:       right,
-				ReturnType: "sk_int",
-			})
-			rightInt = tmp
-		}
-
-		var fnName string
-		switch bin.Op {
-		case "==":
-			fnName = "sk_int_eq"
-		case "!=":
-			fnName = "sk_int_ne"
-		case "<":
-			fnName = "sk_int_lt"
-		case ">":
-			fnName = "sk_int_gt"
-		case "<=":
-			fnName = "sk_int_le"
-		case ">=":
-			fnName = "sk_int_ge"
-		}
-		result := p.newTemp()
-		irFn.Locals = append(irFn.Locals, "sk_bool "+result)
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:         "call",
-			Result:     result,
-			Arg1:       fnName,
-			Arg2:       leftInt + ", " + rightInt,
-			ReturnType: "sk_bool",
-		})
-		return result
-	}
-
-	// === Арифметика char <op> int ===
-	// (в том числе char - char, char * int, char / int, char ** int, char % int)
-	leftInt := left
-	rightInt := right
-	leftT := leftType
-	rightT := rightType
-
-	if leftT == "char" {
-		tmp := p.newTemp()
-		irFn.Locals = append(irFn.Locals, "sk_int "+tmp)
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:         "call",
-			Result:     tmp,
-			Arg1:       "sk_char_to_int",
-			Arg2:       left,
-			ReturnType: "sk_int",
-		})
-		leftInt = tmp
-		leftT = "int"
-	}
-	if rightT == "char" {
-		tmp := p.newTemp()
-		irFn.Locals = append(irFn.Locals, "sk_int "+tmp)
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:         "call",
-			Result:     tmp,
-			Arg1:       "sk_char_to_int",
-			Arg2:       right,
-			ReturnType: "sk_int",
-		})
-		rightInt = tmp
-		rightT = "int"
-	}
-
-	// Приведение к общему числовому типу — как в обычной арифметике
-	resultT := leftT
-	if resultT != rightT {
-		if leftT == "double" || rightT == "double" {
-			resultT = "double"
-		} else if leftT == "float" || rightT == "float" {
-			resultT = "float"
-		} else {
-			resultT = "int"
-		}
-	}
-
-	// Оба int — стандартная арифметика
-	if resultT == "int" {
-		var fnName string
-		switch bin.Op {
-		case "+":
-			fnName = "sk_int_add"
-		case "-":
-			fnName = "sk_int_sub"
-		case "*":
-			fnName = "sk_int_mul"
-		case "/":
-			fnName = "sk_int_div"
-		case "%":
-			fnName = "sk_int_mod"
-		case "**":
-			fnName = "sk_int_pow"
-		default:
-			fnName = "sk_int_add"
-		}
-		result := p.newTemp()
-		irFn.Locals = append(irFn.Locals, "sk_int "+result)
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:         "call",
-			Result:     result,
-			Arg1:       fnName,
-			Arg2:       leftInt + ", " + rightInt,
-			ReturnType: "sk_int",
-		})
-		return result
-	}
-
-	// float/double — конвертируем
-	newLeft := p.newTemp()
-	newRight := p.newTemp()
-
-	if resultT == "double" {
-		irFn.Locals = append(irFn.Locals, "sk_double "+newLeft)
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:         "call",
-			Result:     newLeft,
-			Arg1:       "sk_double_new",
-			Arg2:       fmt.Sprintf("(double)%s.value", leftInt),
-			ReturnType: "sk_double",
-		})
-		irFn.Locals = append(irFn.Locals, "sk_double "+newRight)
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:         "call",
-			Result:     newRight,
-			Arg1:       "sk_double_new",
-			Arg2:       fmt.Sprintf("(double)%s.value", rightInt),
-			ReturnType: "sk_double",
-		})
-	} else {
-		irFn.Locals = append(irFn.Locals, "sk_float "+newLeft)
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:         "call",
-			Result:     newLeft,
-			Arg1:       "sk_float_new",
-			Arg2:       fmt.Sprintf("(float)%s.value", leftInt),
-			ReturnType: "sk_float",
-		})
-		irFn.Locals = append(irFn.Locals, "sk_float "+newRight)
-		irFn.Instructions = append(irFn.Instructions, IRInstruction{
-			Op:         "call",
-			Result:     newRight,
-			Arg1:       "sk_float_new",
-			Arg2:       fmt.Sprintf("(float)%s.value", rightInt),
-			ReturnType: "sk_float",
-		})
-	}
-
 	var fnName string
-	if resultT == "double" {
-		switch bin.Op {
-		case "+":
-			fnName = "sk_double_add"
-		case "-":
-			fnName = "sk_double_sub"
-		case "*":
-			fnName = "sk_double_mul"
-		case "/":
-			fnName = "sk_double_div"
-		case "**":
-			fnName = "sk_double_pow"
-		default:
-			fnName = "sk_double_add"
-		}
-	} else {
-		switch bin.Op {
-		case "+":
-			fnName = "sk_float_add"
-		case "-":
-			fnName = "sk_float_sub"
-		case "*":
-			fnName = "sk_float_mul"
-		case "/":
-			fnName = "sk_float_div"
-		case "**":
-			fnName = "sk_float_pow"
-		default:
-			fnName = "sk_float_add"
-		}
+	switch {
+	case leftType == "char" && rightType == "char":
+		fnName = "sk_char_add_char"
+	case leftType == "char" && rightType == "string":
+		fnName = "sk_char_add_string"
+	case leftType == "string" && rightType == "char":
+		fnName = "sk_string_add_char"
 	}
 
 	result := p.newTemp()
-	irFn.Locals = append(irFn.Locals, "sk_"+resultT+" "+result)
+	irFn.Locals = append(irFn.Locals, "sk_string "+result)
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:         "call",
 		Result:     result,
 		Arg1:       fnName,
-		Arg2:       newLeft + ", " + newRight,
-		ReturnType: "sk_" + resultT,
+		Arg2:       left + ", " + right,
+		ReturnType: "sk_string",
 	})
 	return result
 }

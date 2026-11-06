@@ -42,6 +42,8 @@ void main(arr args) {
     }
     
     io.sendln(await f())
+
+    char c = '\n'
     
     foos(_, 10)
 
@@ -49,7 +51,7 @@ void main(arr args) {
     s += " world"        // "hello world"
     s += '!'             // "hello world!"
 
-    const string name = "Skorpion"
+    const string name = "Skorpion" + $f()
 
     await something(name)
 }

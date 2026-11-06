@@ -1256,10 +1256,6 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 
 		if decl.Type == "any" {
 			// any принимает любой не-void тип
-		} else if decl.Type == "int" && exprType == "char" {
-			// OK: неявная конверсия char → int
-		} else if decl.Type == "char" && exprType == "int" {
-			// OK: неявная конверсия int → char
 		} else if decl.Type != exprType && exprType != "" {
 			sa.addError("1507", fmt.Sprintf("Type mismatch: cannot assign '%s' to '%s'", exprType, decl.Type),
 				decl.GetLine(), decl.GetColumn(), sa.CurrentFile)
@@ -1411,10 +1407,6 @@ func (sa *SemanticAnalyzer) analyzeAssign(assign *front.Assign) front.Node {
 
 	if sym.Type == "any" {
 		// ок
-	} else if sym.Type == "int" && exprType == "char" {
-		// ок
-	} else if sym.Type == "char" && exprType == "int" {
-		// ок
 	} else if sym.Type != exprType && exprType != "" {
 		sa.addError("1510", fmt.Sprintf("Type mismatch: cannot assign '%s' to '%s' (variable '%s')",
 			exprType, sym.Type, assign.Name),
@@ -1497,6 +1489,24 @@ func (sa *SemanticAnalyzer) analyzeBinary(bin *front.BinaryExpr) front.Node {
 		return sa.analyzeUnionBinary(bin, leftType, rightType)
 	}
 
+	// === char: арифметика/сравнения запрещены, конкатенация разрешена ===
+	if leftType == "char" || rightType == "char" {
+		// char + char → string
+		// char + string → string
+		// string + char → string
+		if bin.Op == "+" &&
+			(leftType == "char" || leftType == "string") &&
+			(rightType == "char" || rightType == "string") {
+			// ок — конкатенация
+		} else {
+			sa.addError("1520",
+				fmt.Sprintf("Operation '%s' is not supported for 'char' type "+
+					"(only char + char, char + string, string + char are allowed)", bin.Op),
+				bin.GetLine(), bin.GetColumn(), sa.CurrentFile)
+			return bin
+		}
+	}
+
 	// Деление на ноль-литерал
 	if bin.Op == "/" {
 		if num, ok := bin.Right.(*front.Number); ok {
@@ -1509,19 +1519,6 @@ func (sa *SemanticAnalyzer) analyzeBinary(bin *front.BinaryExpr) front.Node {
 
 	// string + string → конкатенация
 	if bin.Op == "+" && leftType == "string" && rightType == "string" {
-		return bin
-	}
-
-	// char + char → string (конкатенация)
-	if bin.Op == "+" && leftType == "char" && rightType == "char" {
-		return bin
-	}
-	// char + string / string + char → string
-	if bin.Op == "+" && (leftType == "char" && rightType == "string" || leftType == "string" && rightType == "char") {
-		return bin
-	}
-	// char + int / int + char → int
-	if bin.Op == "+" && ((leftType == "char" && rightType == "int") || (leftType == "int" && rightType == "char")) {
 		return bin
 	}
 
@@ -1647,8 +1644,13 @@ func (sa *SemanticAnalyzer) getCurrentType(node front.Node) string {
 func (sa *SemanticAnalyzer) isBinaryOpValid(op, l, r string) bool {
 	switch op {
 	case "+":
-		if l == "string" || r == "string" {
-			return true // concat
+		if l == "char" && r == "char" {
+			return true
+		}
+		if (l == "string" || r == "string") &&
+			(l == "char" || l == "string") &&
+			(r == "char" || r == "string") {
+			return true
 		}
 		return sa.isNumericType(l) && sa.isNumericType(r)
 	case "-", "*", "/", "**":
@@ -2253,7 +2255,7 @@ func (sa *SemanticAnalyzer) isValidType(typ string) bool {
 
 func (sa *SemanticAnalyzer) isNumericType(typ string) bool {
 	numericTypes := map[string]bool{
-		"int": true, "float": true, "double": true, "char": true,
+		"int": true, "float": true, "double": true,
 	}
 	return numericTypes[typ]
 }
