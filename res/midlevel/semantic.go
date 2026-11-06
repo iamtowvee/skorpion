@@ -622,9 +622,8 @@ func (sa *SemanticAnalyzer) analyzeFunction(fn *front.Function) {
 		}
 	}
 
-	// Проверка дублирующихся параметров и default перед non-default
+	// Проверка дублирующихся параметров
 	seenParams := make(map[string]bool)
-	seenDefault := false
 	for _, param := range fn.Params {
 		if seenParams[param.Name] {
 			sa.addError("1536",
@@ -632,15 +631,6 @@ func (sa *SemanticAnalyzer) analyzeFunction(fn *front.Function) {
 				param.GetLine(), param.GetColumn(), sa.CurrentFile)
 		}
 		seenParams[param.Name] = true
-
-		if param.HasDefault() {
-			seenDefault = true
-		} else if seenDefault {
-			sa.addError("1537",
-				fmt.Sprintf("Parameter '%s' has no default value but comes after parameters with defaults in '%s'",
-					param.Name, fn.Name),
-				param.GetLine(), param.GetColumn(), sa.CurrentFile)
-		}
 	}
 
 	// Регистрируем параметры
@@ -744,7 +734,7 @@ func (sa *SemanticAnalyzer) analyzeFunction(fn *front.Function) {
 		sa.analyzeBlock(fn.Body, true)
 		debug.Debug("Body of %s analyzed\n", fn.Name)
 
-		// Проверка: non-void функция должна иметь return.
+		// Non-void функция должна иметь return.
 		// Для async void — не требуется (это Task без значения).
 		if fn.ReturnType != "void" && !sa.hasReturn(fn.Body) {
 			sa.addError("1535",
@@ -835,66 +825,8 @@ func (sa *SemanticAnalyzer) analyzeStatement(stmt front.Node) {
 	sa.analyzeNode(stmt)
 }
 
-// analyzeFireAndForget — анализ async-вызова в statement-позиции.
-// Проверяет аргументы, но не ругается на «async как значение».
 func (sa *SemanticAnalyzer) analyzeFireAndForget(call *front.CallExpr, target *front.Function) {
-	// Проверка количества аргументов
-	requiredParams := 0
-	optionalParams := 0
-	hasVariadic := false
-	for _, p := range target.Params {
-		if p.IsVariadic {
-			hasVariadic = true
-			break
-		}
-		if p.DefaultValue != nil {
-			optionalParams++
-		} else {
-			requiredParams++
-		}
-	}
-	totalNormal := requiredParams + optionalParams
-
-	if hasVariadic {
-		if len(call.Args) < requiredParams {
-			sa.addError("1519", fmt.Sprintf(
-				"Function '%s' expects at least %d arguments, got %d",
-				call.Name, requiredParams, len(call.Args)),
-				call.GetLine(), call.GetColumn(), sa.CurrentFile)
-			return
-		}
-	} else {
-		if len(call.Args) < requiredParams {
-			sa.addError("1519", fmt.Sprintf(
-				"Function '%s' expects at least %d arguments, got %d",
-				call.Name, requiredParams, len(call.Args)),
-				call.GetLine(), call.GetColumn(), sa.CurrentFile)
-			return
-		}
-		if len(call.Args) > totalNormal {
-			sa.addError("1519", fmt.Sprintf(
-				"Function '%s' expects at most %d arguments, got %d",
-				call.Name, totalNormal, len(call.Args)),
-				call.GetLine(), call.GetColumn(), sa.CurrentFile)
-			return
-		}
-	}
-
-	// Проверка типов аргументов
-	for i, arg := range call.Args {
-		sa.analyzeNode(arg)
-		if hasVariadic && i >= totalNormal {
-			continue
-		}
-		argType := sa.getNodeType(arg)
-		paramType := target.Params[i].Type
-		if argType != paramType && argType != "" && paramType != "any" {
-			sa.addError("1520",
-				fmt.Sprintf("Argument %d type mismatch: expected '%s', got '%s'",
-					i+1, paramType, argType),
-				arg.GetLine(), arg.GetColumn(), sa.CurrentFile)
-		}
-	}
+	sa.analyzeCallArgs(call.Name, call.Args, target, call.GetLine(), call.GetColumn())
 }
 
 func (sa *SemanticAnalyzer) analyzePostfix(pe *front.PostfixExpr) front.Node {
@@ -1123,7 +1055,7 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 			simpleName = parts[len(parts)-1]
 		}
 		if target := sa.resolveFunction(simpleName); target != nil && target.IsAsync {
-			// async void нельзя присвоить переменной
+			// async void нельзя присвоить переменной — значения нет.
 			if target.ReturnType == "void" {
 				sa.addError("0678",
 					fmt.Sprintf("Cannot assign result of async void function '%s' to variable '%s' — it has no value",
@@ -1139,20 +1071,9 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 					decl.GetLine(), decl.GetColumn(), sa.CurrentFile)
 				return decl
 			}
-			// Проверка аргументов — как у обычного вызова
-			for i, arg := range call.Args {
-				sa.analyzeNode(arg)
-				if i < len(target.Params) {
-					argType := sa.getNodeType(arg)
-					paramType := target.Params[i].Type
-					if argType != paramType && argType != "" && paramType != "any" {
-						sa.addError("1520",
-							fmt.Sprintf("Argument %d type mismatch: expected '%s', got '%s'",
-								i+1, paramType, argType),
-							arg.GetLine(), arg.GetColumn(), sa.CurrentFile)
-					}
-				}
-			}
+			// Проверка аргументов (с `_` и дефолтами)
+			sa.analyzeCallArgs(simpleName, call.Args, target, call.GetLine(), call.GetColumn())
+			// Регистрируем x как promise-переменную
 			sym := sa.CurrentScope.Define(decl.Name, SYM_VARIABLE, decl.Type, false)
 			sym.RealType = "promise"
 			return decl
@@ -1827,6 +1748,151 @@ func (sa *SemanticAnalyzer) analyzeReturn(ret *front.ReturnStmt) front.Node {
 	return ret
 }
 
+// isUnderscorePlaceholder — true, если node это `_` (placeholder «взять default»).
+func isUnderscorePlaceholder(node front.Node) bool {
+	if node == nil {
+		return false
+	}
+	id, ok := node.(*front.Ident)
+	return ok && id.Name == "_"
+}
+
+// checkCallArgType — проверка типа одного аргумента.
+func (sa *SemanticAnalyzer) checkCallArgType(
+	idx int,
+	arg front.Node,
+	param *front.Param,
+) {
+	argType := sa.getNodeType(arg)
+	paramType := param.Type
+
+	debug.Debug("Arg %d: type=%s, expected=%s\n", idx, argType, paramType)
+
+	if isUnionType(paramType) {
+		if argType == "void" {
+			sa.addError("1552",
+				fmt.Sprintf("Cannot pass null to union parameter %d", idx+1),
+				arg.GetLine(), arg.GetColumn(), sa.CurrentFile)
+			return
+		}
+		if !isTypeInUnion(paramType, argType) && argType != "" {
+			sa.addError("0612",
+				fmt.Sprintf("Argument %d: type '%s' is not in union '%s'",
+					idx+1, argType, paramType),
+				arg.GetLine(), arg.GetColumn(), sa.CurrentFile)
+		}
+		return
+	}
+
+	if argType == "void" && paramType == "any" {
+		sa.addError("1552",
+			fmt.Sprintf("Cannot pass null to 'any' parameter %d — cannot predict future value type", idx+1),
+			arg.GetLine(), arg.GetColumn(), sa.CurrentFile)
+		return
+	}
+
+	if argType != paramType && argType != "" && paramType != "any" {
+		sa.addError("1520",
+			fmt.Sprintf("Argument %d type mismatch: expected '%s', got '%s'",
+				idx+1, paramType, argType),
+			arg.GetLine(), arg.GetColumn(), sa.CurrentFile)
+	}
+}
+
+// analyzeCallArgs — единая проверка аргументов для call/fire-and-forget/async-var-decl.
+//
+// Логика:
+//   - Для каждого не-variadic параметра на позиции i:
+//   - если arg[i] == nil (не передан) — параметр должен иметь default, иначе 1519.
+//   - если arg[i] == `_` — параметр должен иметь default, иначе 1538.
+//   - иначе — проверка типа.
+//   - Для variadic: все args[normalParams:] идут в variadic. `_` в variadic — ошибка 1538.
+//   - Слишком много args для не-variadic функции — 1519.
+//
+// Возвращает false, если были ошибки (caller может прекратить анализ).
+func (sa *SemanticAnalyzer) analyzeCallArgs(
+	simpleName string,
+	args []front.Node,
+	targetFunc *front.Function,
+	callLine, callCol int,
+) bool {
+	// Определяем позицию variadic (если есть)
+	variadicParamIdx := -1
+	for i, p := range targetFunc.Params {
+		if p.IsVariadic {
+			variadicParamIdx = i
+			break
+		}
+	}
+
+	normalParams := len(targetFunc.Params)
+	if variadicParamIdx >= 0 {
+		normalParams = variadicParamIdx
+	}
+
+	// Слишком много аргументов (для не-variadic)
+	if variadicParamIdx < 0 && len(args) > normalParams {
+		sa.addError("1519",
+			fmt.Sprintf("Function '%s' expects at most %d arguments, got %d",
+				simpleName, normalParams, len(args)),
+			callLine, callCol, sa.CurrentFile)
+		return false
+	}
+
+	// По-позиционная проверка нормальных параметров
+	for i := 0; i < normalParams; i++ {
+		param := targetFunc.Params[i]
+
+		var arg front.Node
+		if i < len(args) {
+			arg = args[i]
+		}
+
+		// `_` placeholder
+		if isUnderscorePlaceholder(arg) {
+			if param.DefaultValue == nil {
+				sa.addError("1538",
+					fmt.Sprintf("Argument '_' used for parameter '%s' of function '%s', which has no default value",
+						param.Name, simpleName),
+					arg.GetLine(), arg.GetColumn(), sa.CurrentFile)
+			}
+			continue
+		}
+
+		// Аргумент не передан
+		if arg == nil {
+			if param.DefaultValue == nil {
+				sa.addError("1519",
+					fmt.Sprintf("Missing argument for parameter '%s' (position %d) of function '%s' — it has no default value",
+						param.Name, i+1, simpleName),
+					callLine, callCol, sa.CurrentFile)
+			}
+			continue
+		}
+
+		// Обычный аргумент — анализ + проверка типа
+		sa.analyzeNode(arg)
+		sa.checkCallArgType(i, arg, param)
+	}
+
+	// Variadic args
+	if variadicParamIdx >= 0 {
+		for j := normalParams; j < len(args); j++ {
+			arg := args[j]
+			if isUnderscorePlaceholder(arg) {
+				sa.addError("1538",
+					fmt.Sprintf("Argument '_' cannot be used for variadic parameter '%s' of function '%s'",
+						targetFunc.Params[variadicParamIdx].Name, simpleName),
+					arg.GetLine(), arg.GetColumn(), sa.CurrentFile)
+				continue
+			}
+			sa.analyzeNode(arg)
+		}
+	}
+
+	return true
+}
+
 func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
 	debug.Debug("analyzeCall: %s\n", call.Name)
 
@@ -1892,103 +1958,7 @@ func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
 	}
 	debug.Debug("Function %s found, params=%d\n", simpleName, len(targetFunc.Params))
 
-	// Считаем обязательные, опциональные и variadic
-	requiredParams := 0
-	optionalParams := 0
-	hasVariadic := false
-	for _, p := range targetFunc.Params {
-		if p.IsVariadic {
-			hasVariadic = true
-			break
-		}
-		if p.DefaultValue != nil {
-			optionalParams++
-		} else {
-			requiredParams++
-		}
-	}
-	totalNormal := requiredParams + optionalParams
-
-	if hasVariadic {
-		if len(args) < requiredParams {
-			sa.addError("1519", fmt.Sprintf(
-				"Function '%s' expects at least %d arguments, got %d",
-				simpleName, requiredParams, len(args)),
-				call.GetLine(), call.GetColumn(), sa.CurrentFile)
-			return call
-		}
-	} else {
-		if len(args) < requiredParams {
-			sa.addError("1519", fmt.Sprintf(
-				"Function '%s' expects at least %d arguments, got %d",
-				simpleName, requiredParams, len(args)),
-				call.GetLine(), call.GetColumn(), sa.CurrentFile)
-			return call
-		}
-		if len(args) > totalNormal {
-			sa.addError("1519", fmt.Sprintf(
-				"Function '%s' expects at most %d arguments, got %d",
-				simpleName, totalNormal, len(args)),
-				call.GetLine(), call.GetColumn(), sa.CurrentFile)
-			return call
-		}
-	}
-
-	// Сколько "реальных" (переданных) параметров идут до variadic
-	realNormal := len(args)
-	if hasVariadic && realNormal > totalNormal {
-		realNormal = totalNormal
-	}
-
-	for i, arg := range args {
-		sa.analyzeNode(arg)
-
-		// variadic-хвост
-		if hasVariadic && i >= totalNormal {
-			continue
-		}
-
-		argType := sa.getNodeType(arg)
-		paramType := targetFunc.Params[i].Type
-
-		debug.Debug("Arg %d: type=%s, expected=%s\n", i, argType, paramType)
-
-		// Union-параметр
-		if isUnionType(paramType) {
-			if argType == "void" {
-				sa.addError("1552",
-					fmt.Sprintf("Cannot pass null to union parameter %d", i+1),
-					arg.GetLine(), arg.GetColumn(), sa.CurrentFile)
-				return call
-			}
-			if !isTypeInUnion(paramType, argType) && argType != "" {
-				sa.addError("0612",
-					fmt.Sprintf("Argument %d: type '%s' is not in union '%s'",
-						i+1, argType, paramType),
-					arg.GetLine(), arg.GetColumn(), sa.CurrentFile)
-				return call
-			}
-			continue
-		}
-
-		if argType == "void" && paramType == "any" {
-			sa.addError("1552",
-				fmt.Sprintf("Cannot pass null to 'any' parameter %d — cannot predict future value type", i+1),
-				arg.GetLine(), arg.GetColumn(), sa.CurrentFile)
-			return call
-		}
-
-		if argType != paramType && argType != "" && paramType != "any" {
-			debug.Debug("Type mismatch in argument %d\n", i)
-			sa.addError("1520", fmt.Sprintf("Argument %d type mismatch: expected '%s', got '%s'",
-				i+1, paramType, argType),
-				arg.GetLine(), arg.GetColumn(), sa.CurrentFile)
-			return call
-		}
-	}
-	_ = realNormal
-
-	debug.Debug("analyzeCall completed successfully\n")
+	sa.analyzeCallArgs(simpleName, args, targetFunc, call.GetLine(), call.GetColumn())
 	return call
 }
 

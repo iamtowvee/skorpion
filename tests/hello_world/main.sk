@@ -11,6 +11,13 @@ void foo(int a, ...some) {
     }
 }
 
+void foos(int a = 10, int b, ...some) {
+    println(a + b)
+    for (any f in some) {
+        println(f)
+    }
+}
+
 async dict f() {
     return {age: 25}
 }
@@ -33,8 +40,10 @@ void main(arr args) {
     if (MAX == 100) {
         println(MAX + PI)
     }
-
+    
     io.sendln(await f())
+    
+    foos(_, 10)
 
     string s = "hello"
     s += " world"        // "hello world"

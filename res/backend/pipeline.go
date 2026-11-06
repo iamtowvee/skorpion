@@ -844,6 +844,10 @@ func (p *Pipeline) processAsyncCall(call *front.CallExpr, irFn *IRFunction) stri
 			for argIndex < len(call.Args) {
 				argExpr := call.Args[argIndex]
 				argIndex++
+				if isUnderscoreIdent(argExpr) {
+					// Семантика уже отловила; пропускаем на всякий случай.
+					continue
+				}
 				argType := p.getExprType(argExpr, irFn)
 				argVal := p.processExpression(argExpr, irFn)
 				argAny := p.wrapToAny(argType, argVal, irFn)
@@ -861,9 +865,13 @@ func (p *Pipeline) processAsyncCall(call *front.CallExpr, irFn *IRFunction) stri
 		if argIndex < len(call.Args) {
 			argExpr = call.Args[argIndex]
 			argIndex++
-		} else if param.DefaultValue != nil {
-			argExpr = param.DefaultValue
+			if isUnderscoreIdent(argExpr) {
+				argExpr = param.DefaultValue
+			}
 		} else {
+			argExpr = param.DefaultValue
+		}
+		if argExpr == nil {
 			argsStr = append(argsStr, "SK_NULL_int")
 			continue
 		}
@@ -3253,6 +3261,15 @@ func (p *Pipeline) processFireAndForget(call *front.CallExpr, targetFunc *front.
 	p.processAsyncCall(call, irFn)
 }
 
+// isUnderscoreIdent — true, если node это `_` (placeholder «взять default»).
+func isUnderscoreIdent(node front.Node) bool {
+	if node == nil {
+		return false
+	}
+	id, ok := node.(*front.Ident)
+	return ok && id.Name == "_"
+}
+
 func (p *Pipeline) processCall(call *front.CallExpr, irFn *IRFunction) {
 	targetFunc := p.findFunction(call.Name)
 	if targetFunc == nil {
@@ -3291,6 +3308,9 @@ func (p *Pipeline) processCall(call *front.CallExpr, irFn *IRFunction) {
 				for argIndex < len(call.Args) {
 					argExpr := call.Args[argIndex]
 					argIndex++
+					if isUnderscoreIdent(argExpr) {
+						continue
+					}
 					argType := p.getExprType(argExpr, irFn)
 					argVal := p.processExpression(argExpr, irFn)
 					argAny := p.wrapToAny(argType, argVal, irFn)
@@ -3308,9 +3328,13 @@ func (p *Pipeline) processCall(call *front.CallExpr, irFn *IRFunction) {
 			if argIndex < len(call.Args) {
 				argExpr = call.Args[argIndex]
 				argIndex++
-			} else if param.DefaultValue != nil {
-				argExpr = param.DefaultValue
+				if isUnderscoreIdent(argExpr) {
+					argExpr = param.DefaultValue
+				}
 			} else {
+				argExpr = param.DefaultValue
+			}
+			if argExpr == nil {
 				args = append(args, "SK_NULL_int")
 				continue
 			}
@@ -3318,6 +3342,9 @@ func (p *Pipeline) processCall(call *front.CallExpr, irFn *IRFunction) {
 		}
 	} else {
 		for _, arg := range call.Args {
+			if isUnderscoreIdent(arg) {
+				continue
+			}
 			args = append(args, p.processExpression(arg, irFn))
 		}
 	}
@@ -3593,6 +3620,9 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 				for argIndex < len(args) {
 					argExpr := args[argIndex]
 					argIndex++
+					if isUnderscoreIdent(argExpr) {
+						continue
+					}
 					argType := p.getExprType(argExpr, irFn)
 					argVal := p.processExpression(argExpr, irFn)
 					argAny := p.wrapToAny(argType, argVal, irFn)
@@ -3610,9 +3640,13 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 			if argIndex < len(args) {
 				argExpr = args[argIndex]
 				argIndex++
-			} else if param.DefaultValue != nil {
-				argExpr = param.DefaultValue
+				if isUnderscoreIdent(argExpr) {
+					argExpr = param.DefaultValue
+				}
 			} else {
+				argExpr = param.DefaultValue
+			}
+			if argExpr == nil {
 				argsStr = append(argsStr, "SK_NULL_int")
 				continue
 			}
@@ -3620,6 +3654,9 @@ func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) strin
 		}
 	} else {
 		for _, arg := range args {
+			if isUnderscoreIdent(arg) {
+				continue
+			}
 			argsStr = append(argsStr, p.processExpression(arg, irFn))
 		}
 	}
