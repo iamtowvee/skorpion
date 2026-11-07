@@ -1,5 +1,5 @@
 use #lib:iamtowvee/MyLib
-use std/os
+use std/files &fs
 use std/io
 
 const arr X = [15]
@@ -51,7 +51,13 @@ void main(arr args) {
     s += " world"        // "hello world"
     s += '!'             // "hello world!"
 
-    const string name = "Skorpion" + $f()
+    fs.writeText("./text", "x", true)
+    const string name = "Skorpion" + $(fs.readText("./text"))
+    if (fs.exists("./textы")) {
+        fs.delete("./textы")
+    } else {
+        fs.delete("./text")
+    }
 
     await something(name)
 }

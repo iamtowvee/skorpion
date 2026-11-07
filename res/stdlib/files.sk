@@ -1,0 +1,501 @@
+/* ------------------------------------
+                std/files
+    ---------------------------------
+      SPDX-License-Identifier: MIT
+      Copyrights (c) 2026 iamtowvee
+  ------------------------------------- */
+
+const FileSystemError{} = new Error
+const FileNotFoundError{} = new FileSystemError
+const PermissionDeniedError{} = new FileSystemError
+const FileOperationError{} = new FileSystemError
+const InvalidPathError{} = new FileSystemError
+
+includeC ~~~
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <errno.h>
+#include <limits.h>
+
+#ifdef _WIN32
+#include <direct.h>
+#define SK_MKDIR(p) _mkdir(p)
+#define SK_IS_DIR(st) ((st.st_mode & _S_IFDIR) != 0)
+#else
+#include <unistd.h>
+#define SK_MKDIR(p) mkdir(p, 0755)
+#define SK_IS_DIR(st) S_ISDIR(st.st_mode)
+#endif
+
+void __sk__fs_throw_not_found(const char* path, const char* file, int line, int col) {
+    FileNotFoundError* err = malloc(sizeof(FileNotFoundError));
+    err->__type = "Error.FileSystemError.FileNotFoundError";
+    char buf[512];
+    snprintf(buf, sizeof(buf), "File not found: %s", path);
+    err->msg = sk_string_new(buf);
+    sk_throw(err, file, line, col);
+}
+
+void __sk__fs_throw_permission(const char* path, const char* file, int line, int col) {
+    PermissionDeniedError* err = malloc(sizeof(PermissionDeniedError));
+    err->__type = "Error.FileSystemError.PermissionDeniedError";
+    char buf[512];
+    snprintf(buf, sizeof(buf), "Permission denied: %s", path);
+    err->msg = sk_string_new(buf);
+    sk_throw(err, file, line, col);
+}
+~~~
+
+/* === Read === */
+
+arr[char] read(string path) {
+  includeC ~~~
+    if (path.__is_null) {
+        InvalidPathError* err = malloc(sizeof(InvalidPathError));
+        err->__type = "Error.FileSystemError.InvalidPathError";
+        err->msg = sk_string_new("Path cannot be null.");
+        sk_throw(err, "<builtin:std/files>", 44, 5);
+    }
+
+    FILE* f = fopen(path.value, "rb");
+    if (!f) {
+        if (errno == ENOENT) __sk__fs_throw_not_found(path.value, "<builtin:std/files>", 49, 5);
+        if (errno == EACCES) __sk__fs_throw_permission(path.value, "<builtin:std/files>", 50, 5);
+        
+        FileOperationError* err = malloc(sizeof(FileOperationError));
+        err->__type = "Error.FileSystemError.FileOperationError";
+        err->msg = sk_string_new("Failed to open file for reading.");
+        sk_throw(err, "<builtin:std/files>", 54, 5);
+    }
+
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    sk_array* arr = sk_array_new(sizeof(sk_char), 7);
+    if (size > 0) {
+        char* buf = malloc(size);
+        size_t read_bytes = fread(buf, 1, size, f);
+        fclose(f);
+
+        arr->capacity = (int)read_bytes;
+        arr->length = (int)read_bytes;
+        arr->data = malloc(read_bytes * sizeof(sk_char));
+        memcpy(arr->data, buf, read_bytes);
+        free(buf);
+    } else {
+        fclose(f);
+    }
+
+    return sk_arr_new(arr);
+  ~~~
+  return []
+}
+
+string readText(string path) {
+  includeC ~~~
+    sk_arr bytes = __sk__read(path);
+    if (bytes.__is_null || bytes.value == NULL || bytes.value->length == 0) {
+        return sk_string_new("");
+    }
+    int len = bytes.value->length;
+    char* buf = malloc(len + 1);
+    memcpy(buf, bytes.value->data, len);
+    buf[len] = '\0';
+    return sk_string_new_take(buf);
+  ~~~
+  return ""
+}
+
+/* === Write === */
+
+// Сырые байты: arr[char]
+void write(string path, arr[char] data, bool append) {
+  includeC ~~~
+    if (path.__is_null || data.__is_null) {
+        InvalidPathError* err = malloc(sizeof(InvalidPathError));
+        err->__type = "Error.FileSystemError.InvalidPathError";
+        err->msg = sk_string_new("Path or data cannot be null.");
+        sk_throw(err, "<builtin:std/files>", 91, 5);
+    }
+
+    const char* mode = append.value ? "ab" : "wb";
+    FILE* f = fopen(path.value, mode);
+    if (!f) {
+        if (errno == EACCES) __sk__fs_throw_permission(path.value, "<builtin:std/files>", 97, 5);
+        
+        FileOperationError* err = malloc(sizeof(FileOperationError));
+        err->__type = "Error.FileSystemError.FileOperationError";
+        err->msg = sk_string_new("Failed to open file for writing.");
+        sk_throw(err, "<builtin:std/files>", 102, 5);
+    }
+
+    if (data.value->length > 0) {
+        fwrite(data.value->data, 1, data.value->length, f);
+    }
+    fclose(f);
+  ~~~
+}
+
+// Текст: string
+void writeText(string path, string data, bool append) {
+  includeC ~~~
+    if (path.__is_null || data.__is_null) {
+        InvalidPathError* err = malloc(sizeof(InvalidPathError));
+        err->__type = "Error.FileSystemError.InvalidPathError";
+        err->msg = sk_string_new("Path or data cannot be null.");
+        sk_throw(err, "<builtin:std/files>", 120, 5);
+    }
+
+    const char* mode = append.value ? "ab" : "wb";
+    FILE* f = fopen(path.value, mode);
+    if (!f) {
+        if (errno == EACCES) __sk__fs_throw_permission(path.value, "<builtin:std/files>", 126, 5);
+        
+        FileOperationError* err = malloc(sizeof(FileOperationError));
+        err->__type = "Error.FileSystemError.FileOperationError";
+        err->msg = sk_string_new("Failed to open file for writing.");
+        sk_throw(err, "<builtin:std/files>", 131, 5);
+    }
+
+    fwrite(data.value, 1, strlen(data.value), f);
+    fclose(f);
+  ~~~
+}
+
+/* === Lines === */
+
+string readLine(string path, int lineNum) {
+  includeC ~~~
+    if (path.__is_null || lineNum.value < 1) {
+        InvalidPathError* err = malloc(sizeof(InvalidPathError));
+        err->__type = "Error.FileSystemError.InvalidPathError";
+        err->msg = sk_string_new("Invalid path or line number.");
+        sk_throw(err, "<builtin:std/files>", 123, 5);
+    }
+
+    FILE* f = fopen(path.value, "rb");
+    if (!f) {
+        if (errno == ENOENT) __sk__fs_throw_not_found(path.value, "<builtin:std/files>", 129, 5);
+        if (errno == EACCES) __sk__fs_throw_permission(path.value, "<builtin:std/files>", 130, 5);
+        
+        FileOperationError* err = malloc(sizeof(FileOperationError));
+        err->__type = "Error.FileSystemError.FileOperationError";
+        err->msg = sk_string_new("Failed to open file.");
+        sk_throw(err, "<builtin:std/files>", 134, 5);
+    }
+
+    char chunk[1024];
+    int current = 1;
+    int found = 0;
+    char* result = NULL;
+    size_t result_len = 0;
+    size_t result_cap = 0;
+
+    while (fgets(chunk, sizeof(chunk), f)) {
+        size_t chunk_len = strlen(chunk);
+        int is_newline = chunk_len > 0 && chunk[chunk_len - 1] == '\n';
+
+        if (current == lineNum.value) {
+            if (result_len + chunk_len + 1 > result_cap) {
+                result_cap = (result_cap == 0 ? 1024 : result_cap * 2);
+                while (result_cap < result_len + chunk_len + 1) result_cap *= 2;
+                result = realloc(result, result_cap);
+            }
+            memcpy(result + result_len, chunk, chunk_len);
+            result_len += chunk_len;
+            result[result_len] = '\0';
+            found = 1;
+
+            if (is_newline) break;
+        } else {
+            if (is_newline) current++;
+        }
+    }
+    fclose(f);
+
+    if (!found) {
+        free(result);
+        FileOperationError* err = malloc(sizeof(FileOperationError));
+        err->__type = "Error.FileSystemError.FileOperationError";
+        err->msg = sk_string_new("Line not found or file is smaller.");
+        sk_throw(err, "<builtin:std/files>", 168, 5);
+    }
+
+    while (result_len > 0 && (result[result_len-1] == '\n' || result[result_len-1] == '\r')) {
+        result[--result_len] = '\0';
+    }
+
+    return sk_string_new_take(result);
+  ~~~
+  return ""
+}
+
+void writeLine(string path, int lineNum, string text) {
+  includeC ~~~
+    if (path.__is_null || text.__is_null) {
+        InvalidPathError* err = malloc(sizeof(InvalidPathError));
+        err->__type = "Error.FileSystemError.InvalidPathError";
+        err->msg = sk_string_new("Path or text cannot be null.");
+        sk_throw(err, "<builtin:std/files>", 190, 5);
+    }
+
+    FILE* f = fopen(path.value, "rb");
+    if (!f) {
+        if (errno == ENOENT) __sk__fs_throw_not_found(path.value, "<builtin:std/files>", 196, 5);
+        FileOperationError* err = malloc(sizeof(FileOperationError));
+        err->__type = "Error.FileSystemError.FileOperationError";
+        err->msg = sk_string_new("Failed to open file.");
+        sk_throw(err, "<builtin:std/files>", 200, 5);
+    }
+
+    char** lines = NULL;
+    int count = 0, cap = 0;
+    char chunk[1024];
+    char* current_line = NULL;
+    size_t current_len = 0, current_cap = 0;
+
+    while (fgets(chunk, sizeof(chunk), f)) {
+        size_t chunk_len = strlen(chunk);
+        int is_newline = chunk_len > 0 && chunk[chunk_len - 1] == '\n';
+
+        if (current_len + chunk_len + 1 > current_cap) {
+            current_cap = (current_cap == 0 ? 256 : current_cap * 2);
+            while (current_cap < current_len + chunk_len + 1) current_cap *= 2;
+            current_line = realloc(current_line, current_cap);
+        }
+        memcpy(current_line + current_len, chunk, chunk_len);
+        current_len += chunk_len;
+        current_line[current_len] = '\0';
+
+        if (is_newline) {
+            if (count >= cap) {
+                cap = (cap == 0 ? 16 : cap * 2);
+                lines = realloc(lines, cap * sizeof(char*));
+            }
+            lines[count++] = current_line;
+            current_line = NULL;
+            current_len = 0;
+            current_cap = 0;
+        }
+    }
+    if (current_len > 0) {
+        if (count >= cap) {
+            cap = (cap == 0 ? 16 : cap * 2);
+            lines = realloc(lines, cap * sizeof(char*));
+        }
+        lines[count++] = current_line;
+    } else {
+        free(current_line);
+    }
+    fclose(f);
+
+    if (lineNum.value > 0 && lineNum.value <= count) {
+        free(lines[lineNum.value - 1]);
+        char* new_line = malloc(strlen(text.value) + 2);
+        sprintf(new_line, "%s\n", text.value);
+        lines[lineNum.value - 1] = new_line;
+    } else if (lineNum.value == count + 1) {
+        lines = realloc(lines, (count + 1) * sizeof(char*));
+        char* new_line = malloc(strlen(text.value) + 2);
+        sprintf(new_line, "%s\n", text.value);
+        lines[count++] = new_line;
+    } else {
+        for (int i = 0; i < count; i++) free(lines[i]);
+        free(lines);
+        FileOperationError* err = malloc(sizeof(FileOperationError));
+        err->__type = "Error.FileSystemError.FileOperationError";
+        err->msg = sk_string_new("Line number out of range.");
+        sk_throw(err, "<builtin:std/files>", 260, 5);
+    }
+
+    f = fopen(path.value, "wb");
+    if (!f) {
+        for (int i = 0; i < count; i++) free(lines[i]);
+        free(lines);
+        __sk__fs_throw_permission(path.value, "<builtin:std/files>", 270, 5);
+    }
+    for (int i = 0; i < count; i++) {
+        fputs(lines[i], f);
+        free(lines[i]);
+    }
+    free(lines);
+    fclose(f);
+  ~~~
+}
+
+/* === Path / FS Management === */
+
+void mkdir(string base, string newDir) {
+  includeC ~~~
+    if (base.__is_null || newDir.__is_null) {
+        InvalidPathError* err = malloc(sizeof(InvalidPathError));
+        err->__type = "Error.FileSystemError.InvalidPathError";
+        err->msg = sk_string_new("Paths cannot be null.");
+        sk_throw(err, "<builtin:std/files>", 295, 5);
+    }
+    
+    char full_path[1024];
+    if (strlen(base.value) > 0) {
+        snprintf(full_path, sizeof(full_path), "%s/%s", base.value, newDir.value);
+    } else {
+        snprintf(full_path, sizeof(full_path), "%s", newDir.value);
+    }
+
+    if (SK_MKDIR(full_path) != 0 && errno != EEXIST) {
+        if (errno == EACCES) __sk__fs_throw_permission(full_path, "<builtin:std/files>", 308, 5);
+        FileOperationError* err = malloc(sizeof(FileOperationError));
+        err->__type = "Error.FileSystemError.FileOperationError";
+        err->msg = sk_string_new("Failed to create directory.");
+        sk_throw(err, "<builtin:std/files>", 312, 5);
+    }
+  ~~~
+}
+
+void delete(string path) {
+  includeC ~~~
+    if (path.__is_null) {
+        InvalidPathError* err = malloc(sizeof(InvalidPathError));
+        err->__type = "Error.FileSystemError.InvalidPathError";
+        err->msg = sk_string_new("Path cannot be null.");
+        sk_throw(err, "<builtin:std/files>", 325, 5);
+    }
+    if (remove(path.value) != 0) {
+        if (errno == ENOENT) __sk__fs_throw_not_found(path.value, "<builtin:std/files>", 328, 5);
+        if (errno == EACCES) __sk__fs_throw_permission(path.value, "<builtin:std/files>", 329, 5);
+        
+        FileOperationError* err = malloc(sizeof(FileOperationError));
+        err->__type = "Error.FileSystemError.FileOperationError";
+        err->msg = sk_string_new("Failed to delete file.");
+        sk_throw(err, "<builtin:std/files>", 334, 5);
+    }
+  ~~~
+}
+
+/* === Permissions === */
+
+bool isReadable(string path) {
+  includeC ~~~
+    if (path.__is_null) return sk_bool_new(0);
+    FILE* f = fopen(path.value, "rb");
+    if (f) { fclose(f); return sk_bool_new(1); }
+    return sk_bool_new(0);
+  ~~~
+  return false
+}
+
+bool isWriteable(string path) {
+  includeC ~~~
+    if (path.__is_null) return sk_bool_new(0);
+    FILE* f = fopen(path.value, "ab");
+    if (f) { fclose(f); return sk_bool_new(1); }
+    return sk_bool_new(0);
+  ~~~
+  return false
+}
+
+/* === Existence === */
+
+bool exists(string path) {
+  includeC ~~~
+    if (path.__is_null || path.value == NULL || path.value[0] == '\0') {
+        return sk_bool_new(0);
+    }
+
+    struct stat st;
+    if (stat(path.value, &st) == 0) {
+        // Файл или директория — существует
+        return sk_bool_new(1);
+    }
+
+    // ENOENT / ENOTDIR / EACCES — считаем, что не существует
+    return sk_bool_new(0);
+  ~~~
+  return false
+}
+
+/* === Copy / Move === */
+
+void copy(string src, string dest) {
+  includeC ~~~
+    if (src.__is_null || dest.__is_null) {
+        InvalidPathError* err = malloc(sizeof(InvalidPathError));
+        err->__type = "Error.FileSystemError.InvalidPathError";
+        err->msg = sk_string_new("Paths cannot be null.");
+        sk_throw(err, "<builtin:std/files>", 375, 5);
+    }
+
+    FILE* in = fopen(src.value, "rb");
+    if (!in) {
+        if (errno == ENOENT) __sk__fs_throw_not_found(src.value, "<builtin:std/files>", 380, 5);
+        FileOperationError* err = malloc(sizeof(FileOperationError));
+        err->__type = "Error.FileSystemError.FileOperationError";
+        err->msg = sk_string_new("Source file not found or unreadable.");
+        sk_throw(err, "<builtin:std/files>", 384, 5);
+    }
+
+    char target[1024];
+    struct stat st;
+    if (stat(dest.value, &st) == 0 && SK_IS_DIR(st)) {
+        const char* filename = strrchr(src.value, '/');
+        if (!filename) filename = strrchr(src.value, '\\');
+        filename = filename ? filename + 1 : src.value;
+        snprintf(target, sizeof(target), "%s/%s", dest.value, filename);
+    } else {
+        snprintf(target, sizeof(target), "%s", dest.value);
+    }
+
+    FILE* out = fopen(target, "wb");
+    if (!out) {
+        fclose(in);
+        if (errno == EACCES) __sk__fs_throw_permission(target, "<builtin:std/files>", 402, 5);
+        FileOperationError* err = malloc(sizeof(FileOperationError));
+        err->__type = "Error.FileSystemError.FileOperationError";
+        err->msg = sk_string_new("Cannot open destination for writing.");
+        sk_throw(err, "<builtin:std/files>", 406, 5);
+    }
+
+    char buf[8192];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
+        fwrite(buf, 1, n, out);
+    }
+
+    fclose(in);
+    fclose(out);
+  ~~~
+}
+
+void move(string src, string dest) {
+  includeC ~~~
+    if (src.__is_null || dest.__is_null) {
+        InvalidPathError* err = malloc(sizeof(InvalidPathError));
+        err->__type = "Error.FileSystemError.InvalidPathError";
+        err->msg = sk_string_new("Paths cannot be null.");
+        sk_throw(err, "<builtin:std/files>", 430, 5);
+    }
+
+    char target[1024];
+    struct stat st;
+    if (stat(dest.value, &st) == 0 && SK_IS_DIR(st)) {
+        const char* filename = strrchr(src.value, '/');
+        if (!filename) filename = strrchr(src.value, '\\');
+        filename = filename ? filename + 1 : src.value;
+        snprintf(target, sizeof(target), "%s/%s", dest.value, filename);
+    } else {
+        snprintf(target, sizeof(target), "%s", dest.value);
+    }
+
+    if (rename(src.value, target) != 0) {
+        if (errno == ENOENT) __sk__fs_throw_not_found(src.value, "<builtin:std/files>", 445, 5);
+        if (errno == EACCES) __sk__fs_throw_permission(src.value, "<builtin:std/files>", 446, 5);
+        
+        FileOperationError* err = malloc(sizeof(FileOperationError));
+        err->__type = "Error.FileSystemError.FileOperationError";
+        err->msg = sk_string_new("Failed to move file.");
+        sk_throw(err, "<builtin:std/files>", 451, 5);
+    }
+  ~~~
+}

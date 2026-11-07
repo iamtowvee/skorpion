@@ -119,15 +119,9 @@ sk_arr sk_arr_new(sk_array* v) { sk_arr r; r.value = v; r.__is_null = v ? 0 : 1;
 
 sk_char sk_char_new(uint8_t v) { return v; }
 sk_string sk_char_to_string(sk_char c) {
-    unsigned int cp = (unsigned int)c;
-    char buf[5];
-    if (cp < 0x80) {
-        buf[0] = (char)cp; buf[1] = '\0';
-    } else {
-        buf[0] = (char)(0xC0 | (cp >> 6));
-        buf[1] = (char)(0x80 | (cp & 0x3F));
-        buf[2] = '\0';
-    }
+    char buf[2];
+    buf[0] = (char)c;
+    buf[1] = '\0';
     return sk_string_new(buf);
 }
 sk_char sk_string_to_char(sk_string s) {
@@ -740,54 +734,74 @@ sk_bool sk_any_ne(sk_any a, sk_any b) {
 
 sk_bool sk_bool_eq(sk_bool a, sk_bool b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value == b.value); }
 sk_bool sk_bool_ne(sk_bool a, sk_bool b) { if (a.__is_null || b.__is_null) return SK_NULL_bool; return sk_bool_new(a.value != b.value); }
+sk_string sk_array_bytes_to_string(sk_array* a);
 sk_string sk_arr_to_string(sk_arr a) {
     if (a.__is_null) return sk_string_new("null");
     return sk_array_to_string(a.value);
 }
 
 sk_string sk_array_to_string(sk_array* a) {
-    char* buf = malloc(1024);
-    strcpy(buf, "[");
+    if (!a) return sk_string_new("null");
+    size_t cap = 256;
+    size_t len = 0;
+    char* buf = malloc(cap);
+    buf[0] = '\0';
+    #define SK_APPEND_STR(s) do { \
+        size_t sl = strlen(s); \
+        while (len + sl + 2 > cap) { cap *= 2; buf = realloc(buf, cap); } \
+        memcpy(buf + len, s, sl); len += sl; buf[len] = '\0'; \
+    } while (0)
+    SK_APPEND_STR("[");
     for (int i = 0; i < a->length; i++) {
-        if (i > 0) strcat(buf, ", ");
+        if (i > 0) SK_APPEND_STR(", ");
         void* elem = sk_array_get(a, i);
         if (a->elem_type == 5) {
             sk_any* any = (sk_any*)elem;
             sk_string s = any_to_string(*any);
-            strcat(buf, s.__is_null ? "null" : s.value);
+            SK_APPEND_STR(s.__is_null ? "null" : s.value);
+            free(s.value);
         } else if (a->elem_type == 0) {
             sk_int* v = (sk_int*)elem;
             char tmp[32];
-            if (v->__is_null) strcat(buf, "null");
-            else { snprintf(tmp, 32, "%d", v->value); strcat(buf, tmp); }
+            if (v->__is_null) SK_APPEND_STR("null");
+            else { snprintf(tmp, 32, "%d", v->value); SK_APPEND_STR(tmp); }
         } else if (a->elem_type == 1) {
             sk_string* v = (sk_string*)elem;
-            strcat(buf, v->__is_null ? "null" : v->value);
+            SK_APPEND_STR(v->__is_null ? "null" : v->value);
         } else if (a->elem_type == 2) {
             sk_float* v = (sk_float*)elem;
             char tmp[32];
-            if (v->__is_null) strcat(buf, "null");
-            else { snprintf(tmp, 32, "%f", v->value); strcat(buf, tmp); }
+            if (v->__is_null) SK_APPEND_STR("null");
+            else { snprintf(tmp, 32, "%f", v->value); SK_APPEND_STR(tmp); }
         } else if (a->elem_type == 3) {
             sk_double* v = (sk_double*)elem;
             char tmp[32];
-            if (v->__is_null) strcat(buf, "null");
-            else { snprintf(tmp, 32, "%f", v->value); strcat(buf, tmp); }
+            if (v->__is_null) SK_APPEND_STR("null");
+            else { snprintf(tmp, 32, "%f", v->value); SK_APPEND_STR(tmp); }
         } else if (a->elem_type == 4) {
             sk_bool* v = (sk_bool*)elem;
-            strcat(buf, v->__is_null ? "null" : (v->value ? "true" : "false"));
+            SK_APPEND_STR(v->__is_null ? "null" : (v->value ? "true" : "false"));
         } else if (a->elem_type == 7) {
             sk_char* v = (sk_char*)elem;
             sk_string s = sk_char_to_string(*v);
-            strcat(buf, s.value);
+            SK_APPEND_STR(s.value);
             free(s.value);
         } else if (a->elem_type == 6) {
             sk_arr* v = (sk_arr*)elem;
-            if (v->__is_null) strcat(buf, "null");
-            else { sk_string s = sk_array_to_string(v->value); strcat(buf, s.value); free(s.value); }
+            if (v->__is_null) SK_APPEND_STR("null");
+            else { sk_string s = sk_array_to_string(v->value); SK_APPEND_STR(s.value); free(s.value); }
         }
     }
-    strcat(buf, "]");
+    SK_APPEND_STR("]");
+    #undef SK_APPEND_STR
+    return sk_string_new_take(buf);
+}
+
+sk_string sk_array_bytes_to_string(sk_array* a) {
+    if (!a || a->length == 0) return sk_string_new("");
+    char* buf = malloc(a->length + 1);
+    memcpy(buf, a->data, a->length);
+    buf[a->length] = '\0';
     return sk_string_new_take(buf);
 }
 
@@ -846,6 +860,31 @@ typedef struct SkError {
     const char* __type;
     sk_string msg;
 } SkError;
+
+typedef struct FileSystemError {
+    const char* __type;
+    sk_string msg;
+} FileSystemError;
+
+typedef struct FileNotFoundError {
+    const char* __type;
+    sk_string msg;
+} FileNotFoundError;
+
+typedef struct PermissionDeniedError {
+    const char* __type;
+    sk_string msg;
+} PermissionDeniedError;
+
+typedef struct FileOperationError {
+    const char* __type;
+    sk_string msg;
+} FileOperationError;
+
+typedef struct InvalidPathError {
+    const char* __type;
+    sk_string msg;
+} InvalidPathError;
 
 typedef struct SkCleanup {
     void** ptr;
@@ -1695,6 +1734,44 @@ static inline void sk_promise_release_any(sk_promise_any* p) {
 }
 
 
+// Inline C code
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <errno.h>
+#include <limits.h>
+
+#ifdef _WIN32
+#include <direct.h>
+#define SK_MKDIR(p) _mkdir(p)
+#define SK_IS_DIR(st) ((st.st_mode & _S_IFDIR) != 0)
+#else
+#include <unistd.h>
+#define SK_MKDIR(p) mkdir(p, 0755)
+#define SK_IS_DIR(st) S_ISDIR(st.st_mode)
+#endif
+
+void __sk__fs_throw_not_found(const char* path, const char* file, int line, int col) {
+    FileNotFoundError* err = malloc(sizeof(FileNotFoundError));
+    err->__type = "Error.FileSystemError.FileNotFoundError";
+    char buf[512];
+    snprintf(buf, sizeof(buf), "File not found: %s", path);
+    err->msg = sk_string_new(buf);
+    sk_throw(err, file, line, col);
+}
+
+void __sk__fs_throw_permission(const char* path, const char* file, int line, int col) {
+    PermissionDeniedError* err = malloc(sizeof(PermissionDeniedError));
+    err->__type = "Error.FileSystemError.PermissionDeniedError";
+    char buf[512];
+    snprintf(buf, sizeof(buf), "Permission denied: %s", path);
+    err->msg = sk_string_new(buf);
+    sk_throw(err, file, line, col);
+}
+
+
+
 // Generated from manifest.spc
 sk_dict_ref __sk__get_config(void) {
     sk_dict* d = sk_dict_new();
@@ -1720,19 +1797,26 @@ void __sk__foo(sk_int a, sk_arr some);
 void __sk__foos(sk_int a, sk_int b, sk_arr some);
 void __sk__f(sk_promise_dict* __promise);
 void __sk__something(sk_promise_void* __promise, sk_string msg);
+void __sk__print(sk_any line);
+void __sk__println(sk_any msg);
 void __sk__std_io_send(sk_string line);
 sk_string __sk__std_io_input(sk_string prompt);
 void __sk__sendln(sk_any msg);
 void __sk__sendf(sk_any msg);
 sk_string __sk__input(sk_string prefix);
-void __sk__print(sk_any line);
-void __sk__println(sk_any msg);
-sk_string __sk__getEnv(sk_string env);
-void __sk__setEnv(sk_string env, sk_string val);
-void __sk__setClearEnv(sk_string env, sk_string val, sk_bool confirm);
-sk_string __sk__getExePath(void);
-sk_arr __sk__getArgs(void);
-void __sk__exit(sk_int code, sk_string msg);
+sk_arr __sk__read(sk_string path);
+sk_string __sk__readText(sk_string path);
+void __sk__write(sk_string path, sk_arr data, sk_bool append);
+void __sk__writeText(sk_string path, sk_string data, sk_bool append);
+sk_string __sk__readLine(sk_string path, sk_int lineNum);
+void __sk__writeLine(sk_string path, sk_int lineNum, sk_string text);
+void __sk__mkdir(sk_string base, sk_string newDir);
+void __sk__delete(sk_string path);
+sk_bool __sk__isReadable(sk_string path);
+sk_bool __sk__isWriteable(sk_string path);
+sk_bool __sk__exists(sk_string path);
+void __sk__copy(sk_string src, sk_string dest);
+void __sk__move(sk_string src, sk_string dest);
 
 // Global variables
 static sk_any __sk__garr_X_elems[] = {{ 0, -1, { .i = 15 } }};
@@ -1935,13 +2019,11 @@ int main(int argc, char** argv) {
     sk_string t30;
     sk_string t31;
     sk_string name;
-    sk_promise_dict* t32;
-    sk_dict_ref t33;
-    sk_dict_ref t34;
-    sk_string t35;
-    sk_any t36;
-    sk_string t37;
-    sk_promise_void* t38;
+    sk_string t32;
+    sk_string t33;
+    sk_string t34;
+    sk_bool t35;
+    sk_promise_void* t36;
 
     MAX = sk_int_new(100);
     i = sk_int_new(0);
@@ -1994,35 +2076,62 @@ L9:
     t30 = sk_char_to_string(sk_char_new(33));
     t31 = sk_string_concat(s, t30);
     s = t31;
-    t32 = sk_promise_new_dict();
-    __sk__async_ctx___sk__f* __ctx_t32 = malloc(sizeof(__sk__async_ctx___sk__f));
-    __ctx_t32->p = t32;
-    pthread_t __tid_t32;
-    pthread_create(&__tid_t32, NULL, __sk__async_runner___sk__f, __ctx_t32);
-    pthread_detach(__tid_t32);
-    t33 = sk_promise_read_dict(t32);
-    t34 = sk_dict_ref_new(sk_dict_deep_copy(t33.value));
-    t36 = any_dict(t34);
-    t35 = any_to_string(t36);
-    t37 = sk_string_concat(sk_string_new("Skorpion"), t35);
-    name = t37;
-    t38 = sk_promise_new_void();
-    __sk__async_ctx___sk__something* __ctx_t38 = malloc(sizeof(__sk__async_ctx___sk__something));
-    __ctx_t38->p = t38;
-    __ctx_t38->arg0 = name;
-    pthread_t __tid_t38;
-    pthread_create(&__tid_t38, NULL, __sk__async_runner___sk__something, __ctx_t38);
-    pthread_detach(__tid_t38);
-    sk_promise_await_void(t38);
-    return 0;
-    sk_promise_release_void(t38);
-    free(t35.value);
-    sk_promise_release_dict(t32);
-    free(name.value);
+    sk_call_push("main.sk", 54, 5);
+    __sk__writeText(sk_string_new("./text"), sk_string_new("x"), sk_bool_new(1));
+    sk_call_pop();
+    sk_call_push("main.sk", 55, 43);
+    t32 = __sk__readText(sk_string_new("./text"));
+    sk_call_pop();
+    t33 = t32;
+    t34 = sk_string_concat(sk_string_new("Skorpion"), t33);
+    name = t34;
+    sk_call_push("main.sk", 56, 12);
+    t35 = __sk__exists(sk_string_new("./textы"));
+    sk_call_pop();
+    if (t35.value) {
+        goto L10;
+    } else {
+        goto L11;
+    }
+L10:
+    sk_call_push("main.sk", 57, 9);
+    __sk__delete(sk_string_new("./textы"));
+    sk_call_pop();
+    goto L12;
+L11:
+    sk_call_push("main.sk", 59, 9);
+    __sk__delete(sk_string_new("./text"));
+    sk_call_pop();
     free(t30.value);
     free(s.value);
     sk_promise_release_dict(t25);
+L12:
+    t36 = sk_promise_new_void();
+    __sk__async_ctx___sk__something* __ctx_t36 = malloc(sizeof(__sk__async_ctx___sk__something));
+    __ctx_t36->p = t36;
+    __ctx_t36->arg0 = name;
+    pthread_t __tid_t36;
+    pthread_create(&__tid_t36, NULL, __sk__async_runner___sk__something, __ctx_t36);
+    pthread_detach(__tid_t36);
+    sk_promise_await_void(t36);
     return 0;
+    sk_promise_release_void(t36);
+    free(name.value);
+    return 0;
+}
+
+void __sk__print(sk_any line) {
+    sk_call_push("lib.sk", 6, 5);
+    __sk__sendln(line);
+    sk_call_pop();
+    return;
+}
+
+void __sk__println(sk_any msg) {
+    sk_call_push("lib.sk", 10, 5);
+    __sk__print(msg);
+    sk_call_pop();
+    return;
 }
 
 void __sk__std_io_send(sk_string line) {
@@ -2051,121 +2160,415 @@ sk_string __sk__std_io_input(sk_string prompt) {
 }
 
 void __sk__sendln(sk_any msg) {
-    sk_string t39;
-    sk_string t40;
+    sk_string t37;
+    sk_string t38;
 
-    t39 = any_to_string(msg);
-    t40 = sk_string_concat(t39, sk_string_new("\n"));
-    free(t39.value);
+    t37 = any_to_string(msg);
+    t38 = sk_string_concat(t37, sk_string_new("\n"));
+    free(t37.value);
     sk_call_push("<builtin:std/io>", 37, 5);
-    __sk__std_io_send(t40);
+    __sk__std_io_send(t38);
     sk_call_pop();
-    free(t40.value);
+    free(t38.value);
     return;
 }
 
 void __sk__sendf(sk_any msg) {
-    sk_string t41;
+    sk_string t39;
 
-    t41 = any_to_string(msg);
+    t39 = any_to_string(msg);
     sk_call_push("<builtin:std/io>", 41, 5);
-    __sk__std_io_send(t41);
+    __sk__std_io_send(t39);
     sk_call_pop();
-    free(t41.value);
+    free(t39.value);
     return;
 }
 
 sk_string __sk__input(sk_string prefix) {
-    sk_string t42;
+    sk_string t40;
 
     sk_call_push("<builtin:std/io>", 45, 12);
-    t42 = __sk__std_io_input(prefix);
+    t40 = __sk__std_io_input(prefix);
     sk_call_pop();
-    return t42;
+    return t40;
 }
 
-void __sk__print(sk_any line) {
-    sk_call_push("lib.sk", 6, 5);
-    __sk__sendln(line);
-    sk_call_pop();
-    return;
-}
+sk_arr __sk__read(sk_string path) {
+    sk_arr t41;
 
-void __sk__println(sk_any msg) {
-    sk_call_push("lib.sk", 10, 5);
-    __sk__print(msg);
-    sk_call_pop();
-    return;
-}
-
-sk_string __sk__getEnv(sk_string env) {
-    if (env.__is_null) return sk_string_new("");
-        char* val = getenv(env.value);
-        return sk_string_new(val ? val : "");
-    return sk_string_new("");
-}
-
-void __sk__setEnv(sk_string env, sk_string val) {
-    if (env.__is_null || val.__is_null) return;
-        #if defined(_WIN32)
-            if (getenv(env.value) == NULL) {
-                _putenv_s(env.value, val.value);
-            }
-        #elif defined(__linux__)
-            setenv(env.value, val.value, 0);
-        #endif
-    return;
-}
-
-void __sk__setClearEnv(sk_string env, sk_string val, sk_bool confirm) {
-    sk_bool t43;
-
-    t43 = sk_bool_not(confirm);
-    if (t43.value) {
-        goto L10;
-    } else {
-        goto L11;
-    }
-L10:
-    return;
-    goto L12;
-L11:
-L12:
-    if (env.__is_null || val.__is_null) return;
-        #if defined(_WIN32)
-            _putenv_s(env.value, val.value);
-        #elif defined(__linux__)
-            setenv(env.value, val.value, 1);
-        #endif
-    return;
-}
-
-sk_string __sk__getExePath(void) {
-    if (__sk__argc > 0 && __sk__argv[0]) {
-                return sk_string_new(__sk__argv[0]);
-            }
-            return sk_string_new("");
-    return sk_string_new("");
-}
-
-sk_arr __sk__getArgs(void) {
-    sk_arr t44;
-
-    sk_array* arr = sk_array_new(sizeof(sk_string), 1);
-            for (int i = 0; i < __sk__argc; i++) {
-                sk_string s = sk_string_new(__sk__argv[i]);
-                sk_array_push(arr, &s);
-            }
-            return sk_arr_new(arr);
-    t44 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t44;
-}
-
-void __sk__exit(sk_int code, sk_string msg) {
-    if (msg.value != NULL && msg.value[0] != '\0') {
-          fprintf(stderr, "%s\n", msg.value);
+    if (path.__is_null) {
+            InvalidPathError* err = malloc(sizeof(InvalidPathError));
+            err->__type = "Error.FileSystemError.InvalidPathError";
+            err->msg = sk_string_new("Path cannot be null.");
+            sk_throw(err, "<builtin:std/files>", 44, 5);
         }
-        exit(code.value);
+        FILE* f = fopen(path.value, "rb");
+        if (!f) {
+            if (errno == ENOENT) __sk__fs_throw_not_found(path.value, "<builtin:std/files>", 49, 5);
+            if (errno == EACCES) __sk__fs_throw_permission(path.value, "<builtin:std/files>", 50, 5);
+            FileOperationError* err = malloc(sizeof(FileOperationError));
+            err->__type = "Error.FileSystemError.FileOperationError";
+            err->msg = sk_string_new("Failed to open file for reading.");
+            sk_throw(err, "<builtin:std/files>", 54, 5);
+        }
+        fseek(f, 0, SEEK_END);
+        long size = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        sk_array* arr = sk_array_new(sizeof(sk_char), 7);
+        if (size > 0) {
+            char* buf = malloc(size);
+            size_t read_bytes = fread(buf, 1, size, f);
+            fclose(f);
+            arr->capacity = (int)read_bytes;
+            arr->length = (int)read_bytes;
+            arr->data = malloc(read_bytes * sizeof(sk_char));
+            memcpy(arr->data, buf, read_bytes);
+            free(buf);
+        } else {
+            fclose(f);
+        }
+        return sk_arr_new(arr);
+    t41 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    return t41;
+}
+
+sk_string __sk__readText(sk_string path) {
+    sk_arr bytes = __sk__read(path);
+        if (bytes.__is_null || bytes.value == NULL || bytes.value->length == 0) {
+            return sk_string_new("");
+        }
+        int len = bytes.value->length;
+        char* buf = malloc(len + 1);
+        memcpy(buf, bytes.value->data, len);
+        buf[len] = '\0';
+        return sk_string_new_take(buf);
+    return sk_string_new("");
+}
+
+void __sk__write(sk_string path, sk_arr data, sk_bool append) {
+    if (path.__is_null || data.__is_null) {
+            InvalidPathError* err = malloc(sizeof(InvalidPathError));
+            err->__type = "Error.FileSystemError.InvalidPathError";
+            err->msg = sk_string_new("Path or data cannot be null.");
+            sk_throw(err, "<builtin:std/files>", 91, 5);
+        }
+        const char* mode = append.value ? "ab" : "wb";
+        FILE* f = fopen(path.value, mode);
+        if (!f) {
+            if (errno == EACCES) __sk__fs_throw_permission(path.value, "<builtin:std/files>", 97, 5);
+            FileOperationError* err = malloc(sizeof(FileOperationError));
+            err->__type = "Error.FileSystemError.FileOperationError";
+            err->msg = sk_string_new("Failed to open file for writing.");
+            sk_throw(err, "<builtin:std/files>", 102, 5);
+        }
+        if (data.value->length > 0) {
+            fwrite(data.value->data, 1, data.value->length, f);
+        }
+        fclose(f);
+    return;
+}
+
+void __sk__writeText(sk_string path, sk_string data, sk_bool append) {
+    if (path.__is_null || data.__is_null) {
+            InvalidPathError* err = malloc(sizeof(InvalidPathError));
+            err->__type = "Error.FileSystemError.InvalidPathError";
+            err->msg = sk_string_new("Path or data cannot be null.");
+            sk_throw(err, "<builtin:std/files>", 120, 5);
+        }
+        const char* mode = append.value ? "ab" : "wb";
+        FILE* f = fopen(path.value, mode);
+        if (!f) {
+            if (errno == EACCES) __sk__fs_throw_permission(path.value, "<builtin:std/files>", 126, 5);
+            FileOperationError* err = malloc(sizeof(FileOperationError));
+            err->__type = "Error.FileSystemError.FileOperationError";
+            err->msg = sk_string_new("Failed to open file for writing.");
+            sk_throw(err, "<builtin:std/files>", 131, 5);
+        }
+        fwrite(data.value, 1, strlen(data.value), f);
+        fclose(f);
+    return;
+}
+
+sk_string __sk__readLine(sk_string path, sk_int lineNum) {
+    if (path.__is_null || lineNum.value < 1) {
+            InvalidPathError* err = malloc(sizeof(InvalidPathError));
+            err->__type = "Error.FileSystemError.InvalidPathError";
+            err->msg = sk_string_new("Invalid path or line number.");
+            sk_throw(err, "<builtin:std/files>", 123, 5);
+        }
+        FILE* f = fopen(path.value, "rb");
+        if (!f) {
+            if (errno == ENOENT) __sk__fs_throw_not_found(path.value, "<builtin:std/files>", 129, 5);
+            if (errno == EACCES) __sk__fs_throw_permission(path.value, "<builtin:std/files>", 130, 5);
+            FileOperationError* err = malloc(sizeof(FileOperationError));
+            err->__type = "Error.FileSystemError.FileOperationError";
+            err->msg = sk_string_new("Failed to open file.");
+            sk_throw(err, "<builtin:std/files>", 134, 5);
+        }
+        char chunk[1024];
+        int current = 1;
+        int found = 0;
+        char* result = NULL;
+        size_t result_len = 0;
+        size_t result_cap = 0;
+        while (fgets(chunk, sizeof(chunk), f)) {
+            size_t chunk_len = strlen(chunk);
+            int is_newline = chunk_len > 0 && chunk[chunk_len - 1] == '\n';
+            if (current == lineNum.value) {
+                if (result_len + chunk_len + 1 > result_cap) {
+                    result_cap = (result_cap == 0 ? 1024 : result_cap * 2);
+                    while (result_cap < result_len + chunk_len + 1) result_cap *= 2;
+                    result = realloc(result, result_cap);
+                }
+                memcpy(result + result_len, chunk, chunk_len);
+                result_len += chunk_len;
+                result[result_len] = '\0';
+                found = 1;
+                if (is_newline) break;
+            } else {
+                if (is_newline) current++;
+            }
+        }
+        fclose(f);
+        if (!found) {
+            free(result);
+            FileOperationError* err = malloc(sizeof(FileOperationError));
+            err->__type = "Error.FileSystemError.FileOperationError";
+            err->msg = sk_string_new("Line not found or file is smaller.");
+            sk_throw(err, "<builtin:std/files>", 168, 5);
+        }
+        while (result_len > 0 && (result[result_len-1] == '\n' || result[result_len-1] == '\r')) {
+            result[--result_len] = '\0';
+        }
+        return sk_string_new_take(result);
+    return sk_string_new("");
+}
+
+void __sk__writeLine(sk_string path, sk_int lineNum, sk_string text) {
+    if (path.__is_null || text.__is_null) {
+            InvalidPathError* err = malloc(sizeof(InvalidPathError));
+            err->__type = "Error.FileSystemError.InvalidPathError";
+            err->msg = sk_string_new("Path or text cannot be null.");
+            sk_throw(err, "<builtin:std/files>", 190, 5);
+        }
+        FILE* f = fopen(path.value, "rb");
+        if (!f) {
+            if (errno == ENOENT) __sk__fs_throw_not_found(path.value, "<builtin:std/files>", 196, 5);
+            FileOperationError* err = malloc(sizeof(FileOperationError));
+            err->__type = "Error.FileSystemError.FileOperationError";
+            err->msg = sk_string_new("Failed to open file.");
+            sk_throw(err, "<builtin:std/files>", 200, 5);
+        }
+        char** lines = NULL;
+        int count = 0, cap = 0;
+        char chunk[1024];
+        char* current_line = NULL;
+        size_t current_len = 0, current_cap = 0;
+        while (fgets(chunk, sizeof(chunk), f)) {
+            size_t chunk_len = strlen(chunk);
+            int is_newline = chunk_len > 0 && chunk[chunk_len - 1] == '\n';
+            if (current_len + chunk_len + 1 > current_cap) {
+                current_cap = (current_cap == 0 ? 256 : current_cap * 2);
+                while (current_cap < current_len + chunk_len + 1) current_cap *= 2;
+                current_line = realloc(current_line, current_cap);
+            }
+            memcpy(current_line + current_len, chunk, chunk_len);
+            current_len += chunk_len;
+            current_line[current_len] = '\0';
+            if (is_newline) {
+                if (count >= cap) {
+                    cap = (cap == 0 ? 16 : cap * 2);
+                    lines = realloc(lines, cap * sizeof(char*));
+                }
+                lines[count++] = current_line;
+                current_line = NULL;
+                current_len = 0;
+                current_cap = 0;
+            }
+        }
+        if (current_len > 0) {
+            if (count >= cap) {
+                cap = (cap == 0 ? 16 : cap * 2);
+                lines = realloc(lines, cap * sizeof(char*));
+            }
+            lines[count++] = current_line;
+        } else {
+            free(current_line);
+        }
+        fclose(f);
+        if (lineNum.value > 0 && lineNum.value <= count) {
+            free(lines[lineNum.value - 1]);
+            char* new_line = malloc(strlen(text.value) + 2);
+            sprintf(new_line, "%s\n", text.value);
+            lines[lineNum.value - 1] = new_line;
+        } else if (lineNum.value == count + 1) {
+            lines = realloc(lines, (count + 1) * sizeof(char*));
+            char* new_line = malloc(strlen(text.value) + 2);
+            sprintf(new_line, "%s\n", text.value);
+            lines[count++] = new_line;
+        } else {
+            for (int i = 0; i < count; i++) free(lines[i]);
+            free(lines);
+            FileOperationError* err = malloc(sizeof(FileOperationError));
+            err->__type = "Error.FileSystemError.FileOperationError";
+            err->msg = sk_string_new("Line number out of range.");
+            sk_throw(err, "<builtin:std/files>", 260, 5);
+        }
+        f = fopen(path.value, "wb");
+        if (!f) {
+            for (int i = 0; i < count; i++) free(lines[i]);
+            free(lines);
+            __sk__fs_throw_permission(path.value, "<builtin:std/files>", 270, 5);
+        }
+        for (int i = 0; i < count; i++) {
+            fputs(lines[i], f);
+            free(lines[i]);
+        }
+        free(lines);
+        fclose(f);
+    return;
+}
+
+void __sk__mkdir(sk_string base, sk_string newDir) {
+    if (base.__is_null || newDir.__is_null) {
+            InvalidPathError* err = malloc(sizeof(InvalidPathError));
+            err->__type = "Error.FileSystemError.InvalidPathError";
+            err->msg = sk_string_new("Paths cannot be null.");
+            sk_throw(err, "<builtin:std/files>", 295, 5);
+        }
+        char full_path[1024];
+        if (strlen(base.value) > 0) {
+            snprintf(full_path, sizeof(full_path), "%s/%s", base.value, newDir.value);
+        } else {
+            snprintf(full_path, sizeof(full_path), "%s", newDir.value);
+        }
+        if (SK_MKDIR(full_path) != 0 && errno != EEXIST) {
+            if (errno == EACCES) __sk__fs_throw_permission(full_path, "<builtin:std/files>", 308, 5);
+            FileOperationError* err = malloc(sizeof(FileOperationError));
+            err->__type = "Error.FileSystemError.FileOperationError";
+            err->msg = sk_string_new("Failed to create directory.");
+            sk_throw(err, "<builtin:std/files>", 312, 5);
+        }
+    return;
+}
+
+void __sk__delete(sk_string path) {
+    if (path.__is_null) {
+            InvalidPathError* err = malloc(sizeof(InvalidPathError));
+            err->__type = "Error.FileSystemError.InvalidPathError";
+            err->msg = sk_string_new("Path cannot be null.");
+            sk_throw(err, "<builtin:std/files>", 325, 5);
+        }
+        if (remove(path.value) != 0) {
+            if (errno == ENOENT) __sk__fs_throw_not_found(path.value, "<builtin:std/files>", 328, 5);
+            if (errno == EACCES) __sk__fs_throw_permission(path.value, "<builtin:std/files>", 329, 5);
+            FileOperationError* err = malloc(sizeof(FileOperationError));
+            err->__type = "Error.FileSystemError.FileOperationError";
+            err->msg = sk_string_new("Failed to delete file.");
+            sk_throw(err, "<builtin:std/files>", 334, 5);
+        }
+    return;
+}
+
+sk_bool __sk__isReadable(sk_string path) {
+    if (path.__is_null) return sk_bool_new(0);
+        FILE* f = fopen(path.value, "rb");
+        if (f) { fclose(f); return sk_bool_new(1); }
+        return sk_bool_new(0);
+    return sk_bool_new(0);
+}
+
+sk_bool __sk__isWriteable(sk_string path) {
+    if (path.__is_null) return sk_bool_new(0);
+        FILE* f = fopen(path.value, "ab");
+        if (f) { fclose(f); return sk_bool_new(1); }
+        return sk_bool_new(0);
+    return sk_bool_new(0);
+}
+
+sk_bool __sk__exists(sk_string path) {
+    if (path.__is_null || path.value == NULL || path.value[0] == '\0') {
+            return sk_bool_new(0);
+        }
+        struct stat st;
+        if (stat(path.value, &st) == 0) {
+            // Файл или директория — существует
+            return sk_bool_new(1);
+        }
+        // ENOENT / ENOTDIR / EACCES — считаем, что не существует
+        return sk_bool_new(0);
+    return sk_bool_new(0);
+}
+
+void __sk__copy(sk_string src, sk_string dest) {
+    if (src.__is_null || dest.__is_null) {
+            InvalidPathError* err = malloc(sizeof(InvalidPathError));
+            err->__type = "Error.FileSystemError.InvalidPathError";
+            err->msg = sk_string_new("Paths cannot be null.");
+            sk_throw(err, "<builtin:std/files>", 375, 5);
+        }
+        FILE* in = fopen(src.value, "rb");
+        if (!in) {
+            if (errno == ENOENT) __sk__fs_throw_not_found(src.value, "<builtin:std/files>", 380, 5);
+            FileOperationError* err = malloc(sizeof(FileOperationError));
+            err->__type = "Error.FileSystemError.FileOperationError";
+            err->msg = sk_string_new("Source file not found or unreadable.");
+            sk_throw(err, "<builtin:std/files>", 384, 5);
+        }
+        char target[1024];
+        struct stat st;
+        if (stat(dest.value, &st) == 0 && SK_IS_DIR(st)) {
+            const char* filename = strrchr(src.value, '/');
+            if (!filename) filename = strrchr(src.value, '\\');
+            filename = filename ? filename + 1 : src.value;
+            snprintf(target, sizeof(target), "%s/%s", dest.value, filename);
+        } else {
+            snprintf(target, sizeof(target), "%s", dest.value);
+        }
+        FILE* out = fopen(target, "wb");
+        if (!out) {
+            fclose(in);
+            if (errno == EACCES) __sk__fs_throw_permission(target, "<builtin:std/files>", 402, 5);
+            FileOperationError* err = malloc(sizeof(FileOperationError));
+            err->__type = "Error.FileSystemError.FileOperationError";
+            err->msg = sk_string_new("Cannot open destination for writing.");
+            sk_throw(err, "<builtin:std/files>", 406, 5);
+        }
+        char buf[8192];
+        size_t n;
+        while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
+            fwrite(buf, 1, n, out);
+        }
+        fclose(in);
+        fclose(out);
+    return;
+}
+
+void __sk__move(sk_string src, sk_string dest) {
+    if (src.__is_null || dest.__is_null) {
+            InvalidPathError* err = malloc(sizeof(InvalidPathError));
+            err->__type = "Error.FileSystemError.InvalidPathError";
+            err->msg = sk_string_new("Paths cannot be null.");
+            sk_throw(err, "<builtin:std/files>", 430, 5);
+        }
+        char target[1024];
+        struct stat st;
+        if (stat(dest.value, &st) == 0 && SK_IS_DIR(st)) {
+            const char* filename = strrchr(src.value, '/');
+            if (!filename) filename = strrchr(src.value, '\\');
+            filename = filename ? filename + 1 : src.value;
+            snprintf(target, sizeof(target), "%s/%s", dest.value, filename);
+        } else {
+            snprintf(target, sizeof(target), "%s", dest.value);
+        }
+        if (rename(src.value, target) != 0) {
+            if (errno == ENOENT) __sk__fs_throw_not_found(src.value, "<builtin:std/files>", 445, 5);
+            if (errno == EACCES) __sk__fs_throw_permission(src.value, "<builtin:std/files>", 446, 5);
+            FileOperationError* err = malloc(sizeof(FileOperationError));
+            err->__type = "Error.FileSystemError.FileOperationError";
+            err->msg = sk_string_new("Failed to move file.");
+            sk_throw(err, "<builtin:std/files>", 451, 5);
+        }
     return;
 }
 

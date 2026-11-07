@@ -1,0 +1,795 @@
+ DEBUG  Starting parse, first token: use type: KEYWORD
+ DEBUG  isType(arr) = true
+ DEBUG  After imports, current token: void type: KEYWORD
+ DEBUG  Loop iteration 0: token='void', type=4
+ DEBUG  isType(void) = true
+ DEBUG  Found type: 'void', parsing function...
+ DEBUG  isType(void) = true
+ DEBUG  isType(void) = true
+ DEBUG  isType(int) = true
+ DEBUG  isType(int) = true
+ DEBUG  isType(any) = true
+ DEBUG  isType(any) = true
+ DEBUG  Function parsed: foo
+ DEBUG  Loop iteration 1: token='void', type=4
+ DEBUG  isType(void) = true
+ DEBUG  Found type: 'void', parsing function...
+ DEBUG  isType(void) = true
+ DEBUG  isType(void) = true
+ DEBUG  isType(int) = true
+ DEBUG  isType(int) = true
+ DEBUG  isType(int) = true
+ DEBUG  isType(int) = true
+ DEBUG  isType(any) = true
+ DEBUG  isType(any) = true
+ DEBUG  Function parsed: foos
+ DEBUG  Loop iteration 2: token='async', type=4
+ DEBUG  isType(async) = false
+ DEBUG  Found type: 'async', parsing function...
+ DEBUG  isType(dict) = true
+ DEBUG  isType(dict) = true
+ DEBUG  Function parsed: f
+ DEBUG  Loop iteration 3: token='async', type=4
+ DEBUG  isType(async) = false
+ DEBUG  Found type: 'async', parsing function...
+ DEBUG  isType(void) = true
+ DEBUG  isType(void) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  Function parsed: something
+ DEBUG  Loop iteration 4: token='void', type=4
+ DEBUG  isType(void) = true
+ DEBUG  Found type: 'void', parsing function...
+ DEBUG  isType(void) = true
+ DEBUG  isType(void) = true
+ DEBUG  isType(arr) = true
+ DEBUG  isType(int) = true
+ DEBUG  isType(int) = true
+ DEBUG  isType(int) = true
+ DEBUG  isType(int) = true
+ DEBUG  isType(char) = true
+ DEBUG  isType(char) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  Function parsed: main
+ DEBUG  Total functions parsed: 5
+ DEBUG  Starting parse, first token: const type: KEYWORD
+ DEBUG  isType(FileSystemError) = false
+ DEBUG  isType(FileNotFoundError) = false
+ DEBUG  isType(PermissionDeniedError) = false
+ DEBUG  isType(FileOperationError) = false
+ DEBUG  isType(InvalidPathError) = false
+ DEBUG  After imports, current token: includeC type: includeC
+ DEBUG  Loop iteration 0: token='includeC', type=46
+ DEBUG  Global includeC parsed: 1126 bytes
+ DEBUG  Loop iteration 0: token='arr', type=4
+ DEBUG  isType(arr) = true
+ DEBUG  Found type: 'arr', parsing function...
+ DEBUG  isType(arr) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  Function parsed: read
+ DEBUG  Loop iteration 1: token='string', type=4
+ DEBUG  isType(string) = true
+ DEBUG  Found type: 'string', parsing function...
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  Function parsed: readText
+ DEBUG  Loop iteration 2: token='void', type=4
+ DEBUG  isType(void) = true
+ DEBUG  Found type: 'void', parsing function...
+ DEBUG  isType(void) = true
+ DEBUG  isType(void) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(arr) = true
+ DEBUG  isType(bool) = true
+ DEBUG  isType(bool) = true
+ DEBUG  Function parsed: write
+ DEBUG  Loop iteration 3: token='void', type=4
+ DEBUG  isType(void) = true
+ DEBUG  Found type: 'void', parsing function...
+ DEBUG  isType(void) = true
+ DEBUG  isType(void) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(bool) = true
+ DEBUG  isType(bool) = true
+ DEBUG  Function parsed: writeText
+ DEBUG  Loop iteration 4: token='string', type=4
+ DEBUG  isType(string) = true
+ DEBUG  Found type: 'string', parsing function...
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(int) = true
+ DEBUG  isType(int) = true
+ DEBUG  Function parsed: readLine
+ DEBUG  Loop iteration 5: token='void', type=4
+ DEBUG  isType(void) = true
+ DEBUG  Found type: 'void', parsing function...
+ DEBUG  isType(void) = true
+ DEBUG  isType(void) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(int) = true
+ DEBUG  isType(int) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  Function parsed: writeLine
+ DEBUG  Loop iteration 6: token='void', type=4
+ DEBUG  isType(void) = true
+ DEBUG  Found type: 'void', parsing function...
+ DEBUG  isType(void) = true
+ DEBUG  isType(void) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  Function parsed: mkdir
+ DEBUG  Loop iteration 7: token='void', type=4
+ DEBUG  isType(void) = true
+ DEBUG  Found type: 'void', parsing function...
+ DEBUG  isType(void) = true
+ DEBUG  isType(void) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  Function parsed: delete
+ DEBUG  Loop iteration 8: token='bool', type=4
+ DEBUG  isType(bool) = true
+ DEBUG  Found type: 'bool', parsing function...
+ DEBUG  isType(bool) = true
+ DEBUG  isType(bool) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  Function parsed: isReadable
+ DEBUG  Loop iteration 9: token='bool', type=4
+ DEBUG  isType(bool) = true
+ DEBUG  Found type: 'bool', parsing function...
+ DEBUG  isType(bool) = true
+ DEBUG  isType(bool) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  Function parsed: isWriteable
+ DEBUG  Loop iteration 10: token='void', type=4
+ DEBUG  isType(void) = true
+ DEBUG  Found type: 'void', parsing function...
+ DEBUG  isType(void) = true
+ DEBUG  isType(void) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  Function parsed: copy
+ DEBUG  Loop iteration 11: token='void', type=4
+ DEBUG  isType(void) = true
+ DEBUG  Found type: 'void', parsing function...
+ DEBUG  isType(void) = true
+ DEBUG  isType(void) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  Function parsed: move
+ DEBUG  Total functions parsed: 12
+ DEBUG  Starting parse, first token: void type: KEYWORD
+ DEBUG  After imports, current token: void type: KEYWORD
+ DEBUG  Loop iteration 0: token='void', type=4
+ DEBUG  isType(void) = true
+ DEBUG  Found type: 'void', parsing function...
+ DEBUG  isType(void) = true
+ DEBUG  isType(void) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  Function parsed: __sk__std_io_send
+ DEBUG  Loop iteration 1: token='string', type=4
+ DEBUG  isType(string) = true
+ DEBUG  Found type: 'string', parsing function...
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  Function parsed: __sk__std_io_input
+ DEBUG  Loop iteration 2: token='void', type=4
+ DEBUG  isType(void) = true
+ DEBUG  Found type: 'void', parsing function...
+ DEBUG  isType(void) = true
+ DEBUG  isType(void) = true
+ DEBUG  isType(any) = true
+ DEBUG  isType(any) = true
+ DEBUG  Function parsed: sendln
+ DEBUG  Loop iteration 3: token='void', type=4
+ DEBUG  isType(void) = true
+ DEBUG  Found type: 'void', parsing function...
+ DEBUG  isType(void) = true
+ DEBUG  isType(void) = true
+ DEBUG  isType(any) = true
+ DEBUG  isType(any) = true
+ DEBUG  Function parsed: sendf
+ DEBUG  Loop iteration 4: token='string', type=4
+ DEBUG  isType(string) = true
+ DEBUG  Found type: 'string', parsing function...
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  isType(string) = true
+ DEBUG  Function parsed: input
+ DEBUG  Total functions parsed: 5
+ DEBUG  LoadMain: Functions=5 ImportedFuncs=19 GlobalVars=2 AllFunctions=24
+ DEBUG    AllFunctions: foo -> void
+ DEBUG    AllFunctions: foos -> void
+ DEBUG    AllFunctions: f -> dict
+ DEBUG    AllFunctions: something -> void
+ DEBUG    AllFunctions: main -> void
+ DEBUG    AllFunctions: println -> void
+ DEBUG    AllFunctions: sendln -> void
+ DEBUG    AllFunctions: sendf -> void
+ DEBUG    AllFunctions: input -> string
+ DEBUG    AllFunctions: read -> arr[char]
+ DEBUG    AllFunctions: readText -> string
+ DEBUG    AllFunctions: write -> void
+ DEBUG    AllFunctions: writeText -> void
+ DEBUG    AllFunctions: readLine -> string
+ DEBUG    AllFunctions: writeLine -> void
+ DEBUG    AllFunctions: mkdir -> void
+ DEBUG    AllFunctions: delete -> void
+ DEBUG    AllFunctions: isReadable -> bool
+ DEBUG    AllFunctions: isWriteable -> bool
+ DEBUG    AllFunctions: copy -> void
+ DEBUG    AllFunctions: move -> void
+ DEBUG    AllFunctions: sendln -> void
+ DEBUG    AllFunctions: sendf -> void
+ DEBUG    AllFunctions: input -> string
+ DEBUG  SemanticAnalyzer.Analyze() started
+
+ DEBUG  Built-in types initialized
+
+ DEBUG  Registering 5 functions from main
+
+ DEBUG  Registered function: foo
+
+ DEBUG  Registered function: foos
+
+ DEBUG  Registered function: f
+
+ DEBUG  Registered function: something
+
+ DEBUG  Registered function: main
+
+ DEBUG  checkMain() passed
+
+ DEBUG  Analyzing 5 functions
+
+ DEBUG  isImportedFunction: checking foo
+
+ DEBUG  isImportedFunction: foo is NOT imported
+
+ DEBUG  Analyzing function: foo
+
+ DEBUG  analyzeFunction: foo
+
+ DEBUG  Adding parameter: a int
+
+ DEBUG  Adding parameter: some arr[any]
+
+ DEBUG  Analyzing body of foo
+
+ DEBUG  analyzeBlock: 2 statements, isFunctionBody=true
+
+ DEBUG  Statement 0: *front.CallExpr
+
+ DEBUG  resolveFunction: println
+ DEBUG  Found in imports (exact): println
+
+ DEBUG  analyzeNode: *front.CallExpr
+
+ DEBUG  analyzeCall: println
+
+ DEBUG  resolveFunction: println
+ DEBUG  Found in imports (exact): println
+
+ DEBUG  Function println found, params=1
+
+ DEBUG  analyzeNode: *front.Ident
+
+ DEBUG  Arg 0: type=int, expected=any
+
+ DEBUG  Statement 0 processed
+
+ DEBUG  Statement 1: *front.ForInStmt
+
+ DEBUG  analyzeNode: *front.ForInStmt
+
+ DEBUG  analyzeBlock: 1 statements, isFunctionBody=false
+
+ DEBUG  Statement 0: *front.CallExpr
+
+ DEBUG  resolveFunction: println
+ DEBUG  Found in imports (exact): println
+
+ DEBUG  analyzeNode: *front.CallExpr
+
+ DEBUG  analyzeCall: println
+
+ DEBUG  resolveFunction: println
+ DEBUG  Found in imports (exact): println
+
+ DEBUG  Function println found, params=1
+
+ DEBUG  analyzeNode: *front.Ident
+
+ DEBUG  Arg 0: type=any, expected=any
+
+ DEBUG  Statement 0 processed
+
+ DEBUG  analyzeBlock completed
+
+ DEBUG  Statement 1 processed
+
+ DEBUG  analyzeBlock completed
+
+ DEBUG  Body of foo analyzed
+
+ DEBUG  analyzeFunction foo completed
+
+ DEBUG  analyzeFunction: exiting foo
+
+ DEBUG  isImportedFunction: checking foos
+
+ DEBUG  isImportedFunction: foos is NOT imported
+
+ DEBUG  Analyzing function: foos
+
+ DEBUG  analyzeFunction: foos
+
+ DEBUG  Adding parameter: a int
+
+ DEBUG  Adding parameter: b int
+
+ DEBUG  Adding parameter: some arr[any]
+
+ DEBUG  Analyzing body of foos
+
+ DEBUG  analyzeBlock: 2 statements, isFunctionBody=true
+
+ DEBUG  Statement 0: *front.CallExpr
+
+ DEBUG  resolveFunction: println
+ DEBUG  Found in imports (exact): println
+
+ DEBUG  analyzeNode: *front.CallExpr
+
+ DEBUG  analyzeCall: println
+
+ DEBUG  resolveFunction: println
+ DEBUG  Found in imports (exact): println
+
+ DEBUG  Function println found, params=1
+
+ DEBUG  analyzeNode: *front.BinaryExpr
+
+ DEBUG  analyzeNode: *front.Ident
+
+ DEBUG  analyzeNode: *front.Ident
+
+ DEBUG  getNodeType BinaryExpr: op=+
+
+ DEBUG    leftType=int, rightType=int
+
+ DEBUG  Arg 0: type=int, expected=any
+
+ DEBUG  Statement 0 processed
+
+ DEBUG  Statement 1: *front.ForInStmt
+
+ DEBUG  analyzeNode: *front.ForInStmt
+
+ DEBUG  analyzeBlock: 1 statements, isFunctionBody=false
+
+ DEBUG  Statement 0: *front.CallExpr
+
+ DEBUG  resolveFunction: println
+ DEBUG  Found in imports (exact): println
+
+ DEBUG  analyzeNode: *front.CallExpr
+
+ DEBUG  analyzeCall: println
+
+ DEBUG  resolveFunction: println
+ DEBUG  Found in imports (exact): println
+
+ DEBUG  Function println found, params=1
+
+ DEBUG  analyzeNode: *front.Ident
+
+ DEBUG  Arg 0: type=any, expected=any
+
+ DEBUG  Statement 0 processed
+
+ DEBUG  analyzeBlock completed
+
+ DEBUG  Statement 1 processed
+
+ DEBUG  analyzeBlock completed
+
+ DEBUG  Body of foos analyzed
+
+ DEBUG  analyzeFunction foos completed
+
+ DEBUG  analyzeFunction: exiting foos
+
+ DEBUG  isImportedFunction: checking f
+
+ DEBUG  isImportedFunction: f is NOT imported
+
+ DEBUG  Analyzing function: f
+
+ DEBUG  analyzeFunction: f
+
+ DEBUG  Analyzing body of f
+
+ DEBUG  analyzeBlock: 1 statements, isFunctionBody=true
+
+ DEBUG  Statement 0: *front.ReturnStmt
+
+ DEBUG  analyzeNode: *front.ReturnStmt
+
+ DEBUG  Statement 0 processed
+
+ DEBUG  analyzeBlock completed
+
+ DEBUG  Body of f analyzed
+
+ DEBUG  analyzeFunction f completed
+
+ DEBUG  analyzeFunction: exiting f
+
+ DEBUG  isImportedFunction: checking something
+
+ DEBUG  isImportedFunction: something is NOT imported
+
+ DEBUG  Analyzing function: something
+
+ DEBUG  analyzeFunction: something
+
+ DEBUG  Adding parameter: msg string
+
+ DEBUG  Analyzing body of something
+
+ DEBUG  analyzeBlock: 1 statements, isFunctionBody=true
+
+ DEBUG  Statement 0: *front.CallExpr
+
+ DEBUG  resolveFunction: println
+ DEBUG  Found in imports (exact): println
+
+ DEBUG  analyzeNode: *front.CallExpr
+
+ DEBUG  analyzeCall: println
+
+ DEBUG  resolveFunction: println
+ DEBUG  Found in imports (exact): println
+
+ DEBUG  Function println found, params=1
+
+ DEBUG  analyzeNode: *front.Ident
+
+ DEBUG  Arg 0: type=string, expected=any
+
+ DEBUG  Statement 0 processed
+
+ DEBUG  analyzeBlock completed
+
+ DEBUG  Body of something analyzed
+
+ DEBUG  resolveFunction: println
+ DEBUG  Found in imports (exact): println
+
+ DEBUG  analyzeFunction something completed
+
+ DEBUG  analyzeFunction: exiting something
+
+ DEBUG  isImportedFunction: checking main
+
+ DEBUG  isImportedFunction: main is NOT imported
+
+ DEBUG  Analyzing function: main
+
+ DEBUG  analyzeFunction: main
+
+ DEBUG  Adding parameter: args arr[any]
+
+ DEBUG  Analyzing body of main
+
+ DEBUG  analyzeBlock: 19 statements, isFunctionBody=true
+
+ DEBUG  Statement 0: *front.VarDecl
+
+ DEBUG  analyzeNode: *front.VarDecl
+
+ DEBUG  Statement 0 processed
+
+ DEBUG  Statement 1: *front.VarDecl
+
+ DEBUG  analyzeNode: *front.VarDecl
+
+ DEBUG  Statement 1 processed
+
+ DEBUG  Statement 2: *front.Assign
+
+ DEBUG  analyzeNode: *front.Assign
+
+ DEBUG  analyzeAssign: i
+
+ DEBUG  analyzeNode: *front.Number
+
+ DEBUG  Statement 2 processed
+
+ DEBUG  Statement 3: *front.Assign
+
+ DEBUG  analyzeNode: *front.Assign
+
+ DEBUG  analyzeAssign: i
+
+ DEBUG  analyzeNode: *front.Number
+
+ DEBUG  Statement 3 processed
+
+ DEBUG  Statement 4: *front.Assign
+
+ DEBUG  analyzeNode: *front.Assign
+
+ DEBUG  analyzeAssign: i
+
+ DEBUG  analyzeNode: *front.Number
+
+ DEBUG  Statement 4 processed
+
+ DEBUG  Statement 5: *front.Assign
+
+ DEBUG  analyzeNode: *front.Assign
+
+ DEBUG  analyzeAssign: i
+
+ DEBUG  analyzeNode: *front.Number
+
+ DEBUG  Statement 5 processed
+
+ DEBUG  Statement 6: *front.Assign
+
+ DEBUG  analyzeNode: *front.Assign
+
+ DEBUG  analyzeAssign: i
+
+ DEBUG  analyzeNode: *front.Number
+
+ DEBUG  Statement 6 processed
+
+ DEBUG  Statement 7: *front.Assign
+
+ DEBUG  analyzeNode: *front.Assign
+
+ DEBUG  analyzeAssign: i
+
+ DEBUG  analyzeNode: *front.Number
+
+ DEBUG  Statement 7 processed
+
+ DEBUG  Statement 8: *front.IfStmt
+
+ DEBUG  analyzeNode: *front.IfStmt
+
+ DEBUG  getNodeType BinaryExpr: op===
+
+ DEBUG    leftType=int, rightType=int
+
+ DEBUG  analyzeBlock: 1 statements, isFunctionBody=false
+
+ DEBUG  Statement 0: *front.CallExpr
+
+ DEBUG  resolveFunction: println
+ DEBUG  Found in imports (exact): println
+
+ DEBUG  analyzeNode: *front.CallExpr
+
+ DEBUG  analyzeCall: println
+
+ DEBUG  resolveFunction: println
+ DEBUG  Found in imports (exact): println
+
+ DEBUG  Function println found, params=1
+
+ DEBUG  analyzeNode: *front.BinaryExpr
+
+ DEBUG  analyzeNode: *front.Ident
+
+ DEBUG  analyzeNode: *front.Ident
+
+ DEBUG  getNodeType BinaryExpr: op=+
+
+ DEBUG    leftType=int, rightType=float
+
+ DEBUG  Arg 0: type=float, expected=any
+
+ DEBUG  Statement 0 processed
+
+ DEBUG  analyzeBlock completed
+
+ DEBUG  Statement 8 processed
+
+ DEBUG  Statement 9: *front.CallExpr
+
+ DEBUG  resolveFunction: sendln
+ DEBUG  Found in imports (exact): sendln
+
+ DEBUG  analyzeNode: *front.CallExpr
+
+ DEBUG  analyzeCall: io.sendln
+
+ DEBUG  resolveFunction: sendln
+ DEBUG  Found in imports (exact): sendln
+
+ DEBUG  Function sendln found, params=1
+
+ DEBUG  analyzeNode: *front.AwaitExpr
+
+ DEBUG  resolveFunction: f
+ DEBUG  Found in current file: f
+
+ DEBUG  analyzeNode: *front.CallExpr
+
+ DEBUG  analyzeCall: f
+
+ DEBUG  resolveFunction: f
+ DEBUG  Found in current file: f
+
+ DEBUG  Function f found, params=0
+
+ DEBUG  resolveFunction: f
+ DEBUG  Found in current file: f
+
+ DEBUG  Arg 0: type=dict, expected=any
+
+ DEBUG  Statement 9 processed
+
+ DEBUG  Statement 10: *front.VarDecl
+
+ DEBUG  analyzeNode: *front.VarDecl
+
+ DEBUG  Statement 10 processed
+
+ DEBUG  Statement 11: *front.CallExpr
+
+ DEBUG  resolveFunction: foos
+ DEBUG  Found in current file: foos
+
+ DEBUG  analyzeNode: *front.CallExpr
+
+ DEBUG  analyzeCall: foos
+
+ DEBUG  resolveFunction: foos
+ DEBUG  Found in current file: foos
+
+ DEBUG  Function foos found, params=3
+
+ DEBUG  analyzeNode: *front.Number
+
+ DEBUG  Arg 1: type=int, expected=int
+
+ DEBUG  Statement 11 processed
+
+ DEBUG  Statement 12: *front.VarDecl
+
+ DEBUG  analyzeNode: *front.VarDecl
+
+ DEBUG  Statement 12 processed
+
+ DEBUG  Statement 13: *front.Assign
+
+ DEBUG  analyzeNode: *front.Assign
+
+ DEBUG  analyzeAssign: s
+
+ DEBUG  analyzeNode: *front.String
+
+ DEBUG  Statement 13 processed
+
+ DEBUG  Statement 14: *front.Assign
+
+ DEBUG  analyzeNode: *front.Assign
+
+ DEBUG  analyzeAssign: s
+
+ DEBUG  analyzeNode: *front.CharLiteral
+
+ DEBUG  Statement 14 processed
+
+ DEBUG  Statement 15: *front.VarDecl
+
+ DEBUG  analyzeNode: *front.VarDecl
+
+ DEBUG  analyzeNode: *front.CharLiteral
+
+ DEBUG  analyzeNode: *front.CharLiteral
+
+ DEBUG  Statement 15 processed
+
+ DEBUG  Statement 16: *front.CallExpr
+
+ DEBUG  resolveFunction: write
+ DEBUG  Found in imports (exact): write
+
+ DEBUG  analyzeNode: *front.CallExpr
+
+ DEBUG  analyzeCall: fs.write
+
+ DEBUG  resolveFunction: write
+ DEBUG  Found in imports (exact): write
+
+ DEBUG  Function write found, params=3
+
+ DEBUG  analyzeNode: *front.String
+
+ DEBUG  Arg 0: type=string, expected=string
+
+ DEBUG  analyzeNode: *front.Ident
+
+ DEBUG  Arg 1: type=arr, expected=arr[char]
+
+ DEBUG  analyzeNode: *front.Ident
+
+ DEBUG  Arg 2: type=bool, expected=bool
+
+ DEBUG  Statement 16 processed
+
+ DEBUG  Statement 17: *front.VarDecl
+
+ DEBUG  analyzeNode: *front.VarDecl
+
+ DEBUG  getNodeType BinaryExpr: op=+
+
+ DEBUG    leftType=string, rightType=string
+
+ DEBUG  Statement 17 processed
+
+ DEBUG  Statement 18: *front.AwaitExpr
+
+ DEBUG  analyzeNode: *front.AwaitExpr
+
+ DEBUG  resolveFunction: something
+ DEBUG  Found in current file: something
+
+ DEBUG  analyzeNode: *front.CallExpr
+
+ DEBUG  analyzeCall: something
+
+ DEBUG  resolveFunction: something
+ DEBUG  Found in current file: something
+
+ DEBUG  Function something found, params=1
+
+ DEBUG  analyzeNode: *front.Ident
+
+ DEBUG  Arg 0: type=string, expected=string
+
+ DEBUG  Statement 18 processed
+
+ DEBUG  analyzeBlock completed
+
+ DEBUG  Body of main analyzed
+
+ DEBUG  analyzeFunction main completed
+
+ DEBUG  analyzeFunction: exiting main
+
+ DEBUG  Errors found after analyzing main: 1
+
+ DEBUG  Error: 1520: Argument 2 type mismatch: expected 'arr[char]', got 'arr'
+

@@ -1535,10 +1535,19 @@ func (p *Pipeline) processUnary(unary *front.UnaryExpr, irFn *IRFunction) string
 				Arg2: expr, ReturnType: "sk_string",
 			})
 		case isArrayType(exprType):
-			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op: "call", Result: result, Arg1: "sk_arr_to_string",
-				Arg2: expr, ReturnType: "sk_string",
-			})
+			// Если это arr[char] — склеиваем как сырые байты, без скобок и запятых
+			elemType := parseArrayElemType(exprType)
+			if elemType == "char" {
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op: "call", Result: result, Arg1: "sk_array_bytes_to_string",
+					Arg2: expr + ".value", ReturnType: "sk_string",
+				})
+			} else {
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op: "call", Result: result, Arg1: "sk_arr_to_string",
+					Arg2: expr, ReturnType: "sk_string",
+				})
+			}
 		case exprType == "string":
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op: "=", Result: result, Arg1: expr,
