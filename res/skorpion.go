@@ -25,6 +25,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/term"
 )
 
 // currentSkorpionVersion — текущая версия Skorpion.
@@ -447,7 +449,7 @@ func handleClearCache(args []string) bool {
 		return true
 	}
 
-	if !assumeYes && !confirm("Remove these?") {
+	if !assumeYes && !confirm("Remove these?", false) {
 		fmt.Println(cli.Colors.Info("Cancelled."))
 		return true
 	}
@@ -613,7 +615,7 @@ func handleClearLocal(args []string, defaultProject string) bool {
 		return true
 	}
 
-	if !assumeYes && !confirm("Remove these?") {
+	if !assumeYes && !confirm("Remove these?", false) {
 		fmt.Println(cli.Colors.Info("Cancelled."))
 		return true
 	}
@@ -666,12 +668,138 @@ func argValue(args []string, name, def string) string {
 	return def
 }
 
-func confirm(question string) bool {
-	fmt.Printf("%s [y/N] ", cli.Colors.Warning(question))
-	var answer string
-	fmt.Scanln(&answer)
-	answer = strings.ToLower(strings.TrimSpace(answer))
-	return answer == "y" || answer == "yes"
+// confirm спрашивает подтверждение в стиле Vite:
+//
+//	Message: No | Yes
+//
+// с подсветкой активного варианта.
+//
+// Tab / ← / → — переключить Yes ↔ No.
+// Enter        — подтвердить подсвеченный.
+// y / Y        — сразу Yes (быстрый путь).
+// n / N        — сразу No.
+// Esc / Ctrl+C — отмена (No).
+//
+// Если stdin не TTY — возвращает defaultYes.
+func confirm(question string, defaultYes bool) bool {
+	if !isTerminal(os.Stdin) {
+		return defaultYes
+	}
+
+	if uncolored {
+		return confirmText(question, defaultYes)
+	}
+
+	fd := int(os.Stdin.Fd())
+	oldState, err := term.MakeRaw(fd)
+	if err != nil {
+		// fallback: простой текстовый ввод
+		fmt.Printf("%s [y/n] ", cli.Colors.Warning(question))
+		var answer string
+		fmt.Scanln(&answer)
+		answer = strings.ToLower(strings.TrimSpace(answer))
+		return answer == "y" || answer == "yes"
+	}
+	defer term.Restore(fd, oldState)
+
+	fmt.Print("\033[?25l")
+	defer fmt.Print("\033[?25h")
+
+	selectedYes := defaultYes
+	reader := bufio.NewReader(os.Stdin)
+
+	render := func() {
+		var yes, no string
+		if selectedYes {
+			yes = cli.Colors.Colorize(
+				cli.GREEN+cli.BG_BLACK+cli.UNDER, " Yes "+cli.RESET)
+			no = cli.Colors.Colorize(
+				cli.BRIGHT_BLACK+cli.BG_BLACK, " No "+cli.RESET)
+		} else {
+			yes = cli.Colors.Colorize(
+				cli.BRIGHT_BLACK+cli.BG_BLACK, " Yes "+cli.RESET)
+			no = cli.Colors.Colorize(
+				cli.BRIGHT_RED+cli.BG_BLACK+cli.UNDER, " No "+cli.RESET)
+		}
+		// \r + очистка строки + перерисовка
+		fmt.Printf("\r    \x1b[2K%s    %s    %s|%s    %s", question, no, cli.BLACK, cli.RESET, yes)
+	}
+
+	render()
+
+	for {
+		b, err := reader.ReadByte()
+		if err != nil {
+			fmt.Printf("\n")
+			return defaultYes
+		}
+
+		switch b {
+		case '\t', ' ': // Tab / пробел — переключить
+			selectedYes = !selectedYes
+			render()
+		case '\r', '\n': // Enter — подтвердить
+			fmt.Printf("\n")
+			return selectedYes
+		case 0x1b: // ESC-последовательность (стрелки)
+			b1, _ := reader.ReadByte()
+			b2, _ := reader.ReadByte()
+			if b1 == '[' && (b2 == 'C' || b2 == 'D') { // → или ←
+				selectedYes = !selectedYes
+				render()
+			} else {
+				// одиночный Esc — отмена
+				fmt.Printf("\n")
+				return false
+			}
+		case 'y', 'Y':
+			fmt.Printf("\n")
+			return true
+		case 'n', 'N':
+			fmt.Printf("\n")
+			return false
+		case 0x03: // Ctrl+C
+			fmt.Printf("\n")
+			os.Exit(130)
+		}
+	}
+}
+
+// confirmText — обычный текстовый ввод [y/n].
+func confirmText(question string, defaultYes bool) bool {
+	suffix := "[y/n]"
+	if defaultYes {
+		suffix = "[Y/n]"
+	}
+
+	fmt.Printf("%s %s ", cli.Colors.Warning(question), suffix)
+
+	reader := bufio.NewReader(os.Stdin)
+	line, err := reader.ReadString('\n')
+	if err != nil && err != io.EOF {
+		return defaultYes
+	}
+	answer := strings.ToLower(strings.TrimSpace(line))
+
+	switch answer {
+	case "y", "yes":
+		return true
+	case "n", "no":
+		return false
+	case "":
+		return defaultYes
+	default:
+		return defaultYes
+	}
+}
+
+// isTerminal — true, если f — TTY.
+func isTerminal(f *os.File) bool {
+	info, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
 }
 
 func dirSize(path string, st os.FileInfo) int64 {
@@ -762,7 +890,7 @@ func setupZig(args []string) {
 	if installedVersion != "" && !force {
 		if compareVersions(installedVersion, latestVersion) >= 0 {
 			fmt.Printf(cli.Colors.Success("Zig already installed: %s\n"), installedVersion)
-			fmt.Printf(cli.Colors.Info("Use --force to re-download.\n"))
+			fmt.Println(cli.Colors.Info("Use --force to re-download."))
 			return
 		}
 
@@ -1150,7 +1278,7 @@ func buildLib(projectPath string) {
 	fmt.Printf(cli.Colors.Success("Library built: %s\n"), outPath)
 	fmt.Printf(cli.Colors.Info("Functions: %d, Errors: %d\n"),
 		len(libFunctions), len(libProg.ErrorDecls))
-	fmt.Printf(cli.Colors.Info("To use in another project:\n"))
+	fmt.Println(cli.Colors.Info("To use in another project:"))
 	fmt.Printf(cli.Colors.Info("  1. Copy %s to {libs}/%s/%s/\n"),
 		outName, cfg.Authors[0], cfg.Name)
 	fmt.Printf(cli.Colors.Info("  2. Add 'use lib:%s/%s@%s' to your .sk file\n"),
@@ -1542,6 +1670,8 @@ func fetchMirrorList() []string {
 		if line != "" {
 			mirrors = append(mirrors, line)
 		}
+	}
+	if err := scanner.Err(); err != nil {
 	}
 	return mirrors
 }

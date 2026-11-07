@@ -39,6 +39,8 @@ func readManifestLight(path string) manifestLight {
 			m.Version = v
 		}
 	}
+	if err := sc.Err(); err != nil {
+	}
 	return m
 }
 
