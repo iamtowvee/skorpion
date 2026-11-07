@@ -439,7 +439,7 @@ func handleClearCache(args []string) bool {
 	for _, t := range existing {
 		st, _ := os.Stat(t)
 		fmt.Printf("  %s %s %s\n",
-			cli.Colors.Red("×"), t,
+			cli.BRIGHT_RED+"-"+cli.RESET, t,
 			cli.Colors.Dim("("+humanSize(dirSize(t, st))+")"))
 	}
 	fmt.Println()
@@ -606,7 +606,7 @@ func handleClearLocal(args []string, defaultProject string) bool {
 
 	fmt.Println(cli.Colors.Bold("Will remove:"))
 	for _, t := range targets {
-		fmt.Printf("  %s %s\n", cli.Colors.Red("×"), t)
+		fmt.Printf("  %s %s\n", cli.BRIGHT_RED+"-"+cli.RESET, t)
 	}
 	fmt.Println()
 

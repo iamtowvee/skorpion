@@ -1,6 +1,7 @@
 use #lib:iamtowvee/MyLib
 use std/files &fs
 use std/io
+use std/json
 
 const arr X = [15]
 
@@ -58,6 +59,8 @@ void main(arr args) {
     } else {
         fs.delete("./text")
     }
+
+    io.sendln(json.parse("{ \"hi\": 3 }"))
 
     await something(name)
 }

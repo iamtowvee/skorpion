@@ -80,6 +80,7 @@ func (cg *CodeGenerator) Generate() string {
 	cg.writeLine("#define SK_NULL_string ((sk_string){NULL, 1})")
 	cg.writeLine("#define SK_NULL_arr    ((sk_arr){NULL, 1})")
 	cg.writeLine("#define SK_NULL_dict   ((sk_dict_ref){NULL, 1})")
+	cg.writeLine("#define SK_NULL_any    ((sk_any){6, -1, { .p = NULL } })")
 	cg.writeLine("")
 
 	// ===== sk_any =====

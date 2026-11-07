@@ -1900,17 +1900,29 @@ func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
 
 	// Если Receiver задан — добавляем его в Args (как первый аргумент).
 	args := call.Args
-	if call.ReceiverNode != nil {
-		args = append([]front.Node{call.ReceiverNode}, args...)
-	} else if call.Receiver != "" {
-		receiverNode := &front.Ident{
-			Position: front.Position{
-				Line:   call.GetLine(),
-				Column: call.GetColumn(),
-			},
-			Name: call.Receiver,
+	isModuleCall := false
+	if call.Receiver != "" {
+		for _, imp := range sa.Program.Imports {
+			moduleName := front.GetModuleName(imp.Path)
+			if moduleName == call.Receiver || imp.Alias == call.Receiver {
+				isModuleCall = true
+				break
+			}
 		}
-		args = append([]front.Node{receiverNode}, args...)
+	}
+	if !isModuleCall {
+		if call.ReceiverNode != nil {
+			args = append([]front.Node{call.ReceiverNode}, args...)
+		} else if call.Receiver != "" {
+			receiverNode := &front.Ident{
+				Position: front.Position{
+					Line:   call.GetLine(),
+					Column: call.GetColumn(),
+				},
+				Name: call.Receiver,
+			}
+			args = append([]front.Node{receiverNode}, args...)
+		}
 	}
 
 	// Нормализуем "s.to_int" → "to_int", "io.sendln" → "sendln"

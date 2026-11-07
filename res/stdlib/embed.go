@@ -23,6 +23,9 @@ var ARRAYS_SK string
 //go:embed files.sk
 var FILES_SK string
 
+//go:embed json.sk
+var JSON_SK string
+
 //go:embed terminal.sk
 var TERMINAL_SK string
 
@@ -32,6 +35,7 @@ var StdLib = map[string]string{
 	"std/ref":      REF_SK,
 	"std/strings":  STRINGS_SK,
 	"std/files":    FILES_SK,
+	"std/json":     JSON_SK,
 	"std/math":     MATH_SK,
 	"std/arrays":   ARRAYS_SK,
 	"std/terminal": TERMINAL_SK,
