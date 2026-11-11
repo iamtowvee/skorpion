@@ -346,7 +346,7 @@ static void __sk__json_write_any(JsonOut* o, sk_any a) {
             __sk__json_out_push(o, "{", 1);
             for (int i = 0; i < d->length; i++) {
                 if (i > 0) __sk__json_out_push(o, ",", 1);
-                __sk__json_escape(o, d->entries[i].key.value);
+                __sk__json_escape(o, d->entries[i].key);
                 __sk__json_out_push(o, ":", 1);
                 __sk__json_write_any(o, d->entries[i].value);
             }

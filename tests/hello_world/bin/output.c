@@ -81,14 +81,14 @@ struct sk_array {
 };
 
 typedef struct {
-    sk_string key;
+    char* key;
     sk_any value;
 } sk_dict_entry;
 
 struct sk_dict {
     sk_dict_entry* entries;
-    int length;
     int capacity;
+    int length;
 };
 
 // Skorpion CLI args
@@ -411,83 +411,115 @@ sk_array* sk_range_new(int start, int end) {
     return a;
 }
 
+// FNV-1a 32-bit
+static unsigned int __sk__dict_hash(const char* s) {
+    unsigned int h = 2166136261u;
+    while (*s) { h ^= (unsigned char)*s++; h *= 16777619u; }
+    return h;
+}
+
 sk_dict* sk_dict_new(void) {
     sk_dict* d = malloc(sizeof(sk_dict));
-    d->entries = NULL;
-    d->length = 0;
     d->capacity = 0;
+    d->length = 0;
+    d->entries = NULL;
     return d;
+}
+
+static void __sk__dict_ensure_capacity(sk_dict* d) {
+    if (d->capacity > 0) return;
+    d->capacity = 16;
+    d->entries = calloc(d->capacity, sizeof(sk_dict_entry));
+}
+
+// Ищет слот для ключа. Возвращает либо индекс найденного, либо индекс первого свободного.
+static int __sk__dict_find(sk_dict* d, const char* key, unsigned int h) {
+    unsigned int i = h % (unsigned int)d->capacity;
+    while (d->entries[i].key != NULL) {
+        if (strcmp(d->entries[i].key, key) == 0) return (int)i;
+        i = (i + 1) % (unsigned int)d->capacity;
+    }
+    return (int)i;
+}
+
+static void __sk__dict_grow(sk_dict* d) {
+    int old_cap = d->capacity;
+    sk_dict_entry* old = d->entries;
+    d->capacity = old_cap * 2;
+    d->entries = calloc(d->capacity, sizeof(sk_dict_entry));
+    for (int i = 0; i < old_cap; i++) {
+        if (old[i].key != NULL) {
+            int slot = __sk__dict_find(d, old[i].key, __sk__dict_hash(old[i].key));
+            d->entries[slot] = old[i];
+        }
+    }
+    free(old);
 }
 
 void sk_dict_set(sk_dict* d, sk_string key, sk_any value) {
     if (key.__is_null) return;
-    for (int i = 0; i < d->length; i++) {
-        if (strcmp(d->entries[i].key.value, key.value) == 0) {
-            sk_any_free(&d->entries[i].value);
-            d->entries[i].value = value;
-            return;
-        }
+    __sk__dict_ensure_capacity(d);
+    unsigned int h = __sk__dict_hash(key.value);
+    int slot = __sk__dict_find(d, key.value, h);
+    if (d->entries[slot].key != NULL) {
+        sk_any_free(&d->entries[slot].value);
+        d->entries[slot].value = value;
+        return;
     }
-    if (d->length >= d->capacity) {
-        d->capacity = d->capacity == 0 ? 8 : d->capacity * 2;
-        d->entries = realloc(d->entries, d->capacity * sizeof(sk_dict_entry));
-    }
-    d->entries[d->length].key = sk_string_new(key.value);
-    d->entries[d->length].value = value;
+    d->entries[slot].key = strdup(key.value);
+    d->entries[slot].value = value;
     d->length++;
+    if (d->length * 4 >= d->capacity * 3)
+        __sk__dict_grow(d);
 }
 
 sk_any sk_dict_get(sk_dict* d, sk_string key) {
-    if (!d || key.__is_null) return any_null();
-    for (int i = 0; i < d->length; i++) {
-        if (strcmp(d->entries[i].key.value, key.value) == 0) {
-            return d->entries[i].value;
-        }
-    }
-    return any_null();
+    if (!d || key.__is_null || d->capacity == 0) return any_null();
+    unsigned int h = __sk__dict_hash(key.value);
+    int slot = __sk__dict_find(d, key.value, h);
+    if (d->entries[slot].key == NULL) return any_null();
+    return d->entries[slot].value;
 }
 
 int sk_dict_has(sk_dict* d, sk_string key) {
-    if (!d || key.__is_null) return 0;
-    for (int i = 0; i < d->length; i++) {
-        if (strcmp(d->entries[i].key.value, key.value) == 0) return 1;
-    }
-    return 0;
+    if (!d || key.__is_null || d->capacity == 0) return 0;
+    unsigned int h = __sk__dict_hash(key.value);
+    int slot = __sk__dict_find(d, key.value, h);
+    return d->entries[slot].key != NULL;
 }
 
 int sk_dict_len(sk_dict* d) { return d ? d->length : 0; }
 
 void sk_dict_free(sk_dict* d) {
     if (!d) return;
-    for (int i = 0; i < d->length; i++) {
-        if (d->entries[i].key.value) free(d->entries[i].key.value);
-        sk_any_deep_free(&d->entries[i].value);
+    for (int i = 0; i < d->capacity; i++) {
+        if (d->entries[i].key != NULL) {
+            free(d->entries[i].key);
+            sk_any_deep_free(&d->entries[i].value);
+        }
     }
-    free(d->entries);
+    if (d->entries) free(d->entries);
     free(d);
 }
 
-sk_dict_ref sk_dict_ref_new(sk_dict* d) { sk_dict_ref r; r.value = d; r.__is_null = d ? 0 : 1; return r; }
+sk_dict_ref sk_dict_ref_new(sk_dict* d) {
+    sk_dict_ref r; r.value = d; r.__is_null = d ? 0 : 1; return r;
+}
+
 sk_dict* sk_dict_deep_copy(sk_dict* d) {
     if (!d) return NULL;
     sk_dict* copy = sk_dict_new();
-    for (int i = 0; i < d->length; i++) {
-        sk_string keyCopy = sk_string_new(d->entries[i].key.value);
-        sk_any valCopy = sk_any_deep_copy(d->entries[i].value);
-        sk_dict_set(copy, keyCopy, valCopy);
+    for (int i = 0; i < d->capacity; i++) {
+        if (d->entries[i].key != NULL) {
+            sk_string k = sk_string_new(d->entries[i].key);
+            sk_any v = sk_any_deep_copy(d->entries[i].value);
+            sk_dict_set(copy, k, v);
+        }
     }
     return copy;
 }
 
-void sk_dict_deep_free(sk_dict* d) {
-    if (!d) return;
-    for (int i = 0; i < d->length; i++) {
-        if (d->entries[i].key.value) free(d->entries[i].key.value);
-        sk_any_deep_free(&d->entries[i].value);
-    }
-    free(d->entries);
-    free(d);
-}
+void sk_dict_deep_free(sk_dict* d) { sk_dict_free(d); }
 
 sk_any any_null(void) { sk_any a; a.type = 6; a.prec = -1; a.data.p = NULL; return a; }
 sk_any any_int(sk_int v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.data.p = NULL; return a; } a.type = 0; a.prec = -1; a.data.i = v.value; return a; }
@@ -604,17 +636,28 @@ sk_string any_to_string(sk_any a) {
         case 7: return sk_char_to_string((sk_char)a.data.i);
         case 8: {
             sk_dict* d = (sk_dict*)a.data.p;
-            char* buf = malloc(1024);
-            strcpy(buf, "{");
-            for (int i = 0; i < d->length; i++) {
-                if (i > 0) strcat(buf, ", ");
-                strcat(buf, d->entries[i].key.value);
-                strcat(buf, ": ");
+            size_t cap = 256; size_t blen = 0;
+            char* buf = malloc(cap);
+            buf[0] = '\0';
+            #define SK_D_APP(s) do { \
+                size_t sl = strlen(s); \
+                while (blen + sl + 2 > cap) { cap *= 2; buf = realloc(buf, cap); } \
+                memcpy(buf + blen, s, sl); blen += sl; buf[blen] = '\0'; \
+            } while (0)
+            SK_D_APP("{");
+            int first = 1;
+            for (int i = 0; i < d->capacity; i++) {
+                if (d->entries[i].key == NULL) continue;
+                if (!first) SK_D_APP(", ");
+                first = 0;
+                SK_D_APP(d->entries[i].key);
+                SK_D_APP(": ");
                 sk_string vs = any_to_string(d->entries[i].value);
-                strcat(buf, vs.value);
+                SK_D_APP(vs.value);
                 free(vs.value);
             }
-            strcat(buf, "}");
+            SK_D_APP("}");
+            #undef SK_D_APP
             return sk_string_new_take(buf);
         }
         default: return sk_string_new("unknown");
@@ -1756,7 +1799,6 @@ static inline void sk_promise_release_any(sk_promise_any* p) {
 
 
 // Inline C code
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -2126,7 +2168,7 @@ static void __sk__json_write_any(JsonOut* o, sk_any a) {
             __sk__json_out_push(o, "{", 1);
             for (int i = 0; i < d->length; i++) {
                 if (i > 0) __sk__json_out_push(o, ",", 1);
-                __sk__json_escape(o, d->entries[i].key.value);
+                __sk__json_escape(o, d->entries[i].key);
                 __sk__json_out_push(o, ":", 1);
                 __sk__json_write_any(o, d->entries[i].value);
             }

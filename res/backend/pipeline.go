@@ -484,10 +484,10 @@ func (p *Pipeline) globalDictInitializer(
 	entries.WriteString(fmt.Sprintf("static sk_dict_entry %s_entries[] = {", base))
 
 	for i, el := range dictLit.Elements {
-		// Ключ
+		// Ключ — char*, не sk_string
 		keyName := fmt.Sprintf("%s_key%d", base, i)
 		*prelude = append(*prelude, fmt.Sprintf(
-			"static sk_string %s = { (char*)%q, 0 };", keyName, el.Key))
+			"static char* %s = %q;", keyName, el.Key))
 
 		// Значение
 		valName := fmt.Sprintf("%s_val%d", base, i)
@@ -504,14 +504,18 @@ func (p *Pipeline) globalDictInitializer(
 		entries.WriteString(fmt.Sprintf("\n    { %s, %s }", keyName, valName))
 	}
 	if len(dictLit.Elements) == 0 {
-		entries.WriteString("{ { NULL, 1 }, { 6, -1, { .p = NULL } } }")
+		entries.WriteString("{ NULL, { 6, -1, { .p = NULL } } }")
 	}
 	entries.WriteString("\n};\n")
 
 	n := len(dictLit.Elements)
+	capacity := 16
+	for capacity < n*2 {
+		capacity *= 2
+	}
 	entries.WriteString(fmt.Sprintf(
 		"static sk_dict %s_d = { %s_entries, %d, %d };",
-		base, base, n, n))
+		base, base, capacity, n))
 	*prelude = append(*prelude, entries.String())
 
 	return fmt.Sprintf("{ &%s_d, 0 }", base), "", "", 0, 0
