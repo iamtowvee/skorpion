@@ -667,6 +667,10 @@ func (o *Optimizer) collectUsedIdents(node front.Node, used map[string]bool) {
 				o.collectUsedIdents(arg, used)
 			}
 		}
+	case *front.FormatExpr:
+		if n.Expr != nil {
+			o.collectUsedIdents(n.Expr, used)
+		}
 	case *front.CallRangeExpr:
 		if n.Range != nil {
 			if n.Range.Start != nil {

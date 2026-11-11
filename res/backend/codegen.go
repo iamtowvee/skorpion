@@ -31,6 +31,12 @@ func (cg *CodeGenerator) Generate() string {
 		cg.writeLine(fmt.Sprintf("#include %s", inc))
 	}
 
+	cg.writeLine("")
+	cg.writeLine("#ifdef _WIN32")
+	cg.writeLine("#include <windows.h>")
+	cg.writeLine("#endif")
+	cg.writeLine("")
+
 	cg.writeLine("// ==== Call stack for panic reporting ====")
 	cg.writeLine("typedef struct {")
 	cg.writeLine("    const char* file;")
@@ -1394,6 +1400,13 @@ func (cg *CodeGenerator) generateFunction(fn *IRFunction) {
 		cg.writeLine("    __sk__argv = argv;")
 		cg.writeLine("    (void)argc;")
 		cg.writeLine("    (void)argv;")
+
+		cg.writeLine("")
+		cg.writeLine("    #ifdef _WIN32")
+		cg.writeLine("        SetConsoleOutputCP(CP_UTF8);")
+		cg.writeLine("        SetConsoleCP(CP_UTF8);")
+		cg.writeLine("    #endif")
+		cg.writeLine("")
 
 		if len(fn.Params) == 1 && isArrayTypeC(fn.Params[0].Type) {
 			argName := fn.Params[0].Name

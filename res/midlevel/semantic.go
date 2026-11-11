@@ -2779,6 +2779,10 @@ func (sa *SemanticAnalyzer) collectUsedIdents(node front.Node, used map[string]b
 		if n.Expr != nil {
 			sa.collectUsedIdents(n.Expr, used)
 		}
+	case *front.FormatExpr:
+		if n.Expr != nil {
+			sa.collectUsedIdents(n.Expr, used)
+		}
 	case *front.IfStmt:
 		if n.Condition != nil {
 			sa.collectUsedIdents(n.Condition, used)

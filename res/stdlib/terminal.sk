@@ -16,24 +16,6 @@ const CommandFailedError{} = new TerminalError
 const BadColorCodeError{} = new TerminalError
 
 /* ============================
-   Console codepage (Windows only)
-   ============================ */
-
-void setConsoleCode(int code) {
-  includeC ~~~
-    #ifdef _WIN32
-        char buf[32];
-        snprintf(buf, sizeof(buf), "chcp %d > nul", code.value);
-        system(buf);
-    #else
-        (void)code;
-    #endif
-  ~~~
-}
-
-void setUTF8() { setConsoleCode(65001); }
-
-/* ============================
    Run shell command, return output
    ============================ */
 

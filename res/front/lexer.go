@@ -121,6 +121,12 @@ func (l *Lexer) NextToken() Token {
 	}
 
 	if ch == '"' {
+		// Проверка на """
+		if l.pos+2 < len(l.input) &&
+			l.input[l.pos+1] == '"' &&
+			l.input[l.pos+2] == '"' {
+			return l.readMultilineString()
+		}
 		return l.readString()
 	}
 
@@ -599,6 +605,100 @@ func (l *Lexer) readString() Token {
 	l.pos++ // пропустить "
 	l.col++
 	return Token{Type: TOKEN_STRING, Literal: result.String(), Line: l.line, Column: startCol}
+}
+
+func (l *Lexer) readMultilineString() Token {
+	startCol := l.col
+	l.pos += 3 // """
+	l.col += 3
+
+	var result strings.Builder
+
+	for l.pos < len(l.input) {
+		// Конец: """
+		if l.pos+2 < len(l.input) &&
+			l.input[l.pos] == '"' &&
+			l.input[l.pos+1] == '"' &&
+			l.input[l.pos+2] == '"' {
+			l.pos += 3
+			l.col += 3
+			return Token{
+				Type:    TOKEN_STRING,
+				Literal: result.String(),
+				Line:    l.line,
+				Column:  startCol,
+			}
+		}
+
+		// Экранирование: \"""
+		if l.input[l.pos] == '\\' && l.pos+3 < len(l.input) &&
+			l.input[l.pos+1] == '"' &&
+			l.input[l.pos+2] == '"' &&
+			l.input[l.pos+3] == '"' {
+			l.pos += 4
+			l.col += 4
+			result.WriteString(`"""`)
+			continue
+		}
+
+		// Обычные escape (\n, \t, ...) — как в readString
+		if l.input[l.pos] == '\\' && l.pos+1 < len(l.input) {
+			esc := l.input[l.pos+1]
+			switch esc {
+			case 'n':
+				result.WriteByte('\n')
+			case 't':
+				result.WriteByte('\t')
+			case 'r':
+				result.WriteByte('\r')
+			case '0':
+				result.WriteByte(0)
+			case '\\':
+				result.WriteByte('\\')
+			case '"':
+				result.WriteByte('"')
+			case '\'':
+				result.WriteByte('\'')
+			case 'a':
+				result.WriteByte(0x07)
+			case 'b':
+				result.WriteByte(0x08)
+			case 'f':
+				result.WriteByte(0x0C)
+			case 'v':
+				result.WriteByte(0x0B)
+			default:
+				errors.NewWarning("0105",
+					fmt.Sprintf("Unknown escape sequence '\\%c'", esc),
+					l.line, l.col, "")
+				result.WriteByte('\\')
+				result.WriteByte(esc)
+			}
+			l.pos += 2
+			l.col += 2
+			continue
+		}
+
+		// Обычный символ
+		if l.input[l.pos] == '\n' {
+			result.WriteByte('\n')
+			l.pos++
+			l.line++
+			l.col = 1
+		} else {
+			result.WriteByte(l.input[l.pos])
+			l.pos++
+			l.col++
+		}
+	}
+
+	errors.NewError("0102", "Unterminated multiline string", l.line, l.col, "")
+	return Token{
+		Type:    TOKEN_STRING,
+		Literal: result.String(),
+		Line:    l.line,
+		Column:  startCol,
+	}
 }
 
 func (l *Lexer) readSingleLineComment() {

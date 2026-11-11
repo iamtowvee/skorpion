@@ -627,6 +627,11 @@ func (p *Pipeline) processFunction(fn *front.Function) {
 		DictKeyTypes:   make(map[string]map[string]string),
 	}
 
+	debug.Debug("=== processFunction: %s, statements=%d ===", fn.Name, len(fn.Body.Statements))
+	for i, stmt := range fn.Body.Statements {
+		debug.Debug("  stmt[%d] = %T", i, stmt)
+	}
+
 	for _, param := range fn.Params {
 		paramType := param.Type
 		if param.IsVariadic {
@@ -1625,6 +1630,7 @@ func (p *Pipeline) processAsyncVarDecl(decl *front.VarDecl, call *front.CallExpr
 }
 
 func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
+	debug.Debug("processVarDecl: %s %s", decl.Type, decl.Name)
 	// === ASYNC: int some = func(...) ===
 	if call, ok := decl.Expr.(*front.CallExpr); ok {
 		if targetFunc := p.findFunction(call.Name); targetFunc != nil && targetFunc.IsAsync {
@@ -5536,6 +5542,10 @@ func (p *Pipeline) processTernary(t *front.TernaryExpr, irFn *IRFunction) string
 // processFormatExpr — генерация ^Nf или ^X...
 func (p *Pipeline) processFormatExpr(fe *front.FormatExpr, irFn *IRFunction) string {
 	exprType := p.getExprType(fe.Expr, irFn)
+	if exprType != "float" && exprType != "double" && exprType != "int" {
+		// не можем обработать — вернуть expr как есть
+		return p.processExpression(fe.Expr, irFn)
+	}
 	expr := p.processExpression(fe.Expr, irFn)
 
 	// int — no-op (возвращаем как есть)

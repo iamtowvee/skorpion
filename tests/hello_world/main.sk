@@ -60,6 +60,15 @@ void main(arr args) {
         fs.delete("./text")
     }
 
+    float a = 3.143553f
+    string x = """FirstLine
+\"\"\"Экранирование\"\"\"
+"А тут нет"\n
+\t""" + $(a^X{3,5}) + """
+SOMETHING
+"""
+    io.sendln(x)
+
     io.sendln(json.parse("{ \"hi\": 3 }"))
 
     await something(name)
