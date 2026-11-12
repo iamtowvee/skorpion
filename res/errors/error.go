@@ -3,7 +3,6 @@ package errors
 import (
 	"fmt"
 	"io"
-	"skrp/res/cli"
 	"strings"
 	"sync"
 	"time"
@@ -38,11 +37,6 @@ type SkorpionError struct {
 	File      string
 	Fatal     bool
 	Warning   bool
-
-	// Опционально: заполняются из ErrorCodes при записи в лог,
-	// чтобы не тащить cli.Colors в log.
-	Source string // сниппет исходника, если был
-	Tip    string // текст TIP
 }
 
 func (e *SkorpionError) GetCodeInfo() ErrorCode {
@@ -184,32 +178,11 @@ func TakeWarningsList() []SkorpionError {
 	return append([]SkorpionError{}, warnings...)
 }
 
-// GetAll возвращает копию всех сообщений (errors + warnings)
-// в порядке поступления.
-func GetAll() []SkorpionError {
-	mu.Lock()
-	defer mu.Unlock()
-	return append([]SkorpionError{}, all...)
-}
-
 // Count возвращает количество всех сообщений (errors + warnings).
 func Count() int {
 	mu.Lock()
 	defer mu.Unlock()
 	return len(all)
-}
-
-// CountErrors / CountWarnings — раздельно (если понадобится).
-func CountErrors() int {
-	mu.Lock()
-	defer mu.Unlock()
-	return len(errors)
-}
-
-func CountWarnings() int {
-	mu.Lock()
-	defer mu.Unlock()
-	return len(warnings)
 }
 
 func CloseErrors() {
@@ -239,33 +212,8 @@ func HasFatal() bool {
 	return hasFatal
 }
 
-func ClearErrors() {
-	mu.Lock()
-	defer mu.Unlock()
-	errors = make([]SkorpionError, 0)
-	warnings = make([]SkorpionError, 0)
-	all = make([]SkorpionError, 0)
-	hasFatal = false
-}
-
-func PrintErrors() {
-	for _, e := range TakeErrorsList() {
-		code := cli.Colors.Red("Err+" + e.Code)
-		message := cli.Colors.Red(e.Message)
-		location := cli.Colors.Yellow(e.File + ":" + fmt.Sprintf("%d:%d", e.Line, e.Column))
-		if e.Fatal {
-			code = cli.Colors.Bold(cli.Colors.Red("FATAL: " + e.Code))
-		}
-		fmt.Printf("%s: %s (at %s)\n", code, message, location)
-	}
-}
-
 // WriteAllTo пишет все накопленные сообщения в w (без цветов,
 // без cli-зависимостей). Используется логом для секции ERRORS.
-//
-// Формат совместим с тем, что выводит PrintError/PrintWarning
-// в консоль (без цветов и без исходного кода — только код,
-// сообщение, файл, строка, колонка, TIP).
 func WriteAllTo(w io.Writer) {
 	mu.Lock()
 	snapshot := append([]SkorpionError{}, all...)

@@ -27,9 +27,7 @@ type BuildConfig struct {
 }
 
 func NewBuilder(config *BuildConfig) *Builder {
-	return &Builder{
-		Config: config,
-	}
+	return &Builder{Config: config}
 }
 
 func (b *Builder) Build(ir *IRProgram) bool {
@@ -59,24 +57,13 @@ func (b *Builder) Build(ir *IRProgram) bool {
 }
 
 func (b *Builder) buildForTarget(targetOS string, cFile string) bool {
-	// Нормализуем
-	normOS := targetOS
-	switch targetOS {
-	case "win", "windows":
-		normOS = "windows"
-	case "linux":
-		normOS = "linux"
-	case "darwin":
-		normOS = "darwin"
-	}
+	normOS := normalizeOS(targetOS)
 
-	// 1. Спрашиваем профиль-менеджер
 	var compilerPath string
 	if b.Config.ProfileManager != nil {
 		compilerPath = b.Config.ProfileManager.GetCompilerForOS(normOS)
 	}
 
-	// 2. Если профиль auto или пустой — ищем сами
 	if compilerPath == "" || compilerPath == "auto" {
 		compilerPath = b.findCompilerForOS(normOS)
 	}
@@ -88,34 +75,8 @@ func (b *Builder) buildForTarget(targetOS string, cFile string) bool {
 		return false
 	}
 
-	// Разбираем: путь с пробелами ИЛИ команда с аргументами
-	var cmdName string
-	var cmdArgs []string
+	cmdName, cmdArgs := splitCompilerCommand(compilerPath)
 
-	if _, err := os.Stat(compilerPath); err == nil {
-		// Это путь к файлу (может содержать пробелы)
-		cmdName = compilerPath
-	} else if runtime.GOOS == "windows" && !strings.HasSuffix(strings.ToLower(compilerPath), ".exe") {
-		// Попробуем с .exe
-		if _, err := os.Stat(compilerPath + ".exe"); err == nil {
-			cmdName = compilerPath + ".exe"
-		} else {
-			parts := strings.Fields(compilerPath)
-			cmdName = parts[0]
-			if len(parts) > 1 {
-				cmdArgs = parts[1:]
-			}
-		}
-	} else {
-		// Команда с аргументами ("wsl gcc")
-		parts := strings.Fields(compilerPath)
-		cmdName = parts[0]
-		if len(parts) > 1 {
-			cmdArgs = parts[1:]
-		}
-	}
-
-	// Флаги
 	var flags []string
 	switch normOS {
 	case "windows":
@@ -126,16 +87,13 @@ func (b *Builder) buildForTarget(targetOS string, cFile string) bool {
 		flags = append(flags, "-DSK_OS_DARWIN=1", "-lm", "-lpthread")
 	}
 
-	// Выходной файл
 	outFile := filepath.Join(b.Config.OutputDir, b.Config.OutputName)
 	if normOS == "windows" {
 		outFile += ".exe"
 	}
 
-	// Определяем, WSL ли это
 	isWSL := cmdName == "wsl"
 
-	// Конвертируем пути для WSL
 	actualCFile := cFile
 	actualOutFile := outFile
 	if isWSL {
@@ -143,7 +101,6 @@ func (b *Builder) buildForTarget(targetOS string, cFile string) bool {
 		actualOutFile = windowsToWSLPath(outFile)
 	}
 
-	// Собираем аргументы
 	finalArgs := append(cmdArgs, actualCFile, "-o", actualOutFile)
 	finalArgs = append(finalArgs, flags...)
 
@@ -160,7 +117,46 @@ func (b *Builder) buildForTarget(targetOS string, cFile string) bool {
 	return true
 }
 
-// findCompilerForOS — фолбэк когда профиль auto
+func normalizeOS(osName string) string {
+	switch osName {
+	case "win", "windows":
+		return "windows"
+	case "linux":
+		return "linux"
+	case "darwin":
+		return "darwin"
+	}
+	return osName
+}
+
+// splitCompilerCommand разбирает строку-путь на имя команды и аргументы.
+//
+//	"gcc"                     → ("gcc", nil)
+//	"wsl gcc"                 → ("wsl", ["gcc"])
+//	"C:\Program Files\...\cc" → ("C:\Program Files\...\cc", nil)
+//
+// Общая часть, ранее дублировавшаяся в buildForTarget и compilerExists.
+func splitCompilerCommand(path string) (string, []string) {
+	if _, err := os.Stat(path); err == nil {
+		return path, nil
+	}
+	if runtime.GOOS == "windows" && !strings.HasSuffix(strings.ToLower(path), ".exe") {
+		if _, err := os.Stat(path + ".exe"); err == nil {
+			return path + ".exe", nil
+		}
+	}
+	parts := strings.Fields(path)
+	if len(parts) == 0 {
+		return path, nil
+	}
+	cmd := parts[0]
+	if len(parts) > 1 {
+		return cmd, parts[1:]
+	}
+	return cmd, nil
+}
+
+// findCompilerForOS — фолбэк, когда профиль auto.
 func (b *Builder) findCompilerForOS(targetOS string) string {
 	if targetOS == runtime.GOOS {
 		return b.findLocalCompiler()
@@ -186,7 +182,6 @@ func (b *Builder) findCompilerForOS(targetOS string) string {
 				return path
 			}
 		}
-		// WSL fallback
 		if _, err := exec.LookPath("wsl"); err == nil {
 			return "wsl gcc"
 		}
@@ -195,9 +190,8 @@ func (b *Builder) findCompilerForOS(targetOS string) string {
 	return ""
 }
 
-// findLocalCompiler — для текущей ОС
+// findLocalCompiler — для текущей ОС.
 func (b *Builder) findLocalCompiler() string {
-	// Компиляторы из PATH (сначала gcc, потом clang, потом tcc)
 	compilers := []string{"gcc", "clang", "tcc"}
 	for _, c := range compilers {
 		if path, err := exec.LookPath(c); err == nil {
@@ -210,7 +204,6 @@ func (b *Builder) findLocalCompiler() string {
 		}
 	}
 
-	// TCC из libs
 	var tccPath string
 	if runtime.GOOS == "windows" {
 		tccPath = filepath.Join("libs", "win", "tcc.exe")
@@ -224,23 +217,17 @@ func (b *Builder) findLocalCompiler() string {
 	return ""
 }
 
-// windowsToWSLPath конвертирует Windows-путь в WSL-путь
-// "F:\iats\skorpion\tests\hello_world\bin\temp.c" → "/mnt/f/iats/skorpion/tests/hello_world/bin/temp.c"
+// windowsToWSLPath конвертирует Windows-путь в WSL-путь:
+// "F:\iats\skorpion\bin\temp.c" → "/mnt/f/iats/skorpion/bin/temp.c"
 func windowsToWSLPath(path string) string {
-	// Абсолютный путь
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		abs = path
 	}
-
-	// Заменяем обратные слеши на прямые
 	abs = strings.ReplaceAll(abs, "\\", "/")
-
-	// "F:/iats/..." → "/mnt/f/iats/..."
 	if len(abs) >= 2 && abs[1] == ':' {
 		drive := strings.ToLower(string(abs[0]))
 		abs = "/mnt/" + drive + abs[2:]
 	}
-
 	return abs
 }

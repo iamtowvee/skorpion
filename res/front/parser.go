@@ -2,7 +2,6 @@ package front
 
 import (
 	"fmt"
-	"skrp/res/debug"
 	"skrp/res/errors"
 	"strconv"
 	"strings"
@@ -14,15 +13,6 @@ type Parser struct {
 	peek      Token
 	hasErrors bool
 	FileName  string
-}
-
-func NewParserInternal(input string) *Parser {
-	p := &Parser{
-		lexer:     NewLexer(input),
-		hasErrors: false,
-		FileName:  "<input>",
-	}
-	return p
 }
 
 func (p *Parser) advance() {
@@ -38,12 +28,10 @@ func (p *Parser) match(tt TokenType) bool {
 	return false
 }
 
-// pos возвращает текущую позицию peek
 func (p *Parser) pos() Position {
 	return Position{Line: p.peek.Line, Column: p.peek.Column}
 }
 
-// posPrev возвращает позицию current (только что съеденного)
 func (p *Parser) posPrev() Position {
 	return Position{Line: p.current.Line, Column: p.current.Column}
 }
@@ -69,7 +57,6 @@ func (p *Parser) expect(tt TokenType) Token {
 	return p.current
 }
 
-// expectErrorInfo возвращает код и сообщение для ожидаемого токена.
 func expectErrorInfo(tt TokenType) (string, string) {
 	switch tt {
 	case TOKEN_LPAREN:
@@ -102,13 +89,11 @@ func expectErrorInfo(tt TokenType) (string, string) {
 }
 
 func (p *Parser) isType(token Token) bool {
-	result := false
 	switch token.Literal {
 	case "void", "int", "string", "float", "double", "bool", "char", "arr", "dict", "any", "T":
-		result = true
+		return true
 	}
-	debug.Debug("isType(%s) = %v", token.Literal, result)
-	return result
+	return false
 }
 
 func (p *Parser) Parse() *Program {
@@ -124,8 +109,6 @@ func (p *Parser) Parse() *Program {
 		Functions:  []*Function{},
 		GlobalVars: []*VarDecl{},
 	}
-
-	debug.Debug("Starting parse, first token: %s type: %s", p.peek.Literal, p.peek.Type.String())
 
 	for p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "use" {
 		if p.hasErrors || errors.HasFatal() {
@@ -167,12 +150,8 @@ func (p *Parser) Parse() *Program {
 		}
 	}
 
-	debug.Debug("After imports, current token: %s type: %s", p.peek.Literal, p.peek.Type.String())
-
 	funcCount := 0
 	for p.peek.Type != TOKEN_EOF {
-		debug.Debug("Loop iteration %d: token='%s', type=%d", funcCount, p.peek.Literal, p.peek.Type)
-
 		if p.hasErrors || errors.HasFatal() {
 			break
 		}
@@ -181,27 +160,21 @@ func (p *Parser) Parse() *Program {
 			inc := p.parseIncludeC()
 			if inc != nil {
 				prog.GlobalIncludeC = append(prog.GlobalIncludeC, inc.Code)
-				debug.Debug("Global includeC parsed: %d bytes", len(inc.Code))
 			}
 			continue
 		}
 
 		isAsyncStart := p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "async"
 		if p.isType(p.peek) || isAsyncStart {
-			debug.Debug("Found type: '%s', parsing function...", p.peek.Literal)
 			fn := p.parseFunction()
 			if fn != nil {
 				prog.Functions = append(prog.Functions, fn)
 				funcCount++
-				debug.Debug("Function parsed: %s", fn.Name)
 			}
 		} else {
-			debug.Debug("Skipping token: '%s'", p.peek.Literal)
 			p.advance()
 		}
 	}
-
-	debug.Debug("Total functions parsed: %d", len(prog.Functions))
 
 	return prog
 }
@@ -222,10 +195,6 @@ func (p *Parser) parseImport() *Import {
 
 	// lib:author/name@1.0.0
 	if p.peek.Type == TOKEN_IDENT && p.peek.Literal == "lib" {
-		// Смотрим следующий токен — должен быть ':'
-		// Но peek — это только один токен вперёд.
-		// Поэтому: съедаем "lib", проверяем ':'.
-		libPos := p.pos()
 		p.advance() // lib
 
 		if p.peek.Type != TOKEN_COLON {
@@ -239,7 +208,6 @@ func (p *Parser) parseImport() *Import {
 
 		imp.IsLib = true
 
-		// author
 		if p.peek.Type != TOKEN_IDENT {
 			p.hasErrors = true
 			errors.NewFatalError("0554",
@@ -250,7 +218,6 @@ func (p *Parser) parseImport() *Import {
 		author := p.peek.Literal
 		p.advance()
 
-		// '/'
 		if p.peek.Type != TOKEN_SLASH {
 			p.hasErrors = true
 			errors.NewFatalError("0554",
@@ -260,7 +227,6 @@ func (p *Parser) parseImport() *Import {
 		}
 		p.advance()
 
-		// name — может содержать дефисы (my-lib)
 		if p.peek.Type != TOKEN_IDENT {
 			p.hasErrors = true
 			errors.NewFatalError("0554",
@@ -285,7 +251,6 @@ func (p *Parser) parseImport() *Import {
 			p.advance()
 		}
 
-		// @version (опционально)
 		version := ""
 		if p.peek.Type == TOKEN_VERSION {
 			version = strings.TrimPrefix(p.peek.Literal, "@")
@@ -297,9 +262,6 @@ func (p *Parser) parseImport() *Import {
 			imp.Path += "@" + version
 		}
 
-		_ = libPos
-
-		// alias
 		if p.peek.Type == TOKEN_AMPERSAND {
 			p.advance()
 			if p.peek.Type == TOKEN_IDENT {
@@ -311,7 +273,7 @@ func (p *Parser) parseImport() *Import {
 		return imp
 	}
 
-	// Обычный импорт (как было)
+	// Обычный импорт
 	path := ""
 	for p.peek.Type == TOKEN_IDENT || p.peek.Literal == "/" {
 		if p.peek.Type == TOKEN_IDENT {
@@ -366,8 +328,6 @@ func (p *Parser) parseFunction() *Function {
 		return nil
 	}
 
-	// async void разрешён — это Task без значения.
-
 	isExport := true
 	if p.peek.Type == TOKEN_STAR {
 		isExport = false
@@ -420,7 +380,7 @@ func (p *Parser) parseFunction() *Function {
 
 				if p.peek.Type == TOKEN_COMMA {
 					p.hasErrors = true
-					errors.NewFatalError("0503",
+					errors.NewFatalError("1576",
 						"'...' must be the last parameter",
 						p.peek.Line, p.peek.Column, p.FileName)
 					return nil
@@ -476,9 +436,8 @@ func (p *Parser) parseFunction() *Function {
 			if p.peek.Type == TOKEN_COMMA {
 				p.advance()
 				continue
-			} else {
-				break
 			}
+			break
 		}
 	}
 
@@ -541,7 +500,6 @@ func (p *Parser) parseBlock() *Block {
 		if stmt != nil {
 			block.Statements = append(block.Statements, stmt)
 		}
-		// Опциональная ';' после statement'а (после выражений, вызовов, etc.)
 		if p.peek.Type == TOKEN_SEMICOLON {
 			p.advance()
 		}
@@ -645,17 +603,13 @@ func (p *Parser) parseStatement() Node {
 			return &AwaitExpr{Position: pos, Expr: expr}
 
 		case "const":
-			// Различаем: const Type name = ... (переменная)
-			//          или const Name{...} = ... (error-тип)
 			pos := p.pos()
 			p.advance() // const
 
 			if p.isType(p.peek) {
-				// const-переменная внутри функции: `*` запрещён
 				return p.parseConstVarDeclAfterConst(pos, false)
 			}
 
-			// error-тип
 			if p.peek.Type != TOKEN_IDENT {
 				p.hasErrors = true
 				errors.NewFatalError("0580",
@@ -695,29 +649,23 @@ func (p *Parser) parseStatement() Node {
 	}
 }
 
-// parseConstVarDeclAfterConst разбирает const-переменную после того,
-// как `const` уже съеден.
+// parseConstVarDeclAfterConst разбирает const-переменную после `const`.
 //
 // Формат: const Type name = expr
 //
 //	const Type *name = expr       (только allowStar == true)
 //	const arr[T] name = expr
 //	const arr[T] *name = expr     (только allowStar == true)
-//
-// allowStar == true  — `*` разрешён (верхний уровень, приватная глобальная константа).
-// allowStar == false — `*` запрещён (внутри функции).
 func (p *Parser) parseConstVarDeclAfterConst(pos Position, allowStar bool) Node {
 	if p.hasErrors || errors.HasFatal() {
 		return nil
 	}
 
-	// Тип
 	varType := p.parseType()
 	if varType == "" {
 		return nil
 	}
 
-	// `*` после типа — приватная константа (по аналогии с func)
 	isExport := true
 	if p.peek.Type == TOKEN_STAR {
 		if !allowStar {
@@ -731,7 +679,6 @@ func (p *Parser) parseConstVarDeclAfterConst(pos Position, allowStar bool) Node 
 		p.advance()
 	}
 
-	// arr[int] / arr / arr[arr[int]]
 	if strings.HasPrefix(varType, "arr") {
 		elemType := parseArrayElemTypeFromFullType(varType)
 		if elemType == "" {
@@ -778,7 +725,6 @@ func (p *Parser) parseConstVarDeclAfterConst(pos Position, allowStar bool) Node 
 		}
 	}
 
-	// Скаляр / union
 	if p.peek.Type != TOKEN_IDENT {
 		p.hasErrors = true
 		errors.NewFatalError("0504",
@@ -818,7 +764,6 @@ func (p *Parser) parseConstVarDeclAfterConst(pos Position, allowStar bool) Node 
 	}
 }
 
-// parseDoWhile читает do { ... } while (cond)
 func (p *Parser) parseDoWhile() Node {
 	if p.hasErrors || errors.HasFatal() {
 		return nil
@@ -846,9 +791,8 @@ func (p *Parser) parseDoWhile() Node {
 			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
 	}
-	p.advance() // while
+	p.advance()
 
-	// Скобки вокруг условия обязательны
 	p.expect(TOKEN_LPAREN)
 	if p.hasErrors || errors.HasFatal() {
 		return nil
@@ -872,11 +816,7 @@ func (p *Parser) parseDoWhile() Node {
 		p.advance()
 	}
 
-	return &DoWhileStmt{
-		Position:  pos,
-		Body:      body,
-		Condition: cond,
-	}
+	return &DoWhileStmt{Position: pos, Body: body, Condition: cond}
 }
 
 func (p *Parser) parseIknowIdo() Node {
@@ -900,10 +840,7 @@ func (p *Parser) parseIknowIdo() Node {
 		return nil
 	}
 
-	return &IknowIdoBlock{
-		Position: pos,
-		Body:     body,
-	}
+	return &IknowIdoBlock{Position: pos, Body: body}
 }
 
 func (p *Parser) parseTry() Node {
@@ -914,7 +851,6 @@ func (p *Parser) parseTry() Node {
 	pos := p.pos()
 	p.advance() // try
 
-	// try-блок
 	if p.peek.Type != TOKEN_LBRACE {
 		p.hasErrors = true
 		errors.NewFatalError("0574",
@@ -927,22 +863,17 @@ func (p *Parser) parseTry() Node {
 		return nil
 	}
 
-	// catch-блоки
 	catches := []*CatchClause{}
 
 	for p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "catch" {
 		catchPos := p.pos()
 		p.advance() // catch
 
-		clause := &CatchClause{
-			Position: catchPos,
-		}
+		clause := &CatchClause{Position: catchPos}
 
-		// catch (Type as e) { }
 		if p.peek.Type == TOKEN_LPAREN {
 			p.advance()
 
-			// TypeName — Ident или Ident.Ident.Ident
 			if p.peek.Type != TOKEN_IDENT && !(p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "Error") {
 				p.hasErrors = true
 				errors.NewFatalError("0576",
@@ -953,7 +884,6 @@ func (p *Parser) parseTry() Node {
 			clause.TypeName = p.peek.Literal
 			p.advance()
 
-			// Цепочка .Ident
 			for p.peek.Type == TOKEN_DOT {
 				p.advance()
 				if p.peek.Type != TOKEN_IDENT {
@@ -967,10 +897,8 @@ func (p *Parser) parseTry() Node {
 				p.advance()
 			}
 
-			// as e
 			if p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "as" {
 				p.advance()
-
 				if p.peek.Type != TOKEN_IDENT {
 					p.hasErrors = true
 					errors.NewFatalError("0577",
@@ -992,7 +920,6 @@ func (p *Parser) parseTry() Node {
 			p.advance()
 		}
 
-		// Тело catch
 		if p.peek.Type != TOKEN_LBRACE {
 			p.hasErrors = true
 			errors.NewFatalError("0575",
@@ -1008,7 +935,6 @@ func (p *Parser) parseTry() Node {
 		catches = append(catches, clause)
 	}
 
-	// Хотя бы один catch обязателен
 	if len(catches) == 0 {
 		p.hasErrors = true
 		errors.NewFatalError("0519",
@@ -1017,11 +943,7 @@ func (p *Parser) parseTry() Node {
 		return nil
 	}
 
-	return &TryStmt{
-		Position: pos,
-		Body:     body,
-		Catches:  catches,
-	}
+	return &TryStmt{Position: pos, Body: body, Catches: catches}
 }
 
 func (p *Parser) parseIncludeC() *IncludeC {
@@ -1054,7 +976,6 @@ func (p *Parser) parseIf() Node {
 	pos := p.pos()
 	p.advance() // if
 
-	// Условие обязательно в скобках
 	p.expect(TOKEN_LPAREN)
 	if p.hasErrors || errors.HasFatal() {
 		return nil
@@ -1171,10 +1092,8 @@ func (p *Parser) parseCase() Node {
 
 		branchPos := p.pos()
 
-		// Default branch: _ { ... }
 		if p.peek.Type == TOKEN_IDENT && p.peek.Literal == "_" {
 			p.advance()
-
 			defaultBlock = p.parseBlock()
 			if defaultBlock == nil {
 				return nil
@@ -1191,10 +1110,9 @@ func (p *Parser) parseCase() Node {
 			break
 		}
 
-		// Мультипаттерн: (a, b, c) { ... }
 		patterns := []Node{}
 		if p.peek.Type == TOKEN_LPAREN {
-			p.advance() // (
+			p.advance()
 
 			for {
 				pat := p.parseExpression()
@@ -1217,9 +1135,8 @@ func (p *Parser) parseCase() Node {
 					p.peek.Line, p.peek.Column, p.FileName)
 				return nil
 			}
-			p.advance() // )
+			p.advance()
 		} else {
-			// Обычный паттерн
 			pat := p.parseExpression()
 			if pat == nil {
 				return nil
@@ -1328,9 +1245,8 @@ func (p *Parser) parseFor() Node {
 			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
 	}
-	p.advance() // (
+	p.advance()
 
-	// Тип переменной
 	if !p.isType(p.peek) {
 		p.hasErrors = true
 		errors.NewFatalError("0502",
@@ -1343,7 +1259,6 @@ func (p *Parser) parseFor() Node {
 		return nil
 	}
 
-	// Имя переменной
 	if p.peek.Type != TOKEN_IDENT {
 		p.hasErrors = true
 		errors.NewFatalError("0503",
@@ -1354,7 +1269,6 @@ func (p *Parser) parseFor() Node {
 	varName := p.peek.Literal
 	p.advance()
 
-	// Ключевое слово in
 	if p.peek.Type != TOKEN_KEYWORD || p.peek.Literal != "in" {
 		p.hasErrors = true
 		errors.NewFatalError("0630",
@@ -1364,13 +1278,11 @@ func (p *Parser) parseFor() Node {
 	}
 	p.advance() // in
 
-	// Iterable
 	iterable := p.parseExpression()
 	if iterable == nil {
 		return nil
 	}
 
-	// Закрывающая скобка
 	if p.peek.Type != TOKEN_RPAREN {
 		p.hasErrors = true
 		errors.NewFatalError("0541",
@@ -1378,9 +1290,8 @@ func (p *Parser) parseFor() Node {
 			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
 	}
-	p.advance() // )
+	p.advance()
 
-	// Тело
 	body := p.parseBlock()
 	if body == nil {
 		return nil
@@ -1425,7 +1336,6 @@ func (p *Parser) parseVarDecl() Node {
 
 	pos := p.pos()
 
-	// Массив: arr, arr[int], arr[arr[int]]
 	if p.peek.Literal == "arr" {
 		fullType := p.parseType()
 		if p.hasErrors || errors.HasFatal() {
@@ -1433,13 +1343,11 @@ func (p *Parser) parseVarDecl() Node {
 		}
 		if fullType == "" {
 			p.hasErrors = true
-			errors.NewFatalError("0513",
-				"Expected array type",
+			errors.NewFatalError("0513", "Expected array type",
 				pos.Line, pos.Column, p.FileName)
 			return nil
 		}
 
-		// fullType = "arr" или "arr[int]" или "arr[arr[int]]"
 		elemType := parseArrayElemTypeFromFullType(fullType)
 		if elemType == "" {
 			elemType = "any"
@@ -1478,7 +1386,6 @@ func (p *Parser) parseVarDecl() Node {
 		}
 	}
 
-	// Скалярный тип или union
 	if !p.isType(p.peek) {
 		p.hasErrors = true
 		errors.NewFatalError("0504",
@@ -1533,21 +1440,15 @@ func (p *Parser) parseAssignmentOrCall() Node {
 	name := p.peek.Literal
 	p.advance()
 
-	// i++ или i--
 	if p.peek.Type == TOKEN_PLUSPLUS || p.peek.Type == TOKEN_MINUSMINUS {
 		op := p.peek.Literal
 		p.advance()
 		if p.peek.Type == TOKEN_SEMICOLON {
 			p.advance()
 		}
-		return &PostfixExpr{
-			Position: pos,
-			VarName:  name,
-			Op:       op,
-		}
+		return &PostfixExpr{Position: pos, VarName: name, Op: op}
 	}
 
-	// obj.field / obj.field(...) / obj.field = value
 	if p.peek.Type == TOKEN_DOT {
 		p.advance()
 		if p.peek.Type != TOKEN_IDENT {
@@ -1560,12 +1461,10 @@ func (p *Parser) parseAssignmentOrCall() Node {
 		fieldName := p.peek.Literal
 		p.advance()
 
-		// obj.field(args) — вызов метода/модуля
 		if p.peek.Type == TOKEN_LPAREN {
 			return p.parseCall(name+"."+fieldName, pos)
 		}
 
-		// obj.field = value / += / ...
 		op := p.peekAssignmentOp()
 		if op != "" {
 			p.advance()
@@ -1591,12 +1490,10 @@ func (p *Parser) parseAssignmentOrCall() Node {
 		return &FieldAccess{Position: pos, Object: name, Field: fieldName}
 	}
 
-	// func(args)
 	if p.peek.Type == TOKEN_LPAREN {
 		return p.parseCall(name, pos)
 	}
 
-	// x[index] = value, x[index] += value, ...
 	if p.peek.Type == TOKEN_LBRACKET {
 		p.advance()
 		index := p.parseExpression()
@@ -1638,7 +1535,6 @@ func (p *Parser) parseAssignmentOrCall() Node {
 		}
 	}
 
-	// x = value, x += value, x -= value, ...
 	op := p.peekAssignmentOp()
 	if op != "" {
 		p.advance()
@@ -1657,7 +1553,6 @@ func (p *Parser) parseAssignmentOrCall() Node {
 		}
 	}
 
-	// x;
 	if p.peek.Type == TOKEN_SEMICOLON {
 		p.advance()
 		return &Ident{Position: pos, Name: name}
@@ -1670,8 +1565,6 @@ func (p *Parser) parseAssignmentOrCall() Node {
 	return nil
 }
 
-// peekAssignmentOp возвращает строку оператора присваивания, не съедая токен.
-// "" если это не оператор присваивания.
 func (p *Parser) peekAssignmentOp() string {
 	switch p.peek.Type {
 	case TOKEN_EQUALS:
@@ -1692,11 +1585,19 @@ func (p *Parser) peekAssignmentOp() string {
 	return ""
 }
 
-func (p *Parser) parseCall(name string, pos Position) Node {
-	if p.hasErrors || errors.HasFatal() {
-		return nil
-	}
-
+// parseArgList разбирает "(" expr ("," expr)* ")".
+//
+// Единая точка для:
+//   - parseCall             — прямой вызов функции: f(a, b)
+//   - parsePostfix          — вызов метода/поля: obj.m(a, b)
+//   - parseExpression       — range-call: (1..5).func(a, b)
+//
+// В отличие от старого разбора через p.expect(TOKEN_RPAREN) — теперь
+// недостающая ')' даёт 0602, а не 0541 (однородность с диагностикой).
+//
+// Возвращает nil при ошибке. Пустой список (нет аргументов) — валиден
+// и возвращается как пустой срез, не nil.
+func (p *Parser) parseArgList() []Node {
 	p.expect(TOKEN_LPAREN)
 	if p.hasErrors || errors.HasFatal() {
 		return nil
@@ -1705,20 +1606,37 @@ func (p *Parser) parseCall(name string, pos Position) Node {
 	args := []Node{}
 	if p.peek.Type != TOKEN_RPAREN {
 		for {
-			expr := p.parseExpression()
-			if expr == nil {
+			arg := p.parseExpression()
+			if arg == nil {
 				return nil
 			}
-			args = append(args, expr)
+			args = append(args, arg)
 			if p.peek.Type == TOKEN_COMMA {
 				p.advance()
-			} else {
-				break
+				continue
 			}
+			break
 		}
 	}
-	p.expect(TOKEN_RPAREN)
+
+	if p.peek.Type != TOKEN_RPAREN {
+		p.hasErrors = true
+		errors.NewFatalError("0602",
+			fmt.Sprintf("Expected ')' after arguments, got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
+	}
+	p.advance()
+	return args
+}
+
+func (p *Parser) parseCall(name string, pos Position) Node {
 	if p.hasErrors || errors.HasFatal() {
+		return nil
+	}
+
+	args := p.parseArgList()
+	if args == nil {
 		return nil
 	}
 
@@ -1781,24 +1699,11 @@ func (p *Parser) parseExpression() Node {
 				p.peek.Line, p.peek.Column, p.FileName)
 			return nil
 		}
-		p.advance()
 
-		var callArgs []Node
-		if p.peek.Type != TOKEN_RPAREN {
-			for {
-				arg := p.parseExpression()
-				if arg == nil {
-					return nil
-				}
-				callArgs = append(callArgs, arg)
-				if p.peek.Type == TOKEN_COMMA {
-					p.advance()
-					continue
-				}
-				break
-			}
+		callArgs := p.parseArgList()
+		if callArgs == nil {
+			return nil
 		}
-		p.expect(TOKEN_RPAREN)
 
 		return &CallRangeExpr{
 			Position: funcPos,
@@ -1874,13 +1779,11 @@ func (p *Parser) parseUnary() Node {
 		return nil
 	}
 
-	// Постфиксные операции: .field, .method(), [index]
 	expr = p.parsePostfix(expr)
 	if expr == nil {
 		return nil
 	}
 
-	// Постфиксный формат ^Nf или ^X...
 	if p.peek.Type == TOKEN_CARET {
 		return p.parseFormatSuffix(expr)
 	}
@@ -1888,7 +1791,6 @@ func (p *Parser) parseUnary() Node {
 	return expr
 }
 
-// parseFormatSuffix читает ^Nf или ^X... после выражения.
 func (p *Parser) parseFormatSuffix(expr Node) Node {
 	if p.peek.Type != TOKEN_CARET {
 		return expr
@@ -1897,7 +1799,6 @@ func (p *Parser) parseFormatSuffix(expr Node) Node {
 	pos := p.pos()
 	p.advance() // ^
 
-	// ^Nf — ^ + число + f
 	if p.peek.Type == TOKEN_NUMBER {
 		val := p.peek.Literal
 		p.advance()
@@ -1935,12 +1836,10 @@ func (p *Parser) parseFormatSuffix(expr Node) Node {
 		}
 	}
 
-	// ^X... — ^ + X + (цифры | {цифры})
 	if p.peek.Type == TOKEN_IDENT && strings.HasPrefix(p.peek.Literal, "X") {
-		val := p.peek.Literal[1:] // убрать X
+		val := p.peek.Literal[1:]
 		p.advance()
 
-		// ^X{1,8}
 		if p.peek.Type == TOKEN_LBRACE {
 			p.advance()
 
@@ -1978,7 +1877,6 @@ func (p *Parser) parseFormatSuffix(expr Node) Node {
 			}
 		}
 
-		// ^X9 — уже val содержит "9"
 		if val == "" {
 			p.hasErrors = true
 			errors.NewFatalError("0624",
@@ -2046,9 +1944,8 @@ func (p *Parser) parseBinary(prec int) Node {
 
 		p.advance()
 
-		// ** — правоассоциативный
 		nextMinPrec := nextPrec + 1
-		if nextPrec == 5 { // TOKEN_POW
+		if nextPrec == 5 {
 			nextMinPrec = nextPrec
 		}
 		right := p.parseBinary(nextMinPrec)
@@ -2109,11 +2006,10 @@ func (p *Parser) parsePrimary() Node {
 
 	case TOKEN_LBRACE:
 		pos := p.pos()
-		p.advance() // {
+		p.advance()
 		elements := []*DictElement{}
 		if p.peek.Type != TOKEN_RBRACE {
 			for {
-				// ключ
 				if p.peek.Type != TOKEN_IDENT {
 					p.hasErrors = true
 					errors.NewFatalError("0650",
@@ -2125,7 +2021,6 @@ func (p *Parser) parsePrimary() Node {
 				keyPos := p.pos()
 				p.advance()
 
-				// :
 				if p.peek.Type != TOKEN_COLON {
 					p.hasErrors = true
 					errors.NewFatalError("0651",
@@ -2135,7 +2030,6 @@ func (p *Parser) parsePrimary() Node {
 				}
 				p.advance()
 
-				// значение
 				value := p.parseExpression()
 				if value == nil {
 					return nil
@@ -2187,23 +2081,16 @@ func (p *Parser) parsePrimary() Node {
 		name := p.peek.Literal
 		p.advance()
 
-		// i++ / i-- как выражение
 		if p.peek.Type == TOKEN_PLUSPLUS || p.peek.Type == TOKEN_MINUSMINUS {
 			op := p.peek.Literal
 			p.advance()
-			return &PostfixExpr{
-				Position: pos,
-				VarName:  name,
-				Op:       op,
-			}
+			return &PostfixExpr{Position: pos, VarName: name, Op: op}
 		}
 
-		// ErrorInstance: Name{field: value, ...}
 		if p.peek.Type == TOKEN_LBRACE {
 			return p.parseErrorInstance(name, pos)
 		}
 
-		// Простой вызов функции: name(args)
 		if p.peek.Type == TOKEN_LPAREN {
 			return p.parseCall(name, pos)
 		}
@@ -2242,7 +2129,6 @@ func (p *Parser) parsePrimary() Node {
 			}
 			return p.parseErrorInstance("Error", pos)
 		}
-		// в case TOKEN_KEYWORD:
 		if p.peek.Literal == "Promise" {
 			pos := p.pos()
 			p.advance()
@@ -2270,7 +2156,7 @@ func (p *Parser) parsePrimary() Node {
 		if p.peek.Literal == "await" {
 			pos := p.pos()
 			p.advance()
-			expr := p.parseUnary() // await связывает сильнее бинарных операций
+			expr := p.parseUnary()
 			if expr == nil {
 				return nil
 			}
@@ -2313,8 +2199,6 @@ func (p *Parser) parsePrimary() Node {
 			return nil
 		}
 
-		// Возвращаем выражение в скобках как есть.
-		// Постфикс (.method, [index]) обработает parsePostfix.
 		return first
 
 	case TOKEN_LBRACKET:
@@ -2369,7 +2253,7 @@ func (p *Parser) parseArrayType() string {
 		return "arr"
 	}
 
-	p.advance() // [
+	p.advance()
 
 	var innerType string
 	if p.peek.Type == TOKEN_KEYWORD {
@@ -2408,7 +2292,7 @@ func (p *Parser) parseArrayType() string {
 			p.peek.Line, p.peek.Column, p.FileName)
 		return ""
 	}
-	p.advance() // ]
+	p.advance()
 
 	return "arr[" + innerType + "]"
 }
@@ -2423,23 +2307,12 @@ func parseArrayElemTypeFromFullType(fullType string) string {
 	return fullType[4 : len(fullType)-1]
 }
 
-func (p *Parser) parseErrorDecl() Node {
-	if p.hasErrors || errors.HasFatal() {
-		return nil
-	}
-
-	pos := p.pos()
-	p.advance() // const
-	return p.parseErrorDeclAfterConst(pos)
-}
-
 // parseErrorDeclAfterConst — разбор error-типа после 'const'.
 func (p *Parser) parseErrorDeclAfterConst(pos Position) Node {
 	if p.hasErrors || errors.HasFatal() {
 		return nil
 	}
 
-	// Имя типа — с заглавной буквы
 	if p.peek.Type != TOKEN_IDENT {
 		p.hasErrors = true
 		errors.NewFatalError("0580",
@@ -2459,7 +2332,6 @@ func (p *Parser) parseErrorDeclAfterConst(pos Position) Node {
 		return nil
 	}
 
-	// Поля: {field: type[default], ...}
 	if p.peek.Type != TOKEN_LBRACE {
 		p.hasErrors = true
 		errors.NewFatalError("0582",
@@ -2467,7 +2339,7 @@ func (p *Parser) parseErrorDeclAfterConst(pos Position) Node {
 			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
 	}
-	p.advance() // {
+	p.advance()
 
 	fields := []*ErrorField{}
 
@@ -2543,7 +2415,7 @@ func (p *Parser) parseErrorDeclAfterConst(pos Position) Node {
 			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
 	}
-	p.advance() // }
+	p.advance()
 
 	if p.peek.Type != TOKEN_EQUALS {
 		p.hasErrors = true
@@ -2590,7 +2462,6 @@ func (p *Parser) parseErrorInstance(typeName string, pos Position) Node {
 
 	if p.peek.Type != TOKEN_RBRACE {
 		for {
-			// Имя поля
 			if p.peek.Type != TOKEN_IDENT {
 				p.hasErrors = true
 				errors.NewFatalError("0591",
@@ -2601,7 +2472,6 @@ func (p *Parser) parseErrorInstance(typeName string, pos Position) Node {
 			fieldName := p.peek.Literal
 			p.advance()
 
-			// Двоеточие
 			if p.peek.Type != TOKEN_COLON {
 				p.hasErrors = true
 				errors.NewFatalError("0592",
@@ -2611,7 +2481,6 @@ func (p *Parser) parseErrorInstance(typeName string, pos Position) Node {
 			}
 			p.advance()
 
-			// Значение
 			value := p.parseExpression()
 			if value == nil {
 				return nil
@@ -2641,7 +2510,7 @@ func (p *Parser) parseErrorInstance(typeName string, pos Position) Node {
 			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
 	}
-	p.advance() // }
+	p.advance()
 
 	return &ErrorInstance{
 		Position: pos,
@@ -2658,7 +2527,6 @@ func (p *Parser) parseThrow() Node {
 	pos := p.pos()
 	p.advance() // throw
 
-	// Expression: IncorrectType{...} или переменная
 	if p.peek.Type == TOKEN_SEMICOLON || p.peek.Type == TOKEN_RBRACE || p.peek.Type == TOKEN_EOF {
 		p.hasErrors = true
 		errors.NewFatalError("0579",
@@ -2676,18 +2544,11 @@ func (p *Parser) parseThrow() Node {
 		p.advance()
 	}
 
-	return &ThrowStmt{
-		Position: pos,
-		Expr:     expr,
-	}
+	return &ThrowStmt{Position: pos, Expr: expr}
 }
 
 // parseType читает тип: простое имя, arr[...], T<...>.
-// Возвращает полную строку типа: "int", "arr[int]", "arr[any]", "T<int,float>".
-// Для T<A> возвращает "A" (нормализация).
-// Для T<A,B> возвращает "T<A,B>".
 func (p *Parser) parseType() string {
-	// T<...>
 	if p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "T" {
 		return p.parseUnionType()
 	}
@@ -2710,8 +2571,6 @@ func (p *Parser) parseType() string {
 }
 
 // parseUnionType читает T<A, B, ...>.
-// T<A> → "A". T<A,B> → "T<A,B>".
-// Запрещает вложенные T<...>.
 func (p *Parser) parseUnionType() string {
 	p.advance() // T
 
@@ -2726,7 +2585,6 @@ func (p *Parser) parseUnionType() string {
 
 	types := []string{}
 	for {
-		// Явно запрещаем вложенные T<...>
 		if p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "T" {
 			p.hasErrors = true
 			errors.NewFatalError("0611",
@@ -2777,8 +2635,6 @@ func (p *Parser) parseUnionType() string {
 //	expr.method(args)
 //	expr.length
 //	expr[index]
-//
-// Работает для ЛЮБОГО выражения, а не только для Ident.
 func (p *Parser) parsePostfix(expr Node) Node {
 	if p.hasErrors || errors.HasFatal() {
 		return expr
@@ -2789,7 +2645,6 @@ func (p *Parser) parsePostfix(expr Node) Node {
 			return nil
 		}
 
-		// [index]
 		if p.peek.Type == TOKEN_LBRACKET {
 			p.advance()
 			indexPos := p.pos()
@@ -2827,7 +2682,6 @@ func (p *Parser) parsePostfix(expr Node) Node {
 		}
 		p.advance()
 
-		// .length
 		if p.peek.Type == TOKEN_IDENT && p.peek.Literal == "length" {
 			p.advance()
 			lenPos := p.pos()
@@ -2846,41 +2700,17 @@ func (p *Parser) parsePostfix(expr Node) Node {
 			continue
 		}
 
-		// .field или .method(args)
 		if p.peek.Type == TOKEN_IDENT {
 			methodName := p.peek.Literal
 			methodPos := p.pos()
 			p.advance()
 
 			if p.peek.Type == TOKEN_LPAREN {
-				// Метод с аргументами: expr.method(args)
-				p.advance()
-
-				callArgs := []Node{}
-				if p.peek.Type != TOKEN_RPAREN {
-					for {
-						arg := p.parseExpression()
-						if arg == nil {
-							return nil
-						}
-						callArgs = append(callArgs, arg)
-						if p.peek.Type == TOKEN_COMMA {
-							p.advance()
-							continue
-						}
-						break
-					}
-				}
-				if p.peek.Type != TOKEN_RPAREN {
-					p.hasErrors = true
-					errors.NewFatalError("0602",
-						fmt.Sprintf("Expected ')' after arguments, got '%s'", p.peek.Literal),
-						p.peek.Line, p.peek.Column, p.FileName)
+				callArgs := p.parseArgList()
+				if callArgs == nil {
 					return nil
 				}
-				p.advance()
 
-				// Имя receiver'а (если это простой Ident) — для обратной совместимости.
 				var recvName string
 				if id, ok := expr.(*Ident); ok {
 					recvName = id.Name
@@ -2896,7 +2726,6 @@ func (p *Parser) parsePostfix(expr Node) Node {
 				continue
 			}
 
-			// .field
 			if ident, ok := expr.(*Ident); ok {
 				expr = &FieldAccess{
 					Position: ident.Position,

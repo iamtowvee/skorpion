@@ -23,7 +23,6 @@ type ImportManager struct {
 	mu            sync.Mutex
 	baseDir       string
 
-	// Для библиотек
 	libsDir      string
 	dependencies []string
 }
@@ -38,8 +37,6 @@ func NewImportManager(baseDir string) *ImportManager {
 }
 
 // SetLibraryConfig прокидывает настройки библиотек из manifest.spc.
-// libsDir — абсолютный или относительный путь; относительно projectDir.
-// dependencies — список "author/name@1.0.0" (только для build-lib).
 func (im *ImportManager) SetLibraryConfig(projectDir, libsDir string, dependencies []string) {
 	im.mu.Lock()
 	defer im.mu.Unlock()
@@ -67,20 +64,17 @@ func appendUniqueGlobalVars(dst []*VarDecl, src *VarDecl) []*VarDecl {
 }
 
 func (im *ImportManager) LoadMain(path string) (*Program, error) {
-	// Сбрасываем кеш для новой сборки
 	im.loaded = make(map[string]*LoadedModule)
 	im.importedFuncs = []*Function{}
 	im.baseDir = filepath.Dir(path)
 	im.resolver.SetBaseDir(im.baseDir)
 	im.resolver.ClearCache()
 
-	// Читаем главный файл
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read main file %s: %v", path, err)
 	}
 
-	// Парсим главный файл С ИМЕНЕМ ФАЙЛА
 	parser := NewParserWithFile(string(content), path)
 	mainProg := parser.Parse()
 
@@ -88,7 +82,6 @@ func (im *ImportManager) LoadMain(path string) (*Program, error) {
 		return nil, fmt.Errorf("failed to parse main file: %s", path)
 	}
 
-	// Загружаем импорты
 	visited := make(map[string]bool)
 	for _, imp := range mainProg.Imports {
 		subProg, err := im.loadModuleInternal(imp.Path, visited)
@@ -96,20 +89,15 @@ func (im *ImportManager) LoadMain(path string) (*Program, error) {
 			return nil, err
 		}
 
-		// Переносим global includeC из модуля в main (с дедупликацией)
 		mainProg.GlobalIncludeC = appendUniqueStrings(mainProg.GlobalIncludeC, subProg.GlobalIncludeC)
-
-		// Переносим ErrorDecls из модуля в main (с дедупликацией)
 		mainProg.ErrorDecls = appendUniqueErrors(mainProg.ErrorDecls, subProg.ErrorDecls)
 
-		// NEW: переносим только экспортируемые глобальные константы
 		for _, gv := range subProg.GlobalVars {
 			if gv.IsExport {
 				mainProg.GlobalVars = appendUniqueGlobalVars(mainProg.GlobalVars, gv)
 			}
 		}
 
-		// Добавляем ТОЛЬКО экспортируемые функции
 		for _, fn := range subProg.Functions {
 			if fn.IsExport {
 				im.importedFuncs = append(im.importedFuncs, fn)
@@ -117,7 +105,6 @@ func (im *ImportManager) LoadMain(path string) (*Program, error) {
 		}
 	}
 
-	// Собираем полный список функций (локальные + импортированные)
 	mainProg.AllFunctions = make([]*Function, 0, len(mainProg.Functions)+len(im.importedFuncs))
 	mainProg.AllFunctions = append(mainProg.AllFunctions, mainProg.Functions...)
 	mainProg.AllFunctions = append(mainProg.AllFunctions, im.importedFuncs...)
@@ -131,7 +118,7 @@ func (im *ImportManager) LoadMain(path string) (*Program, error) {
 	return mainProg, nil
 }
 
-// loadModuleInternal - внутренняя загрузка без мьютекса
+// loadModuleInternal — внутренняя загрузка без мьютекса.
 func (im *ImportManager) loadModuleInternal(path string, visited map[string]bool) (*Program, error) {
 	if visited[path] {
 		return nil, fmt.Errorf("circular import detected: %s", path)
@@ -168,7 +155,6 @@ func (im *ImportManager) loadModuleInternal(path string, visited map[string]bool
 		content = string(data)
 	}
 
-	// Парсим с именем файла
 	var parser *Parser
 	if builtin {
 		parser = NewParserWithFile(content, "<builtin:"+path+">")
@@ -181,7 +167,6 @@ func (im *ImportManager) loadModuleInternal(path string, visited map[string]bool
 		return nil, fmt.Errorf("failed to parse module: %s", path)
 	}
 
-	// Загружаем вложенные импорты
 	visited[path] = true
 	for _, imp := range prog.Imports {
 		subProg, err := im.loadModuleInternal(imp.Path, visited)
@@ -189,25 +174,19 @@ func (im *ImportManager) loadModuleInternal(path string, visited map[string]bool
 			return nil, err
 		}
 
-		// Переносим global includeC из вложенных модулей (с дедупликацией)
 		prog.GlobalIncludeC = appendUniqueStrings(prog.GlobalIncludeC, subProg.GlobalIncludeC)
-
-		// Переносим ErrorDecls из вложенных модулей (с дедупликацией)
 		prog.ErrorDecls = appendUniqueErrors(prog.ErrorDecls, subProg.ErrorDecls)
 
-		// NEW: переносим только экспортируемые глобальные константы
 		for _, gv := range subProg.GlobalVars {
 			if gv.IsExport {
 				prog.GlobalVars = appendUniqueGlobalVars(prog.GlobalVars, gv)
 			}
 		}
 
-		// Функции — как было
 		prog.Functions = append(prog.Functions, subProg.Functions...)
 	}
 	delete(visited, path)
 
-	// === Заполняем Module для СВОИХ ErrorDecl ===
 	moduleName := GetModuleName(path)
 	for _, d := range prog.ErrorDecls {
 		if d.Module == "" {
@@ -224,22 +203,8 @@ func (im *ImportManager) loadModuleInternal(path string, visited map[string]bool
 	return prog, nil
 }
 
-// LoadModule публичный метод с мьютексом для внешних вызовов
-func (im *ImportManager) LoadModule(path string) (*Program, error) {
-	im.mu.Lock()
-	defer im.mu.Unlock()
-
-	visited := make(map[string]bool)
-	return im.loadModuleInternal(path, visited)
-}
-
-func (im *ImportManager) GetModule(path string) (*LoadedModule, bool) {
-	im.mu.Lock()
-	defer im.mu.Unlock()
-	mod, ok := im.loaded[path]
-	return mod, ok
-}
-
+// GetAllFunctions — все экспортируемые функции из загруженных модулей.
+// Нужно semantic analyzer'у для построения таблицы импортов.
 func (im *ImportManager) GetAllFunctions() []*Function {
 	im.mu.Lock()
 	defer im.mu.Unlock()
@@ -267,8 +232,7 @@ func IsExportable(fn *Function) bool {
 }
 
 // GetAllFunctionsInternal — ВСЕ функции из всех загруженных модулей,
-// включая приватные (IsExport == false). Нужно для backend/pipeline,
-// который компилирует тела функций.
+// включая приватные (IsExport == false). Нужно для backend/pipeline.
 func (im *ImportManager) GetAllFunctionsInternal() []*Function {
 	im.mu.Lock()
 	defer im.mu.Unlock()
@@ -280,9 +244,8 @@ func (im *ImportManager) GetAllFunctionsInternal() []*Function {
 	return allFunctions
 }
 
-// GetExportedFunctionsInternal — только экспортируемые функции
-// из загруженных модулей. Нужно для semantic: приватные функции
-// либы (IsExport == false) не должны быть видны потребителю.
+// GetExportedFunctionsInternal — только экспортируемые функции.
+// Нужно для semantic: приватные функции либы не видны потребителю.
 func (im *ImportManager) GetExportedFunctionsInternal() []*Function {
 	im.mu.Lock()
 	defer im.mu.Unlock()
@@ -342,8 +305,6 @@ func (im *ImportManager) loadLibraryInternal(path string, visited map[string]boo
 		return nil, err
 	}
 
-	// Проверки (имя/автор/версия уже частично проверены в FindLibrary,
-	// но Name и Author — нет, потому что папка навигационная).
 	if lib.Name != spec.Name {
 		return nil, fmt.Errorf(
 			"library name mismatch: path says '%s', file says '%s'",
@@ -354,8 +315,6 @@ func (im *ImportManager) loadLibraryInternal(path string, visited map[string]boo
 			"library author mismatch: path says '%s', file says '%s'",
 			spec.Author, lib.Author)
 	}
-	// Version уже совпала в FindLibrary, если spec.Version != ""
-	// Но если spec.Version == "" — версия любая, ок.
 
 	if err := im.checkDependencies(lib, path); err != nil {
 		return nil, err

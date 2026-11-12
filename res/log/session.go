@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -28,15 +29,15 @@ const (
 )
 
 var (
-	mu       sync.Mutex
-	file     *os.File
-	path     string
-	started  time.Time
-	ring     []string
-	ringPos  int
-	debugOn  bool
-	closed   bool
-	started_ bool
+	mu             sync.Mutex
+	file           *os.File
+	path           string
+	started        time.Time
+	ring           []string
+	ringPos        int
+	debugOn        bool
+	closed         bool
+	sessionStarted bool // было started_ — плохое имя с trailing underscore
 
 	useLocal    bool
 	localLogDir string
@@ -61,10 +62,10 @@ var readOnly bool
 func StartReadOnly(projectName, projectVersion, projectDir string) {
 	mu.Lock()
 	defer mu.Unlock()
-	if started_ {
+	if sessionStarted {
 		return
 	}
-	started_ = true
+	sessionStarted = true
 	started = time.Now()
 	ring = make([]string, maxRingSize)
 	readOnly = true
@@ -81,10 +82,10 @@ func StartReadOnly(projectName, projectVersion, projectDir string) {
 func Start(projectName, projectVersion, projectDir string) {
 	mu.Lock()
 	defer mu.Unlock()
-	if started_ {
+	if sessionStarted {
 		return
 	}
-	started_ = true
+	sessionStarted = true
 	started = time.Now()
 	ring = make([]string, maxRingSize)
 
@@ -198,7 +199,7 @@ func AddSource(name, content string) {
 	defer mu.Unlock()
 	if len(content) > maxSourceSize {
 		content = content[:maxSourceSize] +
-			"\n\n...[truncated, original " + itoa(len(content)) + " bytes]\n"
+			"\n\n...[truncated, original " + strconv.Itoa(len(content)) + " bytes]\n"
 	}
 	total := 0
 	for _, c := range sources {
@@ -261,7 +262,11 @@ func WriteCrash(panicVal interface{}, stack []byte) {
 		if n > 200 {
 			n = 200
 		}
-		writeLocked("\n=== LAST DEBUG LINES (ring, %d of %d) ===\n", n, minInt(ringPos, maxRingSize))
+		total := ringPos
+		if total > maxRingSize {
+			total = maxRingSize
+		}
+		writeLocked("\n=== LAST DEBUG LINES (ring, %d of %d) ===\n", n, total)
 		for _, line := range tailLocked(n) {
 			writeLocked("%s\n", line)
 		}
@@ -427,35 +432,6 @@ func rotateLocked(keep int) {
 	for _, f := range logs[:len(logs)-keep] {
 		_ = os.Remove(f)
 	}
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var buf [20]byte
-	i := len(buf)
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
-}
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 // ============================================================================

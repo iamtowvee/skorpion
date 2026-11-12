@@ -791,10 +791,6 @@ func (l *Lexer) peek() byte {
 	return 0
 }
 
-func (p *Param) HasDefault() bool {
-	return p.DefaultValue != nil
-}
-
 func (tt TokenType) String() string {
 	switch tt {
 	case TOKEN_EOF:

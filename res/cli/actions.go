@@ -2,39 +2,51 @@ package cli
 
 import (
 	"fmt"
+	"skrp/res/debug"
 	"strings"
 )
 
-func HandleAddProfile(args []string, osName string) {
-	name, path, err := parseAddProfileArgs(args)
+// handleProfileMutation — общая часть HandleAddProfile / HandleEditProfile.
+//
+// Раньше HandleAddProfile и HandleEditProfile дублировали друг друга
+// на 90% — отличался только вызов pm.AddProfile/pm.EditProfile
+// и слово в сообщении успеха. Здесь — единая точка.
+func handleProfileMutation(args []string, osName, verb string) {
+	name, path, err := parseProfileArgs(args, osName, verb)
 	if err != nil {
 		fmt.Println(Colors.Error("Error:"), err)
 		return
 	}
 
 	pm := NewProfileManager()
-	if err := pm.AddProfile(osName, name, path); err != nil {
-		fmt.Println(Colors.Error("Error:"), err)
+
+	var opErr error
+	switch verb {
+	case "add":
+		opErr = pm.AddProfile(osName, name, path)
+	case "edit":
+		opErr = pm.EditProfile(osName, name, path)
+	default:
+		fmt.Println(Colors.Error("Error:"), "unknown profile mutation '"+verb+"'")
+		return
+	}
+	if opErr != nil {
+		fmt.Println(Colors.Error("Error:"), opErr)
 		return
 	}
 
-	fmt.Printf(Colors.Success("Profile '%s' added for %s")+" (path: %s)\n", name, osName, path)
+	fmt.Printf(
+		Colors.Success(fmt.Sprintf("Profile '%%s' %sed for %%s", verb))+" (path: %s)\n",
+		name, osName, path,
+	)
+}
+
+func HandleAddProfile(args []string, osName string) {
+	handleProfileMutation(args, osName, "add")
 }
 
 func HandleEditProfile(args []string, osName string) {
-	name, newPath, err := parseAddProfileArgs(args)
-	if err != nil {
-		fmt.Println(Colors.Error("Error:"), err)
-		return
-	}
-
-	pm := NewProfileManager()
-	if err := pm.EditProfile(osName, name, newPath); err != nil {
-		fmt.Println(Colors.Error("Error:"), err)
-		return
-	}
-
-	fmt.Printf(Colors.Success("Profile '%s' updated for %s")+" (new path: %s)\n", name, osName, newPath)
+	handleProfileMutation(args, osName, "edit")
 }
 
 func HandleSetProfile(args []string, osName string) {
@@ -80,9 +92,14 @@ func HandleCurrentProfile(osName string) {
 	pm.ShowCurrentProfile(osName)
 }
 
-func parseAddProfileArgs(args []string) (string, string, error) {
+// parseProfileArgs разбирает "NAME : PATH" из args[1:].
+// Раньше была копия в actions.go::parseAddProfileArgs
+// и ещё две копии в args.go::ParseAddProfile/ParseEditProfile.
+// Теперь — одна.
+func parseProfileArgs(args []string, osName, verb string) (string, string, error) {
 	if len(args) < 4 {
-		return "", "", fmt.Errorf("usage: NAME : PATH")
+		return "", "", fmt.Errorf(
+			"usage: skorpion %s-%s-profile NAME : PATH", verb, osName)
 	}
 
 	sep := -1
@@ -128,18 +145,22 @@ func HandleColor(args []string) {
 	case "true":
 		ColorSettings.Enabled = true
 		Colors.Enable()
+		debug.SetColored(true)
 		fmt.Println(Colors.Success("Colors enabled"))
 	case "false":
 		ColorSettings.Enabled = false
 		Colors.Disable()
+		debug.SetColored(false)
 		fmt.Println("Colors disabled")
 	case "toggle":
 		ColorSettings.Enabled = !ColorSettings.Enabled
 		if ColorSettings.Enabled {
 			Colors.Enable()
+			debug.SetColored(true)
 			fmt.Println(Colors.Success("Colors enabled"))
 		} else {
 			Colors.Disable()
+			debug.SetColored(false)
 			fmt.Println("Colors disabled")
 		}
 	default:

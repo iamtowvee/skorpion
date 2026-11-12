@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// printTip выводит блок TIP: >>> TIP (салатовый), | текст, | (пустая)
+// printTip выводит блок TIP: >>> TIP (салатовый), | текст, | (пустая).
 func printTip(codeInfo ErrorCode, width int) {
 	if codeInfo.Tip == "" {
 		return
@@ -20,19 +20,33 @@ func printTip(codeInfo ErrorCode, width int) {
 	fmt.Printf("%s\n", cli.Colors.Dim(pipePrefix))
 }
 
-func PrintError(err SkorpionError, sourceLines []string) {
-	codeInfo := err.GetCodeInfo()
+// printDiag — единая отрисовка Error и Warning.
+//
+// Раньше PrintError и PrintWarning были на 95% идентичны:
+// отличались только цвет и префикс ("Err+" vs "Warn+").
+// Параметр isWarn выбирает цветовую схему.
+func printDiag(d SkorpionError, sourceLines []string, isWarn bool) {
+	codeInfo := d.GetCodeInfo()
 
-	// Всегда считаем width — если нет контекста, width = 1
+	colorFn := cli.Colors.Red
+	label := "Err+" + d.Code
+	colonColor := cli.Colors.Red
+	if isWarn {
+		colorFn = cli.Colors.Yellow
+		label = "Warn+" + d.Code
+		colonColor = cli.Colors.Yellow
+	}
+
+	// width — для выравнивания контекста и >>>.
 	width := 1
-	hasContext := len(sourceLines) > 0 && err.Line > 0 && err.Line <= len(sourceLines)
+	hasContext := len(sourceLines) > 0 && d.Line > 0 && d.Line <= len(sourceLines)
 	var ctxStart, ctxEnd int
 	if hasContext {
-		ctxStart = err.Line - 3
+		ctxStart = d.Line - 3
 		if ctxStart < 0 {
 			ctxStart = 0
 		}
-		ctxEnd = err.Line + 2
+		ctxEnd = d.Line + 2
 		if ctxEnd > len(sourceLines) {
 			ctxEnd = len(sourceLines)
 		}
@@ -42,28 +56,27 @@ func PrintError(err SkorpionError, sourceLines []string) {
 	timestamp := time.Now().Format("2006-01-02T15:04:05")
 	fmt.Printf("%s %s%s%s %s\n",
 		cli.Colors.Dim("["+timestamp+" >"),
-		cli.Colors.Red("Err+"+err.Code),
+		colorFn(label),
 		cli.Colors.Dim("]"),
-		cli.Colors.Red(":"),
-		cli.Colors.Bold(err.Message))
+		colonColor(":"),
+		cli.Colors.Bold(d.Message))
 
-	filePath := err.File
+	filePath := d.File
 	if filePath == "" {
 		filePath = "<unknown>"
 	}
 
-	// Шапка: >>> выровнен с | контекста
+	// Шапка: >>> выровнен с | контекста.
 	arrowPrefix := strings.Repeat(" ", width+1) + ">>>"
 	fmt.Printf("%s %s %s %s %d, %s %d\n",
 		cli.Colors.Dim(arrowPrefix),
 		cli.Colors.Cyan(filePath),
 		cli.Colors.Dim("|"),
 		cli.Colors.Dim("L:"),
-		err.Line,
+		d.Line,
 		cli.Colors.Dim("C:"),
-		err.Column)
+		d.Column)
 
-	// Пустой префикс для | (на 1 больше, чем для >>>)
 	pipePrefix := strings.Repeat(" ", width+2) + "|"
 
 	if hasContext {
@@ -74,21 +87,21 @@ func PrintError(err SkorpionError, sourceLines []string) {
 			line := sourceLines[i]
 			lineNumStr := fmt.Sprintf("%*d", width, lineNum)
 
-			if lineNum == err.Line {
+			if lineNum == d.Line {
 				fmt.Printf(" %s %s %s\n",
 					cli.Colors.Bold(lineNumStr),
 					cli.Colors.Dim("|"),
 					line)
 
-				if err.Column > 0 {
-					startCol := err.Column
-					endCol := err.EndColumn
+				if d.Column > 0 {
+					startCol := d.Column
+					endCol := d.EndColumn
 					if endCol <= startCol {
-						endCol = startCol + 1 // 1 символ по умолчанию
+						endCol = startCol + 1
 					}
 					pointerIndent := width + 4 + (startCol - 1)
 					pointer := strings.Repeat(" ", pointerIndent) + strings.Repeat("~", endCol-startCol)
-					fmt.Printf("%s\n", cli.Colors.Red(pointer))
+					fmt.Printf("%s\n", colorFn(pointer))
 				}
 			} else {
 				fmt.Printf(" %s %s %s\n",
@@ -102,94 +115,18 @@ func PrintError(err SkorpionError, sourceLines []string) {
 	}
 
 	printTip(codeInfo, width)
+}
+
+func PrintError(err SkorpionError, sourceLines []string) {
+	printDiag(err, sourceLines, false)
 }
 
 func PrintWarning(warn SkorpionError, sourceLines []string) {
-	codeInfo := warn.GetCodeInfo()
-
-	// Всегда считаем width — если нет контекста, width = 1
-	width := 1
-	hasContext := len(sourceLines) > 0 && warn.Line > 0 && warn.Line <= len(sourceLines)
-	var ctxStart, ctxEnd int
-	if hasContext {
-		ctxStart = warn.Line - 3
-		if ctxStart < 0 {
-			ctxStart = 0
-		}
-		ctxEnd = warn.Line + 2
-		if ctxEnd > len(sourceLines) {
-			ctxEnd = len(sourceLines)
-		}
-		width = len(fmt.Sprintf("%d", ctxEnd))
-	}
-
-	timestamp := time.Now().Format("2006-01-02T15:04:05")
-	fmt.Printf("%s %s%s%s %s\n",
-		cli.Colors.Dim("["+timestamp+" >"),
-		cli.Colors.Yellow("Warn+"+warn.Code),
-		cli.Colors.Dim("]"),
-		cli.Colors.Yellow(":"),
-		cli.Colors.Bold(warn.Message))
-
-	filePath := warn.File
-	if filePath == "" {
-		filePath = "<unknown>"
-	}
-
-	// Шапка: >>> выровнен с | контекста
-	arrowPrefix := strings.Repeat(" ", width+1) + ">>>"
-	fmt.Printf("%s %s %s %s %d, %s %d\n",
-		cli.Colors.Dim(arrowPrefix),
-		cli.Colors.Cyan(filePath),
-		cli.Colors.Dim("|"),
-		cli.Colors.Dim("L:"),
-		warn.Line,
-		cli.Colors.Dim("C:"),
-		warn.Column)
-
-	// Пустой префикс для |
-	pipePrefix := strings.Repeat(" ", width+2) + "|"
-
-	if hasContext {
-		fmt.Printf("%s\n", cli.Colors.Dim(pipePrefix))
-
-		for i := ctxStart; i < ctxEnd; i++ {
-			lineNum := i + 1
-			line := sourceLines[i]
-			lineNumStr := fmt.Sprintf("%*d", width, lineNum)
-
-			if lineNum == warn.Line {
-				fmt.Printf(" %s %s %s\n",
-					cli.Colors.Bold(lineNumStr),
-					cli.Colors.Dim("|"),
-					line)
-
-				if warn.Column > 0 {
-					startCol := warn.Column
-					endCol := warn.EndColumn
-					if endCol <= startCol {
-						endCol = startCol + 1 // 1 символ по умолчанию
-					}
-					pointerIndent := width + 4 + (startCol - 1)
-					pointer := strings.Repeat(" ", pointerIndent) + strings.Repeat("~", endCol-startCol)
-					fmt.Printf("%s\n", cli.Colors.Yellow(pointer))
-				}
-			} else {
-				fmt.Printf(" %s %s %s\n",
-					cli.Colors.Dim(lineNumStr),
-					cli.Colors.Dim("|"),
-					line)
-			}
-		}
-
-		fmt.Printf("%s\n", cli.Colors.Dim(pipePrefix))
-	}
-
-	printTip(codeInfo, width)
+	printDiag(warn, sourceLines, true)
 }
 
 func PrintErrorReport(report ErrorReport) {
-	// Сначала warnings
+	// Сначала warnings (с дедупликацией).
 	if len(report.Warnings) > 0 {
 		uniqueWarnings := []SkorpionError{}
 		seen := make(map[string]bool)
@@ -206,7 +143,7 @@ func PrintErrorReport(report ErrorReport) {
 		}
 	}
 
-	// Если ошибок нет — только warnings
+	// Если ошибок нет — только warnings.
 	if len(report.Errors) == 0 {
 		if len(report.Warnings) > 0 {
 			fmt.Printf("%s in %s (%dms) with %s (count %d).\n",
@@ -219,7 +156,7 @@ func PrintErrorReport(report ErrorReport) {
 		return
 	}
 
-	// Убираем дубли ошибок
+	// Убираем дубли ошибок.
 	uniqueErrors := []SkorpionError{}
 	seen := make(map[string]bool)
 	for _, err := range report.Errors {

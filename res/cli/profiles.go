@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"skrp/res/debug"
 )
 
 type Profile struct {
@@ -95,7 +97,8 @@ func (pm *ProfileManager) AddProfile(osName, name, path string) error {
 	}
 
 	for _, ch := range name {
-		if !((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_') {
+		if !((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') ||
+			(ch >= '0' && ch <= '9') || ch == '-' || ch == '_') {
 			return fmt.Errorf("profile name must contain only A-Za-z0-9_- (got '%s')", name)
 		}
 	}
@@ -112,7 +115,7 @@ func (pm *ProfileManager) AddProfile(osName, name, path string) error {
 	}
 
 	if path != "auto" {
-		if !pm.compilerExists(path) {
+		if !compilerExists(path) {
 			return fmt.Errorf("compiler '%s' not found", path)
 		}
 	}
@@ -137,7 +140,7 @@ func (pm *ProfileManager) EditProfile(osName, name, newPath string) error {
 		return fmt.Errorf("cannot edit 'auto' profile")
 	}
 
-	if !pm.compilerExists(newPath) {
+	if !compilerExists(newPath) {
 		return fmt.Errorf("compiler '%s' not found", newPath)
 	}
 
@@ -201,7 +204,7 @@ func (pm *ProfileManager) ListProfiles(osName string) {
 			cur = Colors.Green(" (current)")
 		}
 		status := Colors.Green("✓")
-		if p.Name != "auto" && !pm.compilerExists(p.Path) {
+		if p.Name != "auto" && !compilerExists(p.Path) {
 			status = Colors.Red("✗")
 		}
 		fmt.Printf("%d\t%s\t%s %s%s\n", p.ID, p.Name, p.Path, status, cur)
@@ -215,7 +218,6 @@ func (pm *ProfileManager) ShowCurrentProfile(osName string) {
 
 // ============ Получение компилятора ============
 
-// GetCompilerForOS возвращает путь к компилятору для конкретной ОС
 func (pm *ProfileManager) GetCompilerForOS(osName string) string {
 	normOS := osName
 	switch osName {
@@ -253,56 +255,62 @@ func (pm *ProfileManager) setProfilesByOS(osName string, profiles []Profile) {
 	}
 }
 
-func (pm *ProfileManager) compilerExists(path string) bool {
+// compilerExists проверяет, существует ли компилятор по данному пути.
+//
+// Полезная диагностика (было `fmt.Println("[DEBUG] ...")` — печаталось
+// ВСЕГДА, даже без --debug) теперь идёт через debug.Debug:
+//   - в ring лога — всегда (нужно для crash-репорта);
+//   - в консоль — только при `skorpion --debug`.
+func compilerExists(path string) bool {
 	if path == "auto" {
 		return true
 	}
 
-	fmt.Printf("[DEBUG] compilerExists: path=%q (len=%d)\n", path, len(path))
+	debug.Debug("compilerExists: path=%q (len=%d)", path, len(path))
 
-	// Проверяем каждый байт
+	// Проверяем каждый байт — на предмет невидимых символов.
 	for i, b := range path {
 		if b == ' ' || b == '"' || b == '\'' {
-			fmt.Printf("[DEBUG]   byte[%d] = %q (0x%02x)\n", i, b, b)
+			debug.Debug("  byte[%d] = %q (0x%02x)", i, b, b)
 		}
 	}
 
-	// 1. Единый путь
+	// 1. Единый путь.
 	if _, err := os.Stat(path); err == nil {
-		fmt.Println("[DEBUG] os.Stat(path) OK")
+		debug.Debug("os.Stat(path) OK")
 		return true
 	} else {
-		fmt.Printf("[DEBUG] os.Stat(path) FAILED: %v\n", err)
+		debug.Debug("os.Stat(path) FAILED: %v", err)
 	}
 
 	// + .exe
 	if runtime.GOOS == "windows" && !strings.HasSuffix(strings.ToLower(path), ".exe") {
 		if _, err := os.Stat(path + ".exe"); err == nil {
-			fmt.Println("[DEBUG] os.Stat(path+.exe) OK")
+			debug.Debug("os.Stat(path+.exe) OK")
 			return true
 		}
 	}
 
 	// 2. LookPath
 	if _, err := exec.LookPath(path); err == nil {
-		fmt.Println("[DEBUG] exec.LookPath(path) OK")
+		debug.Debug("exec.LookPath(path) OK")
 		return true
 	}
 
-	// 3. По частям
+	// 3. По частям ("wsl gcc" → проверяем "wsl").
 	parts := strings.Fields(path)
-	fmt.Printf("[DEBUG] parts: %#v\n", parts)
+	debug.Debug("parts: %#v", parts)
 	if len(parts) > 0 {
 		if _, err := os.Stat(parts[0]); err == nil {
-			fmt.Println("[DEBUG] os.Stat(parts[0]) OK")
+			debug.Debug("os.Stat(parts[0]) OK")
 			return true
 		}
 		if _, err := exec.LookPath(parts[0]); err == nil {
-			fmt.Println("[DEBUG] exec.LookPath(parts[0]) OK")
+			debug.Debug("exec.LookPath(parts[0]) OK")
 			return true
 		}
 	}
 
-	fmt.Println("[DEBUG] compilerExists: all checks failed")
+	debug.Debug("compilerExists: all checks failed")
 	return false
 }

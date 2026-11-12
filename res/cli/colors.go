@@ -58,7 +58,7 @@ const (
 	BG_BRIGHT_WHITE   = "\033[107m"
 )
 
-// ColorString возвращает цветной текст, если цвета включены
+// Colorize возвращает цветной текст, если цвета включены.
 func (c *Color) Colorize(code, text string) string {
 	if !c.Enabled {
 		return text
@@ -66,7 +66,7 @@ func (c *Color) Colorize(code, text string) string {
 	return code + text + RESET
 }
 
-// Colorizef форматирует и возвращает цветной текст
+// Colorizef форматирует и возвращает цветной текст.
 func (c *Color) Colorizef(code, format string, args ...interface{}) string {
 	text := format
 	if len(args) > 0 {
@@ -78,7 +78,7 @@ func (c *Color) Colorizef(code, format string, args ...interface{}) string {
 	return code + text + RESET
 }
 
-// Сокращения для удобства
+// Сокращения.
 func (c *Color) Red(text string) string       { return c.Colorize(RED, text) }
 func (c *Color) Green(text string) string     { return c.Colorize(GREEN, text) }
 func (c *Color) Yellow(text string) string    { return c.Colorize(YELLOW, text) }
@@ -90,59 +90,33 @@ func (c *Color) Bold(text string) string      { return c.Colorize(BOLD, text) }
 func (c *Color) Dim(text string) string       { return c.Colorize(DIM, text) }
 func (c *Color) Underline(text string) string { return c.Colorize(UNDER, text) }
 
-// Цветные ошибки
-func (c *Color) Error(text string) string {
-	return c.Colorize(RED, text)
-}
-
-func (c *Color) Warning(text string) string {
-	return c.Colorize(YELLOW, text)
-}
-
-func (c *Color) Success(text string) string {
-	return c.Colorize(GREEN, text)
-}
-
-func (c *Color) Info(text string) string {
-	return c.Colorize(CYAN, text)
-}
+func (c *Color) Error(text string) string   { return c.Colorize(RED, text) }
+func (c *Color) Warning(text string) string { return c.Colorize(YELLOW, text) }
+func (c *Color) Success(text string) string { return c.Colorize(GREEN, text) }
+func (c *Color) Info(text string) string    { return c.Colorize(CYAN, text) }
 
 func (c *Color) Highlight(text string) string {
 	return c.Colorize(BOLD+WHITE, text)
 }
 
-// Disable отключает цвета
-func (c *Color) Disable() {
-	c.Enabled = false
-}
+func (c *Color) Disable()        { c.Enabled = false }
+func (c *Color) Enable()         { c.Enabled = true }
+func (c *Color) Toggle()         { c.Enabled = !c.Enabled }
+func (c *Color) IsEnabled() bool { return c.Enabled }
 
-// Enable включает цвета
-func (c *Color) Enable() {
-	c.Enabled = true
-}
-
-// Toggle переключает цвета
-func (c *Color) Toggle() {
-	c.Enabled = !c.Enabled
-}
-
-// IsEnabled возвращает состояние цветов
-func (c *Color) IsEnabled() bool {
-	return c.Enabled
-}
-
-// ShouldUseColors определяет, нужно ли использовать цвета
+// ShouldUseColors — эвристика: используется ли цвет.
+//
+// Fix: раньше при ошибке os.Stdout.Stat() info был nil → паника.
 func ShouldUseColors() bool {
-	// Проверяем, что вывод не перенаправлен в файл
-	info, _ := os.Stdout.Stat()
+	info, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
 	if (info.Mode() & os.ModeCharDevice) == 0 {
 		return false
 	}
-
-	// Проверяем переменную окружения NO_COLOR
 	if os.Getenv("NO_COLOR") != "" {
 		return false
 	}
-
 	return Colors.Enabled
 }

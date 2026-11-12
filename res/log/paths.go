@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+
+	"skrp/res/utils"
 )
 
 // CacheRoot возвращает базовый каталог кэша Skorpion.
@@ -45,27 +47,10 @@ func ProjectLogDir(name, version string) string {
 	if version == "" {
 		version = "0.0.0"
 	}
-	return filepath.Join(LogsRoot(), sanitizeSlug(name)+"__"+sanitizeSlug(version))
+	return filepath.Join(LogsRoot(), utils.SanitizePath(name)+"__"+utils.SanitizePath(version))
 }
 
 // LocalLogDir — локальный каталог логов: <projectDir>/logs/
 func LocalLogDir(projectDir string) string {
 	return filepath.Join(projectDir, "logs")
-}
-
-func sanitizeSlug(s string) string {
-	b := make([]byte, 0, len(s))
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		switch {
-		case c >= 'a' && c <= 'z',
-			c >= 'A' && c <= 'Z',
-			c >= '0' && c <= '9',
-			c == '_', c == '.', c == '-':
-			b = append(b, c)
-		default:
-			b = append(b, '_')
-		}
-	}
-	return string(b)
 }

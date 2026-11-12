@@ -141,7 +141,6 @@ func (i *IsAsyncEnded) GetType() NodeType { return NODE_ISAE }
 
 func (f *Function) GetType() NodeType { return NODE_FUNCTION }
 
-// GetNameLine / GetNameColumn — позиция имени функции для ошибок/warnings
 func (f *Function) GetNameLine() int   { return f.NamePos.Line }
 func (f *Function) GetNameColumn() int { return f.NamePos.Column }
 
@@ -159,6 +158,10 @@ type Param struct {
 }
 
 func (p *Param) GetType() NodeType { return "Param" }
+
+// HasDefault сообщает, есть ли у параметра default-значение.
+// Раньше объявлен в lexer.go — не место для метода AST-узла.
+func (p *Param) HasDefault() bool { return p.DefaultValue != nil }
 
 // ============================================================================
 // Block
@@ -247,7 +250,7 @@ func (a *ArrayAdd) GetType() NodeType { return NODE_ARRAY_ADD }
 
 type DictElement struct {
 	Position
-	Key   string // имя ключа (идентификатор в литерале)
+	Key   string
 	Value Node
 }
 
@@ -266,8 +269,8 @@ func (d *DictLiteral) GetType() NodeType { return "DictLiteral" }
 
 type DictIndex struct {
 	Position
-	Object string // имя переменной-dict
-	Key    Node   // выражение-ключ
+	Object string
+	Key    Node
 }
 
 func (d *DictIndex) GetType() NodeType { return "DictIndex" }
@@ -450,7 +453,7 @@ func (s *String) GetTypeString() string { return "string" }
 
 type CharLiteral struct {
 	Position
-	Value byte // ASCII-код символа
+	Value byte
 }
 
 func (c *CharLiteral) GetType() NodeType     { return "CharLiteral" }
@@ -526,8 +529,8 @@ func (w *WhileStmt) GetType() NodeType { return NODE_WHILE }
 
 type ForInStmt struct {
 	Position
-	VarType  string // "int", "string", "float", ...
-	VarName  string // "x"
+	VarType  string
+	VarName  string
 	Iterable Node
 	Body     *Block
 }
@@ -546,7 +549,7 @@ type IncludeC struct {
 func (i *IncludeC) GetType() NodeType { return NODE_INCLUDE_C }
 
 // ============================================================================
-// InId
+// IknowIdoBlock
 // ============================================================================
 
 type IknowIdoBlock struct {
@@ -557,7 +560,7 @@ type IknowIdoBlock struct {
 func (b *IknowIdoBlock) GetType() NodeType { return "IknowIdo" }
 
 // ============================================================================
-// IncludeC
+// UnicodeLiteral
 // ============================================================================
 
 type UnicodeLiteral struct {
@@ -570,15 +573,14 @@ func (u *UnicodeLiteral) GetTypeString() string { return "char" }
 
 // ============================================================================
 // ErrorDecl — объявление типа ошибки
-// const Name{field: type[default], ...} = new Parent
 // ============================================================================
 
 type ErrorDecl struct {
 	Position
 	Name   string
 	Fields []*ErrorField
-	Parent string // "Error" или имя другого типа
-	IsNew  bool   // true = new Parent, false = Parent (мутация)
+	Parent string
+	IsNew  bool
 	Module string
 }
 
@@ -588,14 +590,13 @@ type ErrorField struct {
 	Position
 	Name         string
 	Type         string
-	DefaultValue Node // может быть nil
+	DefaultValue Node
 }
 
 func (e *ErrorField) GetType() NodeType { return NODE_ERROR_FIELD }
 
 // ============================================================================
-// ErrorInstance — создание экземпляра ошибки
-// Name{field: value, ...}
+// ErrorInstance
 // ============================================================================
 
 type ErrorInstance struct {
@@ -615,8 +616,8 @@ func (t *ThrowStmt) GetType() NodeType { return NODE_THROW }
 
 type FieldAccess struct {
 	Position
-	Object string // имя переменной
-	Field  string // имя поля
+	Object string
+	Field  string
 }
 
 func (f *FieldAccess) GetType() NodeType { return NODE_FIELD_ACCESS }
@@ -632,15 +633,15 @@ func (t *TryStmt) GetType() NodeType { return NODE_TRY }
 
 type CatchClause struct {
 	Position
-	TypeName string // имя типа ошибки; "" для catch {}
-	VarName  string // имя переменной; "" для catch без as
+	TypeName string
+	VarName  string
 	Body     *Block
 }
 
 func (c *CatchClause) GetType() NodeType { return NODE_CATCH }
 
 // ============================================================================
-// BreakStmt
+// BreakStmt / ContinueStmt / DoWhileStmt / PostfixExpr
 // ============================================================================
 
 type BreakStmt struct {
@@ -649,19 +650,11 @@ type BreakStmt struct {
 
 func (b *BreakStmt) GetType() NodeType { return NODE_BREAK }
 
-// ============================================================================
-// ContinueStmt
-// ============================================================================
-
 type ContinueStmt struct {
 	Position
 }
 
 func (c *ContinueStmt) GetType() NodeType { return NODE_CONTINUE }
-
-// ============================================================================
-// DoWhileStmt
-// ============================================================================
 
 type DoWhileStmt struct {
 	Position
@@ -671,10 +664,9 @@ type DoWhileStmt struct {
 
 func (d *DoWhileStmt) GetType() NodeType { return NODE_DO_WHILE }
 
-// PostfixExpr — i++ или i--
 type PostfixExpr struct {
 	Position
-	VarName string // имя переменной
+	VarName string
 	Op      string // "++" или "--"
 }
 

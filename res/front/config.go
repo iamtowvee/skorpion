@@ -63,13 +63,9 @@ func (c *Config) parseLine(line string, lineNum int, file string) error {
 	}
 
 	key := strings.TrimSpace(line[:openIdx])
-
-	// Пустой ключ — ошибка
 	if key == "" {
 		return fmt.Errorf("empty key on line %d", lineNum)
 	}
-
-	// Невалидные символы в ключе — ошибка
 	if !isValidKeyName(key) {
 		return fmt.Errorf(
 			"invalid character in key '%s' (line %d)", key, lineNum)
@@ -84,12 +80,7 @@ func (c *Config) parseLine(line string, lineNum int, file string) error {
 
 	valueStr := rest[:closeIdx]
 
-	// Пустой ключ — ошибка
-	if key == "" {
-		return fmt.Errorf("empty key on line %d", lineNum)
-	}
-
-	// Дубликат — ошибка (для любого ключа)
+	// Дубликат — ошибка (для любого ключа).
 	if _, exists := c.Vars[key]; exists {
 		return fmt.Errorf("config key '%s' already declared", key)
 	}
@@ -160,7 +151,7 @@ func (c *Config) parseValue(v string, varName string) (interface{}, error) {
 
 			// &name
 			if strings.HasPrefix(part, "&") {
-				refName := part[1:] // без @
+				refName := part[1:]
 				refVal, ok := c.Vars[refName]
 				if !ok {
 					return nil, fmt.Errorf(

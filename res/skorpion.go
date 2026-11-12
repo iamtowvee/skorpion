@@ -1,5 +1,27 @@
 package res
 
+// ============================================================================
+// NOTE: в этом файле используются следующие НОВЫЕ коды ошибок, которых пока
+// нет в skrp/res/errors/codes.go — их нужно добавить туда отдельным патчем:
+//
+//   0012  — Import error
+//           (сейчас ошибочно использовался 0011 = "File not found")
+//
+//   3111  — Library must have a name
+//           (сейчас ошибочно использовался 3105 = "no exportable functions")
+//
+//   3200  — Cannot determine Zig install directory
+//   3201  — Cannot determine Zig version to download
+//   3202  — Failed to download Zig
+//           (сейчас ошибочно использовались 3100 / 3103 / 3101 —
+//            это коды библиотек, а не Zig)
+//
+// Всё остальное в этом файле — только чистка: удалены неиспользуемые
+// hasArg/argValue, убраны no-op `_ = args`, консолидирован разбор
+// --log-dir/--log-dir=DIR в parseFlags (раньше значение флага оставалось
+// в args и ломало args[0] для команд).
+// ============================================================================
+
 import (
 	"archive/zip"
 	"bufio"
@@ -15,6 +37,7 @@ import (
 	"runtime"
 	"skrp/res/backend"
 	"skrp/res/cli"
+	"skrp/res/debug"
 	"skrp/res/errors"
 	"skrp/res/front"
 	"skrp/res/log"
@@ -303,11 +326,11 @@ func InitLang(args []string, v string) {
 		cli.HandleShowUpdates()
 
 	case "clear-cache":
-		if !handleClearCache(args[1:]) {
+		if !handleClearCache() {
 			commandFailed = true
 		}
 	case "clear-local":
-		if !handleClearLocal(args[1:], projectPath) {
+		if !handleClearLocal(projectPath) {
 			commandFailed = true
 		}
 
@@ -347,28 +370,43 @@ func parseFlags(args []string) []string {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 
+		// --log-dir / --log-dir=DIR уже обработаны в main.go::preParseLogDir
+		// (env SK_LOG_DIR выставлен). Здесь только «съедаем» токены,
+		// чтобы они не попали в результат.
+		if arg == "--log-dir" {
+			if i+1 < len(args) {
+				i++
+			}
+			continue
+		}
+		if strings.HasPrefix(arg, "--log-dir=") {
+			continue
+		}
+
 		switch arg {
-		case "--tokens":
+		case "--tokens", "-T":
 			showTokens = true
-		case "--ast":
+		case "--ast", "-A":
 			showAST = true
-		case "--save-c":
+		case "--save-c", "-C":
 			saveC = true
-		case "--uncolored":
+		case "--uncolored", "-U":
 			uncolored = true
 			cli.Colors.Disable()
 			cli.ColorSettings.Enabled = false
+			debug.SetColored(false)
 		case "--no-optimize", "-N":
 			noOptimize = true
-		case "--noCheckZigUpdates":
+		case "--noCheckZigUpdates", "-nCZU":
 			noCheckZigUpdates = true
-		case "--local-log":
-			os.Setenv("SK_LOCAL_LOG", "1")
-		case "--noCheckUpdates":
+		case "--local-log", "-LL":
+			// env SK_LOCAL_LOG уже выставлен в main.go::preParseLogDir.
+			// Оставляем no-op, чтобы «съесть» флаг.
+		case "--noCheckUpdates", "-nCU":
 			noCheckUpdates = true
-		case "--logs-only":
+		case "--logs-only", "-LO":
 			logsOnly = true
-		case "--dry-run":
+		case "--dry-run", "-DR":
 			dryRun = true
 		case "--yes", "-y":
 			assumeYes = true
@@ -379,7 +417,7 @@ func parseFlags(args []string) []string {
 				projectDir = strings.TrimPrefix(arg, "--project=")
 				continue
 			}
-			if len(arg) > 7 && arg[:7] == "--path=" {
+			if strings.HasPrefix(arg, "--path=") {
 				buildPath = arg[7:]
 				continue
 			}
@@ -405,9 +443,7 @@ func parseFlags(args []string) []string {
 //	logsOnly, dryRun, assumeYes
 //
 // Возвращает false, если что-то не удалилось.
-func handleClearCache(args []string) bool {
-	_ = args // флаги уже в parseFlags
-
+func handleClearCache() bool {
 	currentLog := log.Path() // "" если лог не открыт (StartReadOnly / clear-*)
 	root := log.CacheRoot()
 
@@ -559,9 +595,7 @@ func removeEmptyDirs(root, keep string) {
 //	projectDir, removeAll, dryRun, assumeYes
 //
 // Возвращает false, если что-то не удалилось.
-func handleClearLocal(args []string, defaultProject string) bool {
-	_ = args
-
+func handleClearLocal(defaultProject string) bool {
 	currentLog := log.Path()
 
 	projDir := projectDir
@@ -644,29 +678,8 @@ func handleClearLocal(args []string, defaultProject string) bool {
 }
 
 // ============================================================
-// Хелперы (в skorpion.go, рядом с остальными)
+// Хелперы
 // ============================================================
-
-func hasArg(args []string, name string) bool {
-	for _, a := range args {
-		if a == name {
-			return true
-		}
-	}
-	return false
-}
-
-func argValue(args []string, name, def string) string {
-	for i, a := range args {
-		if a == name && i+1 < len(args) {
-			return args[i+1]
-		}
-		if strings.HasPrefix(a, name+"=") {
-			return strings.TrimPrefix(a, name+"=")
-		}
-	}
-	return def
-}
 
 // confirm спрашивает подтверждение в стиле Vite:
 //
@@ -855,7 +868,7 @@ func setupZig(args []string) {
 
 	zigDir, err := zigInstallDir()
 	if err != nil {
-		errors.NewFatalError("3100", fmt.Sprintf("Cannot determine Zig install dir: %v", err), 0, 0, "")
+		errors.NewFatalError("3200", fmt.Sprintf("Cannot determine Zig install dir: %v", err), 0, 0, "")
 		printErrorReport(startTime, "", nil)
 		os.Exit(1)
 		return
@@ -878,7 +891,7 @@ func setupZig(args []string) {
 			return
 		}
 
-		errors.NewFatalError("3103",
+		errors.NewFatalError("3201",
 			"Cannot determine Zig version to download and no local Zig found", 0, 0, "")
 		printErrorReport(startTime, "", nil)
 		os.Exit(1)
@@ -902,7 +915,7 @@ func setupZig(args []string) {
 	}
 
 	if err := downloadZigWithFallback(zigDir, latestVersion); err != nil {
-		errors.NewFatalError("3101", fmt.Sprintf("Failed to download Zig: %v", err), 0, 0, "")
+		errors.NewFatalError("3202", fmt.Sprintf("Failed to download Zig: %v", err), 0, 0, "")
 		printErrorReport(startTime, "", nil)
 		os.Exit(1)
 		return
@@ -947,7 +960,7 @@ func buildProject() {
 
 	mainProg, im, err := front.LoadProgramWithConfig(mainFile, projectPath, cfg.LibsDir, cfg.Dependencies)
 	if err != nil {
-		errors.NewFatalError("0011", fmt.Sprintf("Import error: %v", err), 0, 0, mainFile)
+		errors.NewFatalError("0012", fmt.Sprintf("Import error: %v", err), 0, 0, mainFile)
 		printErrorReport(startTime, mainFile, sourceLines)
 		os.Exit(1)
 		return
@@ -1108,7 +1121,7 @@ func buildLib(projectPath string) {
 	}
 
 	if cfg.Name == "" {
-		errors.NewFatalError("3105", "Library must have a name in manifest.spc", 0, 0, "")
+		errors.NewFatalError("3111", "Library must have a name in manifest.spc", 0, 0, "")
 		printErrorReport(startTime, "", nil)
 		return
 	}
@@ -1142,7 +1155,7 @@ func buildLib(projectPath string) {
 	mainProg, im, err := front.LoadProgramWithConfig(
 		mainFile, projectPath, cfg.LibsDir, cfg.Dependencies)
 	if err != nil {
-		errors.NewFatalError("0011", fmt.Sprintf("Import error: %v", err), 0, 0, mainFile)
+		errors.NewFatalError("0012", fmt.Sprintf("Import error: %v", err), 0, 0, mainFile)
 		printErrorReport(startTime, mainFile, sourceLines)
 		os.Exit(1)
 		return
