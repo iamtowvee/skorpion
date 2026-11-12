@@ -158,6 +158,20 @@ func (gc *GCAnalyzer) findOwners(fn *IRFunction, variables []string) map[string]
 		}
 	}
 
+	// Передача владения в Promise / return.
+	for _, ins := range fn.Instructions {
+		switch ins.Op {
+		case OpPromiseSet, OpPromiseFinish:
+			if ins.Arg2 != "" {
+				moved[ins.Arg2] = true
+			}
+		case OpRet:
+			if ins.Arg1 != "" {
+				moved[ins.Arg1] = true
+			}
+		}
+	}
+
 	owners := make(map[string]bool)
 	for _, v := range variables {
 		if allocated[v] && !moved[v] {
@@ -657,44 +671,51 @@ func (gc *GCAnalyzer) applyInsertions(fn *IRFunction, insertions []gcInsertion, 
 	newInstructions := []IRInstruction{}
 
 	for i, ins := range fn.Instructions {
+		if vars, ok := insertAfter[i]; ok {
+			// Если текущая — OpRet, сначала free, потом return.
+			// Если что-то другое — сначала ins, потом free.
+			if ins.Op == OpRet {
+				for j := len(vars) - 1; j >= 0; j-- {
+					v := vars[j]
+					gc.emitFree(newInstructions, fn, i, v, cyclicVars)
+				}
+				newInstructions = append(newInstructions, ins)
+				continue
+			}
+		}
 		newInstructions = append(newInstructions, ins)
 
 		if vars, ok := insertAfter[i]; ok {
 			for j := len(vars) - 1; j >= 0; j-- {
 				v := vars[j]
-
-				if gc.hasFreeAfter(fn, i, v) {
-					continue
-				}
-
-				skType := gc.findVarSkType(fn, v)
-
-				if strings.Contains(skType, "promise") {
-					newInstructions = append(newInstructions, IRInstruction{
-						Op:   OpPromiseRelease,
-						Arg1: v,
-					})
-					continue
-				}
-
-				op := gc.freeOpFor(skType)
-				newInstructions = append(newInstructions, IRInstruction{
-					Op:   op,
-					Arg1: v,
-				})
-
-				if cyclicVars[v] {
-					newInstructions = append(newInstructions, IRInstruction{
-						Op:     OpAssign,
-						Result: v,
-						Arg1:   "",
-					})
-				}
+				gc.emitFree(newInstructions, fn, i, v, cyclicVars)
 			}
 		}
 	}
 
 	fn.Instructions = newInstructions
+}
+
+func (gc *GCAnalyzer) emitFree(out []IRInstruction, fn *IRFunction, i int, v string, cyclicVars map[string]bool) []IRInstruction {
+	if gc.hasFreeAfter(fn, i, v) {
+		return out
+	}
+	skType := gc.findVarSkType(fn, v)
+	if strings.Contains(skType, "promise") {
+		suffix := strings.TrimSuffix(strings.TrimPrefix(skType, "sk_promise_"), "*")
+		out = append(out, IRInstruction{
+			Op:         OpPromiseRelease,
+			Arg1:       v,
+			ReturnType: suffix,
+		})
+	} else {
+		op := gc.freeOpFor(skType)
+		out = append(out, IRInstruction{Op: op, Arg1: v})
+	}
+	if cyclicVars[v] {
+		out = append(out, IRInstruction{Op: OpAssign, Result: v, Arg1: ""})
+	}
+	return out
 }
 
 // freeOpFor — какой opcode освобождения использовать для данного Skorpion-типа.

@@ -636,6 +636,20 @@ func (p *Pipeline) processAwaitExpr(aw *front.AwaitExpr, irFn *IRFunction) IRVal
 	return IRValue{Type: "int", Var: p.zeroOf("int", irFn)}
 }
 
+func (p *Pipeline) typeToPromiseSuffix(t string) string {
+	if utils.IsUnionType(t) {
+		return "any"
+	}
+	if utils.IsArrayType(t) {
+		return "arr"
+	}
+	switch t {
+	case "int", "char", "float", "double", "bool", "string", "dict", "any", "void":
+		return t
+	}
+	return "int"
+}
+
 func (p *Pipeline) processAsyncCall(call *front.CallExpr, irFn *IRFunction) string {
 	targetFunc := p.findFunction(call.Name)
 	if targetFunc == nil {
@@ -705,14 +719,15 @@ func (p *Pipeline) processAsyncCall(call *front.CallExpr, irFn *IRFunction) stri
 		argsStr = append(argsStr, p.prepareArg(argExpr, param.Type, irFn).Var)
 	}
 
+	suffix := p.typeToPromiseSuffix(targetFunc.ReturnType)
 	promiseVar := p.newTemp()
-	irFn.Locals = append(irFn.Locals, IRLocal{Type: "promise", Name: promiseVar})
+	irFn.Locals = append(irFn.Locals, IRLocal{Type: "sk_promise_" + suffix + "*", Name: promiseVar})
 
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:         OpPromiseNew,
 		Result:     promiseVar,
 		Metadata:   targetFunc.ReturnType,
-		ReturnType: "promise",
+		ReturnType: "sk_promise_" + suffix + "*",
 	})
 
 	if targetFunc.Body != nil && len(targetFunc.Body.Statements) > 0 {
@@ -1269,24 +1284,25 @@ func (p *Pipeline) processUnary(unary *front.UnaryExpr, irFn *IRFunction) IRValu
 		result := p.newTemp()
 		irFn.Locals = append(irFn.Locals, IRLocal{Type: "string", Name: result})
 
-		if exprType == "any" || utils.IsUnionType(exprType) {
-			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op: OpCast, Result: result, Arg1: expr.Var, ReturnType: "string",
-			})
-		} else if utils.IsArrayType(exprType) {
-			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op: OpCast, Result: result, Arg1: expr.Var, ReturnType: "string",
-				Metadata: "array",
-			})
-		} else if exprType == "string" {
+		switch {
+		case exprType == "string":
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op: OpAssign, Result: result, Arg1: expr.Var,
 			})
-		} else if exprType == "void" {
+		case exprType == "void":
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op: OpConstString, Result: result, Arg1: "null", ReturnType: "string",
 			})
-		} else {
+		case utils.IsArrayType(exprType):
+			irFn.Instructions = append(irFn.Instructions, IRInstruction{
+				Op:         OpCast,
+				Result:     result,
+				Arg1:       expr.Var,
+				ReturnType: "string",
+				SrcType:    exprType,
+				Metadata:   "array",
+			})
+		default:
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op:         OpCast,
 				Result:     result,
@@ -3248,6 +3264,10 @@ func (p *Pipeline) processForIn(forIn *front.ForInStmt, irFn *IRFunction) {
 	}
 	irFn.VarTypes[forIn.VarName] = forIn.VarType
 
+	oneVar := p.newTemp()
+	irFn.Locals = append(irFn.Locals, IRLocal{Type: "int", Name: oneVar})
+	irFn.Instructions = append(irFn.Instructions, NewConstInt(oneVar, 1))
+
 	startLabel := p.newLabel()
 	bodyLabel := p.newLabel()
 	endLabel := p.newLabel()
@@ -3325,19 +3345,6 @@ func (p *Pipeline) processForIn(forIn *front.ForInStmt, irFn *IRFunction) {
 		p.processBlock(forIn.Body, irFn)
 	}
 
-	irFn.Instructions = append(irFn.Instructions, IRInstruction{
-		Op:         OpAdd,
-		Result:     idxVar,
-		Arg1:       idxVar,
-		Arg2:       idxVar,
-		ReturnType: "int",
-	})
-	// Заменяем на +1:
-	oneVar := p.newTemp()
-	irFn.Locals = append(irFn.Locals, IRLocal{Type: "int", Name: oneVar})
-	irFn.Instructions = append(irFn.Instructions, NewConstInt(oneVar, 1))
-	// Удаляем предыдущую инструкцию (idxVar = idxVar + idxVar) и вставляем правильную.
-	irFn.Instructions = irFn.Instructions[:len(irFn.Instructions)-1]
 	irFn.Instructions = append(irFn.Instructions, IRInstruction{
 		Op:         OpAdd,
 		Result:     idxVar,

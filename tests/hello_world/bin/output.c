@@ -2142,6 +2142,13 @@ void __sk__foo(sk_int a, sk_arr some);
 void __sk__foos(sk_int a, sk_int b, sk_arr some);
 void __sk__f(sk_promise_dict* __promise);
 void __sk__something(sk_promise_void* __promise, sk_string msg);
+sk_dict_ref __sk__parse(sk_string text);
+sk_dict_ref __sk__parseFile(sk_string path);
+sk_any __sk__parseAny(sk_string text);
+sk_string __sk__toString(sk_dict_ref data);
+sk_string __sk__toStringAny(sk_any data);
+sk_bool __sk__isValid(sk_string text);
+sk_bool __sk__isValidFile(sk_string path);
 void __sk__print(sk_any line);
 void __sk__println(sk_any msg);
 void __sk__std_io_send(sk_string line);
@@ -2162,13 +2169,6 @@ sk_bool __sk__isWriteable(sk_string path);
 sk_bool __sk__exists(sk_string path);
 void __sk__copy(sk_string src, sk_string dest);
 void __sk__move(sk_string src, sk_string dest);
-sk_dict_ref __sk__parse(sk_string text);
-sk_dict_ref __sk__parseFile(sk_string path);
-sk_any __sk__parseAny(sk_string text);
-sk_string __sk__toString(sk_dict_ref data);
-sk_string __sk__toStringAny(sk_any data);
-sk_bool __sk__isValid(sk_string text);
-sk_bool __sk__isValidFile(sk_string path);
 
 // Global variables
 static sk_any __sk__garr_X_elems[] = {{ 6, -1, { .p = NULL } }};
@@ -2252,18 +2252,19 @@ void __sk__foo(sk_int a, sk_arr some) {
     sk_int t2;
     sk_any f;
     sk_int t3;
-    sk_bool t4;
-    sk_int t5;
+    sk_int t4;
+    sk_bool t5;
 
     t1 = any_int(a);
     sk_call_push("main.sk", 9, 5);
     __sk__println(t1);
     sk_call_pop();
     t2 = sk_int_new(0);
+    t3 = sk_int_new(1);
 L1:
-    t3 = sk_int_new(sk_array_len(some.value));
-    t4 = sk_int_lt(t2, t3);
-    if (t4.value) {
+    t4 = sk_int_new(sk_array_len(some.value));
+    t5 = sk_int_lt(t2, t4);
+    if (t5.value) {
         goto L2;
     } else {
         goto L3;
@@ -2273,8 +2274,7 @@ L2:
     sk_call_push("main.sk", 11, 9);
     __sk__println(f);
     sk_call_pop();
-    t2 = sk_int_add(t2, t2);
-    t2 = sk_int_add(t2, t5);
+    t2 = sk_int_add(t2, t3);
     goto L1;
 L3:
     return;
@@ -2286,8 +2286,8 @@ void __sk__foos(sk_int a, sk_int b, sk_arr some) {
     sk_int t8;
     sk_any f;
     sk_int t9;
-    sk_bool t10;
-    sk_int t11;
+    sk_int t10;
+    sk_bool t11;
 
     t6 = sk_int_add(a, b);
     t7 = any_int(t6);
@@ -2295,10 +2295,11 @@ void __sk__foos(sk_int a, sk_int b, sk_arr some) {
     __sk__println(t7);
     sk_call_pop();
     t8 = sk_int_new(0);
+    t9 = sk_int_new(1);
 L4:
-    t9 = sk_int_new(sk_array_len(some.value));
-    t10 = sk_int_lt(t8, t9);
-    if (t10.value) {
+    t10 = sk_int_new(sk_array_len(some.value));
+    t11 = sk_int_lt(t8, t10);
+    if (t11.value) {
         goto L5;
     } else {
         goto L6;
@@ -2308,8 +2309,7 @@ L5:
     sk_call_push("main.sk", 18, 9);
     __sk__println(f);
     sk_call_pop();
-    t8 = sk_int_add(t8, t8);
-    t8 = sk_int_add(t8, t11);
+    t8 = sk_int_add(t8, t9);
     goto L4;
 L6:
     return;
@@ -2326,11 +2326,8 @@ void __sk__f(sk_promise_dict* __promise) {
     t14 = any_int(t13);
     t15 = sk_string_new("age");
     sk_dict_set(t12.value, t15, t14);
-    free(t15.value);
     sk_promise_finish_dict(__promise, t12);
-    sk_dict_deep_free(t12.value);
     return;
-    sk_promise_finish_dict(__promise, SK_NULL_dict);
     return;
 }
 
@@ -2384,7 +2381,7 @@ int main(int argc, char** argv) {
     sk_float t33;
     sk_float t34;
     sk_any t35;
-    void* t36;
+    sk_promise_dict* t36;
     sk_dict_ref t37;
     sk_any t38;
     sk_int t39;
@@ -2434,7 +2431,7 @@ int main(int argc, char** argv) {
     sk_string t77;
     sk_string t78;
     sk_any t79;
-    void* t80;
+    sk_promise_void* t80;
 
     t17 = sk_int_new(100);
     MAX = t17;
@@ -2529,24 +2526,12 @@ L10:
     sk_call_push("main.sk", 58, 9);
     __sk__delete(t58);
     sk_call_pop();
-    free(t58.value);
     goto L12;
 L11:
     t59 = sk_string_new("./text");
     sk_call_push("main.sk", 60, 9);
     __sk__delete(t59);
     sk_call_pop();
-    free(t56.value);
-    free(t52.value);
-    free(t51.value);
-    sk_promise_release_int(t36);
-    free(t49.value);
-    free(t48.value);
-    free(t46.value);
-    free(t43.value);
-    free(s.value);
-    sk_array_deep_free(t41.value);
-    free(t59.value);
 L12:
     t60 = sk_float_new(3.143553f);
     a = t60;
@@ -2589,23 +2574,245 @@ L12:
     pthread_detach(__tid_t80);
     sk_promise_await_void(t80);
     return 0;
-    sk_promise_release_int(t80);
-    free(t78.value);
-    free(t77.value);
-    free(t76.value);
-    free(t75.value);
-    free(t74.value);
-    free(t73.value);
-    sk_dict_deep_free(fd.value);
-    free(x.value);
-    free(t68.value);
-    free(t64.value);
-    free(t63.value);
-    free(t62.value);
-    free(name.value);
-    free(t70.value);
-    free(t61.value);
-    return 0;
+}
+
+sk_dict_ref __sk__parse(sk_string text) {
+    sk_dict_ref t81;
+
+    if (text.__is_null) {
+            JsonParseError* err = malloc(sizeof(JsonParseError));
+            err->__type = "Error.JsonError.JsonParseError";
+            err->msg = sk_string_new("Cannot parse 'null'.");
+            sk_throw(err, "<builtin:std/json>", 340, 5);
+        }
+        sk_any res = __sk__json_parse(text.value);
+        if (res.type == 6 && strcmp(text.value, "null") != 0) {
+            JsonParser p;
+            p.src = text.value;
+            p.pos = 0;
+            p.len = (int)strlen(text.value);
+            __sk__json_skip_ws(&p);
+            if (p.pos + 4 <= p.len && strncmp(&p.src[p.pos], "null", 4) == 0) {
+                p.pos += 4;
+                __sk__json_skip_ws(&p);
+                if (p.pos != p.len) {
+                    JsonParseError* err = malloc(sizeof(JsonParseError));
+                    err->__type = "Error.JsonError.JsonParseError";
+                    err->msg = sk_string_new("Trailing garbage after JSON value.");
+                    sk_throw(err, "<builtin:std/json>", 350, 5);
+                }
+            } else {
+                JsonParseError* err = malloc(sizeof(JsonParseError));
+                err->__type = "Error.JsonError.JsonParseError";
+                err->msg = sk_string_new("Invalid JSON.");
+                sk_throw(err, "<builtin:std/json>", 355, 5);
+            }
+        }
+        if (res.type == 8) {
+            return any_to_dict(res);
+        }
+        sk_dict* d = sk_dict_new();
+        sk_dict_set(d, sk_string_new("value"), res);
+        return sk_dict_ref_new(d);
+    t81 = sk_dict_ref_new(sk_dict_new());
+    return t81;
+}
+
+sk_dict_ref __sk__parseFile(sk_string path) {
+    sk_dict_ref t82;
+
+    if (path.__is_null) {
+            JsonFileError* err = malloc(sizeof(JsonFileError));
+            err->__type = "Error.JsonError.JsonFileError";
+            err->msg = sk_string_new("Path cannot be null.");
+            sk_throw(err, "<builtin:std/json>", 380, 5);
+        }
+        FILE* f = fopen(path.value, "rb");
+        if (!f) {
+            JsonFileError* err = malloc(sizeof(JsonFileError));
+            err->__type = "Error.JsonError.JsonFileError";
+            err->msg = sk_string_new("Cannot open JSON file.");
+            sk_throw(err, "<builtin:std/json>", 386, 5);
+        }
+        fseek(f, 0, SEEK_END);
+        long size = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        if (size <= 0) {
+            fclose(f);
+            JsonFileError* err = malloc(sizeof(JsonFileError));
+            err->__type = "Error.JsonError.JsonFileError";
+            err->msg = sk_string_new("JSON file is empty.");
+            sk_throw(err, "<builtin:std/json>", 396, 5);
+        }
+        char* content = malloc(size + 1);
+        size_t n = fread(content, 1, size, f);
+        content[n] = '\0';
+        fclose(f);
+        sk_any res = __sk__json_parse(content);
+        if (res.type == 6 && strcmp(content, "null") != 0) {
+            JsonParser p;
+            p.src = content;
+            p.pos = 0;
+            p.len = (int)n;
+            __sk__json_skip_ws(&p);
+            if (p.pos + 4 <= p.len && strncmp(&p.src[p.pos], "null", 4) == 0) {
+                p.pos += 4;
+                __sk__json_skip_ws(&p);
+                if (p.pos != p.len) {
+                    free(content);
+                    JsonParseError* err = malloc(sizeof(JsonParseError));
+                    err->__type = "Error.JsonError.JsonParseError";
+                    err->msg = sk_string_new("Trailing garbage after JSON value in file.");
+                    sk_throw(err, "<builtin:std/json>", 412, 5);
+                }
+            } else {
+                free(content);
+                JsonParseError* err = malloc(sizeof(JsonParseError));
+                err->__type = "Error.JsonError.JsonParseError";
+                err->msg = sk_string_new("Invalid JSON in file.");
+                sk_throw(err, "<builtin:std/json>", 418, 5);
+            }
+        }
+        free(content);
+        if (res.type == 8) {
+            return any_to_dict(res);
+        }
+        sk_dict* d = sk_dict_new();
+        sk_dict_set(d, sk_string_new("value"), res);
+        return sk_dict_ref_new(d);
+    t82 = sk_dict_ref_new(sk_dict_new());
+    return t82;
+}
+
+sk_any __sk__parseAny(sk_string text) {
+    sk_any t83;
+
+    if (text.__is_null) {
+            JsonParseError* err = malloc(sizeof(JsonParseError));
+            err->__type = "Error.JsonError.JsonParseError";
+            err->msg = sk_string_new("Cannot parse 'null'.");
+            sk_throw(err, "<builtin:std/json>", 440, 5);
+        }
+        sk_any res = __sk__json_parse(text.value);
+        if (res.type == 6 && strcmp(text.value, "null") != 0) {
+            JsonParser p;
+            p.src = text.value;
+            p.pos = 0;
+            p.len = (int)strlen(text.value);
+            __sk__json_skip_ws(&p);
+            if (p.pos + 4 <= p.len && strncmp(&p.src[p.pos], "null", 4) == 0) {
+                p.pos += 4;
+                __sk__json_skip_ws(&p);
+                if (p.pos != p.len) {
+                    JsonParseError* err = malloc(sizeof(JsonParseError));
+                    err->__type = "Error.JsonError.JsonParseError";
+                    err->msg = sk_string_new("Trailing garbage after JSON value.");
+                    sk_throw(err, "<builtin:std/json>", 452, 5);
+                }
+            } else {
+                JsonParseError* err = malloc(sizeof(JsonParseError));
+                err->__type = "Error.JsonError.JsonParseError";
+                err->msg = sk_string_new("Invalid JSON.");
+                sk_throw(err, "<builtin:std/json>", 457, 5);
+            }
+        }
+        return res;
+    t83 = SK_NULL_any;
+    return t83;
+}
+
+sk_string __sk__toString(sk_dict_ref data) {
+    sk_string t84;
+
+    if (data.__is_null) {
+            JsonSerializeError* err = malloc(sizeof(JsonSerializeError));
+            err->__type = "Error.JsonError.JsonSerializeError";
+            err->msg = sk_string_new("Cannot serialize 'null' dict.");
+            sk_throw(err, "<builtin:std/json>", 480, 5);
+        }
+        JsonOut o;
+        __sk__json_out_init(&o);
+        sk_any any = any_dict(data);
+        __sk__json_write_any(&o, any);
+        return sk_string_new_take(o.buf);
+    t84 = sk_string_new("");
+    return t84;
+}
+
+sk_string __sk__toStringAny(sk_any data) {
+    sk_string t85;
+
+    JsonOut o;
+        __sk__json_out_init(&o);
+        __sk__json_write_any(&o, data);
+        return sk_string_new_take(o.buf);
+    t85 = sk_string_new("");
+    return t85;
+}
+
+sk_bool __sk__isValid(sk_string text) {
+    sk_bool t86;
+
+    if (text.__is_null || text.value == NULL) return sk_bool_new(0);
+        JsonParser p;
+        p.src = text.value;
+        p.pos = 0;
+        p.len = (int)strlen(text.value);
+        sk_any res = __sk__json_parse_value(&p);
+        __sk__json_skip_ws(&p);
+        if (p.pos != p.len) return sk_bool_new(0);
+        if (res.type == 6) {
+            JsonParser p2;
+            p2.src = text.value;
+            p2.pos = 0;
+            p2.len = (int)strlen(text.value);
+            __sk__json_skip_ws(&p2);
+            if (p2.pos + 4 <= p2.len && strncmp(&p2.src[p2.pos], "null", 4) == 0) {
+                return sk_bool_new(1);
+            }
+            return sk_bool_new(0);
+        }
+        return sk_bool_new(1);
+    t86 = sk_bool_new(0);
+    return t86;
+}
+
+sk_bool __sk__isValidFile(sk_string path) {
+    sk_bool t87;
+
+    if (path.__is_null || path.value == NULL) return sk_bool_new(0);
+        FILE* f = fopen(path.value, "rb");
+        if (!f) return sk_bool_new(0);
+        fseek(f, 0, SEEK_END);
+        long size = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        if (size <= 0) { fclose(f); return sk_bool_new(0); }
+        char* buf = malloc(size + 1);
+        size_t n = fread(buf, 1, size, f);
+        buf[n] = '\0';
+        fclose(f);
+        JsonParser p;
+        p.src = buf;
+        p.pos = 0;
+        p.len = (int)n;
+        sk_any res = __sk__json_parse_value(&p);
+        __sk__json_skip_ws(&p);
+        bool ok = 1;
+        if (p.pos != p.len) ok = 0;
+        if (res.type == 6) {
+            JsonParser p2;
+            p2.src = buf;
+            p2.pos = 0;
+            p2.len = (int)n;
+            __sk__json_skip_ws(&p2);
+            if (!(p2.pos + 4 <= p2.len && strncmp(&p2.src[p2.pos], "null", 4) == 0)) {
+                ok = 0;
+            }
+        }
+        free(buf);
+        return sk_bool_new(ok);
+    t87 = sk_bool_new(0);
+    return t87;
 }
 
 void __sk__print(sk_any line) {
@@ -2633,8 +2840,8 @@ void __sk__std_io_send(sk_string line) {
 }
 
 sk_string __sk__std_io_input(sk_string prompt) {
-    sk_string t81;
-    sk_string t82;
+    sk_string t88;
+    sk_string t89;
 
     if (!prompt.__is_null) {
                 printf("%s", prompt.value);
@@ -2646,51 +2853,47 @@ sk_string __sk__std_io_input(sk_string prompt) {
                 buffer[len-1] = '\0';
             }
             return sk_string_new(buffer);
-    t81 = sk_string_new("");
-    prompt = t81;
-    t82 = sk_string_new("");
-    return t82;
+    t88 = sk_string_new("");
+    prompt = t88;
+    t89 = sk_string_new("");
+    return t89;
 }
 
 void __sk__sendln(sk_any msg) {
-    sk_string t83;
-    sk_string t84;
-    sk_string t85;
+    sk_string t90;
+    sk_string t91;
+    sk_string t92;
 
-    t83 = sk_string_new((msg).value);
-    t84 = sk_string_new("\n");
-    t85 = sk_string_concat(t83, t84);
-    free(t84.value);
-    free(t83.value);
+    t90 = any_to_string(msg);
+    t91 = sk_string_new("\n");
+    t92 = sk_string_concat(t90, t91);
     sk_call_push("<builtin:std/io>", 37, 5);
-    __sk__std_io_send(t85);
+    __sk__std_io_send(t92);
     sk_call_pop();
-    free(t85.value);
     return;
 }
 
 void __sk__sendf(sk_any msg) {
-    sk_string t86;
+    sk_string t93;
 
-    t86 = sk_string_new((msg).value);
+    t93 = any_to_string(msg);
     sk_call_push("<builtin:std/io>", 41, 5);
-    __sk__std_io_send(t86);
+    __sk__std_io_send(t93);
     sk_call_pop();
-    free(t86.value);
     return;
 }
 
 sk_string __sk__input(sk_string prefix) {
-    sk_string t87;
+    sk_string t94;
 
     sk_call_push("<builtin:std/io>", 45, 12);
-    t87 = __sk__std_io_input(prefix);
+    t94 = __sk__std_io_input(prefix);
     sk_call_pop();
-    return t87;
+    return t94;
 }
 
 sk_arr __sk__read(sk_string path) {
-    sk_arr t88;
+    sk_arr t95;
 
     if (path.__is_null) {
             InvalidPathError* err = malloc(sizeof(InvalidPathError));
@@ -2724,12 +2927,12 @@ sk_arr __sk__read(sk_string path) {
             fclose(f);
         }
         return sk_arr_new(arr);
-    t88 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t88;
+    t95 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    return t95;
 }
 
 sk_string __sk__readText(sk_string path) {
-    sk_string t89;
+    sk_string t96;
 
     sk_arr bytes = __sk__read(path);
         if (bytes.__is_null || bytes.value == NULL || bytes.value->length == 0) {
@@ -2740,8 +2943,8 @@ sk_string __sk__readText(sk_string path) {
         memcpy(buf, bytes.value->data, len);
         buf[len] = '\0';
         return sk_string_new_take(buf);
-    t89 = sk_string_new("");
-    return t89;
+    t96 = sk_string_new("");
+    return t96;
 }
 
 void __sk__write(sk_string path, sk_arr data, sk_bool append) {
@@ -2789,7 +2992,7 @@ void __sk__writeText(sk_string path, sk_string data, sk_bool append) {
 }
 
 sk_string __sk__readLine(sk_string path, sk_int lineNum) {
-    sk_string t90;
+    sk_string t97;
 
     if (path.__is_null || lineNum.value < 1) {
             InvalidPathError* err = malloc(sizeof(InvalidPathError));
@@ -2842,8 +3045,8 @@ sk_string __sk__readLine(sk_string path, sk_int lineNum) {
             result[--result_len] = '\0';
         }
         return sk_string_new_take(result);
-    t90 = sk_string_new("");
-    return t90;
+    t97 = sk_string_new("");
+    return t97;
 }
 
 void __sk__writeLine(sk_string path, sk_int lineNum, sk_string text) {
@@ -2973,29 +3176,29 @@ void __sk__delete(sk_string path) {
 }
 
 sk_bool __sk__isReadable(sk_string path) {
-    sk_bool t91;
+    sk_bool t98;
 
     if (path.__is_null) return sk_bool_new(0);
         FILE* f = fopen(path.value, "rb");
         if (f) { fclose(f); return sk_bool_new(1); }
         return sk_bool_new(0);
-    t91 = sk_bool_new(0);
-    return t91;
+    t98 = sk_bool_new(0);
+    return t98;
 }
 
 sk_bool __sk__isWriteable(sk_string path) {
-    sk_bool t92;
+    sk_bool t99;
 
     if (path.__is_null) return sk_bool_new(0);
         FILE* f = fopen(path.value, "ab");
         if (f) { fclose(f); return sk_bool_new(1); }
         return sk_bool_new(0);
-    t92 = sk_bool_new(0);
-    return t92;
+    t99 = sk_bool_new(0);
+    return t99;
 }
 
 sk_bool __sk__exists(sk_string path) {
-    sk_bool t93;
+    sk_bool t100;
 
     if (path.__is_null || path.value == NULL || path.value[0] == '\0') {
             return sk_bool_new(0);
@@ -3007,8 +3210,8 @@ sk_bool __sk__exists(sk_string path) {
         }
         // ENOENT / ENOTDIR / EACCES — считаем, что не существует
         return sk_bool_new(0);
-    t93 = sk_bool_new(0);
-    return t93;
+    t100 = sk_bool_new(0);
+    return t100;
 }
 
 void __sk__copy(sk_string src, sk_string dest) {
@@ -3081,244 +3284,5 @@ void __sk__move(sk_string src, sk_string dest) {
             sk_throw(err, "<builtin:std/files>", 451, 5);
         }
     return;
-}
-
-sk_dict_ref __sk__parse(sk_string text) {
-    sk_dict_ref t94;
-
-    if (text.__is_null) {
-            JsonParseError* err = malloc(sizeof(JsonParseError));
-            err->__type = "Error.JsonError.JsonParseError";
-            err->msg = sk_string_new("Cannot parse 'null'.");
-            sk_throw(err, "<builtin:std/json>", 340, 5);
-        }
-        sk_any res = __sk__json_parse(text.value);
-        if (res.type == 6 && strcmp(text.value, "null") != 0) {
-            JsonParser p;
-            p.src = text.value;
-            p.pos = 0;
-            p.len = (int)strlen(text.value);
-            __sk__json_skip_ws(&p);
-            if (p.pos + 4 <= p.len && strncmp(&p.src[p.pos], "null", 4) == 0) {
-                p.pos += 4;
-                __sk__json_skip_ws(&p);
-                if (p.pos != p.len) {
-                    JsonParseError* err = malloc(sizeof(JsonParseError));
-                    err->__type = "Error.JsonError.JsonParseError";
-                    err->msg = sk_string_new("Trailing garbage after JSON value.");
-                    sk_throw(err, "<builtin:std/json>", 350, 5);
-                }
-            } else {
-                JsonParseError* err = malloc(sizeof(JsonParseError));
-                err->__type = "Error.JsonError.JsonParseError";
-                err->msg = sk_string_new("Invalid JSON.");
-                sk_throw(err, "<builtin:std/json>", 355, 5);
-            }
-        }
-        if (res.type == 8) {
-            return any_to_dict(res);
-        }
-        sk_dict* d = sk_dict_new();
-        sk_dict_set(d, sk_string_new("value"), res);
-        return sk_dict_ref_new(d);
-    t94 = sk_dict_ref_new(sk_dict_new());
-    return t94;
-}
-
-sk_dict_ref __sk__parseFile(sk_string path) {
-    sk_dict_ref t95;
-
-    if (path.__is_null) {
-            JsonFileError* err = malloc(sizeof(JsonFileError));
-            err->__type = "Error.JsonError.JsonFileError";
-            err->msg = sk_string_new("Path cannot be null.");
-            sk_throw(err, "<builtin:std/json>", 380, 5);
-        }
-        FILE* f = fopen(path.value, "rb");
-        if (!f) {
-            JsonFileError* err = malloc(sizeof(JsonFileError));
-            err->__type = "Error.JsonError.JsonFileError";
-            err->msg = sk_string_new("Cannot open JSON file.");
-            sk_throw(err, "<builtin:std/json>", 386, 5);
-        }
-        fseek(f, 0, SEEK_END);
-        long size = ftell(f);
-        fseek(f, 0, SEEK_SET);
-        if (size <= 0) {
-            fclose(f);
-            JsonFileError* err = malloc(sizeof(JsonFileError));
-            err->__type = "Error.JsonError.JsonFileError";
-            err->msg = sk_string_new("JSON file is empty.");
-            sk_throw(err, "<builtin:std/json>", 396, 5);
-        }
-        char* content = malloc(size + 1);
-        size_t n = fread(content, 1, size, f);
-        content[n] = '\0';
-        fclose(f);
-        sk_any res = __sk__json_parse(content);
-        if (res.type == 6 && strcmp(content, "null") != 0) {
-            JsonParser p;
-            p.src = content;
-            p.pos = 0;
-            p.len = (int)n;
-            __sk__json_skip_ws(&p);
-            if (p.pos + 4 <= p.len && strncmp(&p.src[p.pos], "null", 4) == 0) {
-                p.pos += 4;
-                __sk__json_skip_ws(&p);
-                if (p.pos != p.len) {
-                    free(content);
-                    JsonParseError* err = malloc(sizeof(JsonParseError));
-                    err->__type = "Error.JsonError.JsonParseError";
-                    err->msg = sk_string_new("Trailing garbage after JSON value in file.");
-                    sk_throw(err, "<builtin:std/json>", 412, 5);
-                }
-            } else {
-                free(content);
-                JsonParseError* err = malloc(sizeof(JsonParseError));
-                err->__type = "Error.JsonError.JsonParseError";
-                err->msg = sk_string_new("Invalid JSON in file.");
-                sk_throw(err, "<builtin:std/json>", 418, 5);
-            }
-        }
-        free(content);
-        if (res.type == 8) {
-            return any_to_dict(res);
-        }
-        sk_dict* d = sk_dict_new();
-        sk_dict_set(d, sk_string_new("value"), res);
-        return sk_dict_ref_new(d);
-    t95 = sk_dict_ref_new(sk_dict_new());
-    return t95;
-}
-
-sk_any __sk__parseAny(sk_string text) {
-    sk_any t96;
-
-    if (text.__is_null) {
-            JsonParseError* err = malloc(sizeof(JsonParseError));
-            err->__type = "Error.JsonError.JsonParseError";
-            err->msg = sk_string_new("Cannot parse 'null'.");
-            sk_throw(err, "<builtin:std/json>", 440, 5);
-        }
-        sk_any res = __sk__json_parse(text.value);
-        if (res.type == 6 && strcmp(text.value, "null") != 0) {
-            JsonParser p;
-            p.src = text.value;
-            p.pos = 0;
-            p.len = (int)strlen(text.value);
-            __sk__json_skip_ws(&p);
-            if (p.pos + 4 <= p.len && strncmp(&p.src[p.pos], "null", 4) == 0) {
-                p.pos += 4;
-                __sk__json_skip_ws(&p);
-                if (p.pos != p.len) {
-                    JsonParseError* err = malloc(sizeof(JsonParseError));
-                    err->__type = "Error.JsonError.JsonParseError";
-                    err->msg = sk_string_new("Trailing garbage after JSON value.");
-                    sk_throw(err, "<builtin:std/json>", 452, 5);
-                }
-            } else {
-                JsonParseError* err = malloc(sizeof(JsonParseError));
-                err->__type = "Error.JsonError.JsonParseError";
-                err->msg = sk_string_new("Invalid JSON.");
-                sk_throw(err, "<builtin:std/json>", 457, 5);
-            }
-        }
-        return res;
-    t96 = SK_NULL_any;
-    return t96;
-}
-
-sk_string __sk__toString(sk_dict_ref data) {
-    sk_string t97;
-
-    if (data.__is_null) {
-            JsonSerializeError* err = malloc(sizeof(JsonSerializeError));
-            err->__type = "Error.JsonError.JsonSerializeError";
-            err->msg = sk_string_new("Cannot serialize 'null' dict.");
-            sk_throw(err, "<builtin:std/json>", 480, 5);
-        }
-        JsonOut o;
-        __sk__json_out_init(&o);
-        sk_any any = any_dict(data);
-        __sk__json_write_any(&o, any);
-        return sk_string_new_take(o.buf);
-    t97 = sk_string_new("");
-    return t97;
-}
-
-sk_string __sk__toStringAny(sk_any data) {
-    sk_string t98;
-
-    JsonOut o;
-        __sk__json_out_init(&o);
-        __sk__json_write_any(&o, data);
-        return sk_string_new_take(o.buf);
-    t98 = sk_string_new("");
-    return t98;
-}
-
-sk_bool __sk__isValid(sk_string text) {
-    sk_bool t99;
-
-    if (text.__is_null || text.value == NULL) return sk_bool_new(0);
-        JsonParser p;
-        p.src = text.value;
-        p.pos = 0;
-        p.len = (int)strlen(text.value);
-        sk_any res = __sk__json_parse_value(&p);
-        __sk__json_skip_ws(&p);
-        if (p.pos != p.len) return sk_bool_new(0);
-        if (res.type == 6) {
-            JsonParser p2;
-            p2.src = text.value;
-            p2.pos = 0;
-            p2.len = (int)strlen(text.value);
-            __sk__json_skip_ws(&p2);
-            if (p2.pos + 4 <= p2.len && strncmp(&p2.src[p2.pos], "null", 4) == 0) {
-                return sk_bool_new(1);
-            }
-            return sk_bool_new(0);
-        }
-        return sk_bool_new(1);
-    t99 = sk_bool_new(0);
-    return t99;
-}
-
-sk_bool __sk__isValidFile(sk_string path) {
-    sk_bool t100;
-
-    if (path.__is_null || path.value == NULL) return sk_bool_new(0);
-        FILE* f = fopen(path.value, "rb");
-        if (!f) return sk_bool_new(0);
-        fseek(f, 0, SEEK_END);
-        long size = ftell(f);
-        fseek(f, 0, SEEK_SET);
-        if (size <= 0) { fclose(f); return sk_bool_new(0); }
-        char* buf = malloc(size + 1);
-        size_t n = fread(buf, 1, size, f);
-        buf[n] = '\0';
-        fclose(f);
-        JsonParser p;
-        p.src = buf;
-        p.pos = 0;
-        p.len = (int)n;
-        sk_any res = __sk__json_parse_value(&p);
-        __sk__json_skip_ws(&p);
-        bool ok = 1;
-        if (p.pos != p.len) ok = 0;
-        if (res.type == 6) {
-            JsonParser p2;
-            p2.src = buf;
-            p2.pos = 0;
-            p2.len = (int)n;
-            __sk__json_skip_ws(&p2);
-            if (!(p2.pos + 4 <= p2.len && strncmp(&p2.src[p2.pos], "null", 4) == 0)) {
-                ok = 0;
-            }
-        }
-        free(buf);
-        return sk_bool_new(ok);
-    t100 = sk_bool_new(0);
-    return t100;
 }
 

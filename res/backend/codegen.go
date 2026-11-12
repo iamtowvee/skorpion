@@ -2110,6 +2110,9 @@ func (cg *CodeGenerator) typeToC(typ string) string {
 	if utils.IsArrayType(typ) {
 		return "sk_arr"
 	}
+	if strings.HasPrefix(typ, "sk_promise_") {
+		return typ
+	}
 	switch typ {
 	case "int":
 		return "sk_int"
