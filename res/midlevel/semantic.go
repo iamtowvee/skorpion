@@ -438,6 +438,10 @@ func (sa *SemanticAnalyzer) checkMain() bool {
 		return true
 	}
 
+	if errors.HasFatal() {
+		return false
+	}
+
 	mainSym := sa.GlobalScope.Resolve("main")
 	if mainSym == nil {
 		sa.addError("1501", "No main() function found", 0, 0, "")
@@ -1352,7 +1356,15 @@ func (sa *SemanticAnalyzer) analyzeAssign(assign *front.Assign) front.Node {
 				assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
 			return assign
 		}
-		// ... существующая логика для field_set
+		if sym.Type != "dict" {
+			if _, isError := sa.ErrorTypes[sym.Type]; !isError {
+				sa.addError("1539",
+					fmt.Sprintf("Cannot assign to field '%s' of '%s' (type '%s'); only dict and error types support field assignment",
+						assign.Field, assign.Name, sym.Type),
+					assign.GetLine(), assign.GetColumn(), sa.CurrentFile)
+				return assign
+			}
+		}
 		sa.analyzeNode(assign.Expr)
 		return assign
 	}
@@ -2581,6 +2593,9 @@ func (sa *SemanticAnalyzer) addError(code, message string, line, col int, file s
 
 func parseArrayElemTypeSemantic(elemType string) string {
 	if elemType == "" {
+		return ""
+	}
+	if elemType == "arr" {
 		return ""
 	}
 	if !strings.HasPrefix(elemType, "arr[") {

@@ -1547,30 +1547,48 @@ func (p *Parser) parseAssignmentOrCall() Node {
 		}
 	}
 
-	// module.func(args)
+	// obj.field / obj.field(...) / obj.field = value
 	if p.peek.Type == TOKEN_DOT {
 		p.advance()
-		if p.peek.Type == TOKEN_IDENT {
-			moduleName := name
-			funcName := p.peek.Literal
-			p.advance()
-			fullName := moduleName + "." + funcName
-
-			if p.peek.Type == TOKEN_LPAREN {
-				return p.parseCall(fullName, pos)
-			}
-
+		if p.peek.Type != TOKEN_IDENT {
 			p.hasErrors = true
-			errors.NewFatalError("0511",
-				fmt.Sprintf("Expected function call after '.', got '%s'", p.peek.Literal),
+			errors.NewFatalError("0520",
+				fmt.Sprintf("Expected field or method name after '.', got '%s'", p.peek.Literal),
 				p.peek.Line, p.peek.Column, p.FileName)
 			return nil
 		}
-		p.hasErrors = true
-		errors.NewFatalError("0520",
-			fmt.Sprintf("Expected identifier after '.', got '%s'", p.peek.Literal),
-			p.peek.Line, p.peek.Column, p.FileName)
-		return nil
+		fieldName := p.peek.Literal
+		p.advance()
+
+		// obj.field(args) — вызов метода/модуля
+		if p.peek.Type == TOKEN_LPAREN {
+			return p.parseCall(name+"."+fieldName, pos)
+		}
+
+		// obj.field = value / += / ...
+		op := p.peekAssignmentOp()
+		if op != "" {
+			p.advance()
+			value := p.parseExpression()
+			if value == nil {
+				return nil
+			}
+			if p.peek.Type == TOKEN_SEMICOLON {
+				p.advance()
+			}
+			return &Assign{
+				Position: pos,
+				Name:     name,
+				Field:    fieldName,
+				Expr:     value,
+				Op:       op,
+			}
+		}
+
+		if p.peek.Type == TOKEN_SEMICOLON {
+			p.advance()
+		}
+		return &FieldAccess{Position: pos, Object: name, Field: fieldName}
 	}
 
 	// func(args)
@@ -1615,45 +1633,6 @@ func (p *Parser) parseAssignmentOrCall() Node {
 			Position: pos,
 			Name:     name,
 			Index:    index,
-			Expr:     value,
-			Op:       op,
-		}
-	}
-
-	// x.field = value, x.field += value, ...
-	if p.peek.Type == TOKEN_DOT {
-		p.advance()
-		if p.peek.Type != TOKEN_IDENT {
-			p.hasErrors = true
-			errors.NewFatalError("0520",
-				"Expected method name after '.'",
-				p.peek.Line, p.peek.Column, p.FileName)
-			return nil
-		}
-		fieldName := p.peek.Literal
-		p.advance()
-
-		op := p.peekAssignmentOp()
-		if op == "" {
-			p.hasErrors = true
-			errors.NewFatalError("0653",
-				fmt.Sprintf("Expected assignment operator after field name, got '%s'", p.peek.Literal),
-				p.peek.Line, p.peek.Column, p.FileName)
-			return nil
-		}
-		p.advance()
-
-		value := p.parseExpression()
-		if value == nil {
-			return nil
-		}
-		if p.peek.Type == TOKEN_SEMICOLON {
-			p.advance()
-		}
-		return &Assign{
-			Position: pos,
-			Name:     name,
-			Field:    fieldName,
 			Expr:     value,
 			Op:       op,
 		}

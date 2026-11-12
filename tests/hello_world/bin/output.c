@@ -45,9 +45,9 @@ static inline void sk_call_pop(void) {
 
 typedef struct { int value; int __is_null; } sk_int;
 typedef uint8_t sk_char;
-typedef struct { float value; int __is_null; int prec; } sk_float;
-typedef struct { double value; int __is_null; int prec; } sk_double;
-typedef struct { int value; int __is_null; } sk_bool;
+typedef struct { float value; uint8_t __is_null; int8_t prec; } sk_float;
+typedef struct { double value; uint8_t __is_null; int8_t prec; } sk_double;
+typedef struct { uint8_t value; uint8_t __is_null; } sk_bool;
 typedef struct { char* value; int __is_null; } sk_string;
 typedef struct sk_array sk_array;
 typedef struct { sk_array* value; int __is_null; } sk_arr;
@@ -2453,14 +2453,27 @@ int main(int argc, char** argv) {
     sk_bool t35;
     sk_float a;
     sk_string x;
-    sk_float t36;
+    sk_string t36;
     sk_string t37;
     sk_string t38;
-    sk_string t39;
-    sk_any t40;
-    sk_dict_ref t41;
+    sk_any t39;
+    sk_dict_ref d;
+    sk_dict_ref t40;
+    sk_dict* t41;
     sk_any t42;
-    sk_promise_void* t43;
+    sk_string t43;
+    sk_dict_ref fd;
+    sk_dict* t44;
+    sk_any t45;
+    sk_string t46;
+    sk_string t47;
+    sk_any t48;
+    sk_string t49;
+    sk_string t50;
+    sk_any t51;
+    sk_string t52;
+    sk_any t53;
+    sk_promise_void* t54;
 
     MAX = sk_int_new(100);
     i = sk_int_new(0);
@@ -2544,34 +2557,51 @@ L11:
     sk_promise_release_dict(t25);
 L12:
     a = sk_float_new(3.143553f);
-    t36 = sk_float_trim(a, "35");
-    t37 = sk_float_to_string(t36);
-    t38 = sk_string_concat(sk_string_new("FirstLine\r\n\"\"\"Экранирование\"\"\"\r\n\"А тут нет\"\n\r\n\t"), t37);
-    t39 = sk_string_concat(t38, sk_string_new("\r\nSOMETHING\r\n"));
-    x = t39;
-    t40 = any_string(x);
+    t36 = sk_float_to_string(a);
+    t37 = sk_string_concat(sk_string_new("FirstLine\r\n\"\"\"Экранирование\"\"\"\r\n\"А тут нет\"\n\r\n\t"), t36);
+    t38 = sk_string_concat(t37, sk_string_new("\r\nSOMETHING\r\n"));
+    x = t38;
+    t39 = any_string(x);
     sk_call_push("main.sk", 70, 5);
-    __sk__sendln(t40);
+    __sk__sendln(t39);
     sk_call_pop();
-    sk_call_push("main.sk", 72, 20);
-    t41 = __sk__parse(sk_string_new("{ \"hi\": 3 }"));
+    t41 = sk_dict_new();
+    t42 = any_string(sk_string_new("hi"));
+    t43 = sk_string_new("x");
+    sk_dict_set(t41, t43, t42);
+    t40 = sk_dict_ref_new(t41);
+    d = t40;
+    t44 = sk_dict_deep_copy(d.value);
+    fd = sk_dict_ref_new(t44);
+    t45 = any_int(sk_int_new(3));
+    t46 = sk_string_new("x");
+    sk_dict_set(fd.value, t46, t45);
+    t48 = any_dict(d);
+    t47 = any_to_string(t48);
+    t49 = sk_string_concat(t47, sk_string_new("\n---\n"));
+    t51 = any_dict(fd);
+    t50 = any_to_string(t51);
+    t52 = sk_string_concat(t49, t50);
+    t53 = any_string(t52);
+    sk_call_push("main.sk", 76, 5);
+    __sk__sendln(t53);
     sk_call_pop();
-    t42 = any_dict(t41);
-    sk_call_push("main.sk", 72, 5);
-    __sk__sendln(t42);
-    sk_call_pop();
-    t43 = sk_promise_new_void();
-    __sk__async_ctx___sk__something* __ctx_t43 = malloc(sizeof(__sk__async_ctx___sk__something));
-    __ctx_t43->p = t43;
-    __ctx_t43->arg0 = name;
-    pthread_t __tid_t43;
-    pthread_create(&__tid_t43, NULL, __sk__async_runner___sk__something, __ctx_t43);
-    pthread_detach(__tid_t43);
-    sk_promise_await_void(t43);
+    t54 = sk_promise_new_void();
+    __sk__async_ctx___sk__something* __ctx_t54 = malloc(sizeof(__sk__async_ctx___sk__something));
+    __ctx_t54->p = t54;
+    __ctx_t54->arg0 = name;
+    pthread_t __tid_t54;
+    pthread_create(&__tid_t54, NULL, __sk__async_runner___sk__something, __ctx_t54);
+    pthread_detach(__tid_t54);
+    sk_promise_await_void(t54);
     return 0;
-    sk_promise_release_void(t43);
-    free(t38.value);
+    sk_promise_release_void(t54);
+    free(t52.value);
+    free(t50.value);
+    free(t49.value);
+    free(t47.value);
     free(t37.value);
+    free(t36.value);
     free(x.value);
     free(name.value);
     return 0;
@@ -2617,41 +2647,41 @@ sk_string __sk__std_io_input(sk_string prompt) {
 }
 
 void __sk__sendln(sk_any msg) {
-    sk_string t44;
-    sk_string t45;
+    sk_string t55;
+    sk_string t56;
 
-    t44 = any_to_string(msg);
-    t45 = sk_string_concat(t44, sk_string_new("\n"));
-    free(t44.value);
+    t55 = any_to_string(msg);
+    t56 = sk_string_concat(t55, sk_string_new("\n"));
+    free(t55.value);
     sk_call_push("<builtin:std/io>", 37, 5);
-    __sk__std_io_send(t45);
+    __sk__std_io_send(t56);
     sk_call_pop();
-    free(t45.value);
+    free(t56.value);
     return;
 }
 
 void __sk__sendf(sk_any msg) {
-    sk_string t46;
+    sk_string t57;
 
-    t46 = any_to_string(msg);
+    t57 = any_to_string(msg);
     sk_call_push("<builtin:std/io>", 41, 5);
-    __sk__std_io_send(t46);
+    __sk__std_io_send(t57);
     sk_call_pop();
-    free(t46.value);
+    free(t57.value);
     return;
 }
 
 sk_string __sk__input(sk_string prefix) {
-    sk_string t47;
+    sk_string t58;
 
     sk_call_push("<builtin:std/io>", 45, 12);
-    t47 = __sk__std_io_input(prefix);
+    t58 = __sk__std_io_input(prefix);
     sk_call_pop();
-    return t47;
+    return t58;
 }
 
 sk_arr __sk__read(sk_string path) {
-    sk_arr t48;
+    sk_arr t59;
 
     if (path.__is_null) {
             InvalidPathError* err = malloc(sizeof(InvalidPathError));
@@ -2685,8 +2715,8 @@ sk_arr __sk__read(sk_string path) {
             fclose(f);
         }
         return sk_arr_new(arr);
-    t48 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t48;
+    t59 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    return t59;
 }
 
 sk_string __sk__readText(sk_string path) {
@@ -3030,8 +3060,8 @@ void __sk__move(sk_string src, sk_string dest) {
 }
 
 sk_dict_ref __sk__parse(sk_string text) {
-    sk_dict_ref t49;
-    sk_dict* t50;
+    sk_dict_ref t60;
+    sk_dict* t61;
 
     if (text.__is_null) {
             JsonParseError* err = malloc(sizeof(JsonParseError));
@@ -3068,14 +3098,14 @@ sk_dict_ref __sk__parse(sk_string text) {
         sk_dict* d = sk_dict_new();
         sk_dict_set(d, sk_string_new("value"), res);
         return sk_dict_ref_new(d);
-    t50 = sk_dict_new();
-    t49 = sk_dict_ref_new(t50);
-    return t49;
+    t61 = sk_dict_new();
+    t60 = sk_dict_ref_new(t61);
+    return t60;
 }
 
 sk_dict_ref __sk__parseFile(sk_string path) {
-    sk_dict_ref t51;
-    sk_dict* t52;
+    sk_dict_ref t62;
+    sk_dict* t63;
 
     if (path.__is_null) {
             JsonFileError* err = malloc(sizeof(JsonFileError));
@@ -3136,9 +3166,9 @@ sk_dict_ref __sk__parseFile(sk_string path) {
         sk_dict* d = sk_dict_new();
         sk_dict_set(d, sk_string_new("value"), res);
         return sk_dict_ref_new(d);
-    t52 = sk_dict_new();
-    t51 = sk_dict_ref_new(t52);
-    return t51;
+    t63 = sk_dict_new();
+    t62 = sk_dict_ref_new(t63);
+    return t62;
 }
 
 sk_any __sk__parseAny(sk_string text) {

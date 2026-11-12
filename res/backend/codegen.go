@@ -69,9 +69,9 @@ func (cg *CodeGenerator) Generate() string {
 	// ===== structs =====
 	cg.writeLine("typedef struct { int value; int __is_null; } sk_int;")
 	cg.writeLine("typedef uint8_t sk_char;")
-	cg.writeLine("typedef struct { float value; int __is_null; int prec; } sk_float;")
-	cg.writeLine("typedef struct { double value; int __is_null; int prec; } sk_double;")
-	cg.writeLine("typedef struct { int value; int __is_null; } sk_bool;")
+	cg.writeLine("typedef struct { float value; uint8_t __is_null; int8_t prec; } sk_float;")
+	cg.writeLine("typedef struct { double value; uint8_t __is_null; int8_t prec; } sk_double;")
+	cg.writeLine("typedef struct { uint8_t value; uint8_t __is_null; } sk_bool;")
 	cg.writeLine("typedef struct { char* value; int __is_null; } sk_string;")
 	cg.writeLine("typedef struct sk_array sk_array;")
 	cg.writeLine("typedef struct { sk_array* value; int __is_null; } sk_arr;")

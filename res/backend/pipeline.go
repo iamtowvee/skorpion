@@ -2,12 +2,16 @@ package backend
 
 import (
 	"fmt"
+	"os"
 	"skrp/res/debug"
 	"skrp/res/errors"
 	"skrp/res/front"
+	"skrp/res/log"
 	"strconv"
 	"strings"
 )
+
+var version string
 
 type Pipeline struct {
 	Program       *front.Program
@@ -26,7 +30,8 @@ type LoopLabels struct {
 	End   string // метка конца (для break)
 }
 
-func NewPipeline(prog *front.Program, cfg *front.Config) *Pipeline {
+func NewPipeline(prog *front.Program, cfg *front.Config, ver string) *Pipeline {
+	version = ver
 	return &Pipeline{
 		Program:       prog,
 		IR:            &IRProgram{Functions: []IRFunction{}, Globals: []IRGlobal{}, Imports: []IRImport{}},
@@ -1719,11 +1724,29 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 				})
 				return
 			}
+			// dict x = y (y — Ident/Index/Field) → deep copy (value-semantics)
+			if _, isRef := decl.Expr.(*front.Ident); isRef {
+				src := p.processExpression(decl.Expr, irFn) // "y"
+				deep := p.newTemp()
+				irFn.Locals = append(irFn.Locals, "sk_dict* "+deep)
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op: "call", Result: deep,
+					Arg1:       "sk_dict_deep_copy",
+					Arg2:       src + ".value",
+					ReturnType: "sk_dict*",
+				})
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op: "call", Result: decl.Name,
+					Arg1:       "sk_dict_ref_new",
+					Arg2:       deep,
+					ReturnType: "sk_dict_ref",
+				})
+				return
+			}
+
 			exprResult := p.processExpression(decl.Expr, irFn)
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:     "=",
-				Result: decl.Name,
-				Arg1:   exprResult,
+				Op: "=", Result: decl.Name, Arg1: exprResult,
 			})
 		} else {
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
@@ -1771,11 +1794,29 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 				return
 			}
 
+			// arr x = y (y — ссылка) → deep copy
+			if _, isRef := decl.Expr.(*front.Ident); isRef {
+				src := p.processExpression(decl.Expr, irFn) // "y"
+				deep := p.newTemp()
+				irFn.Locals = append(irFn.Locals, "sk_array* "+deep)
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op: "call", Result: deep,
+					Arg1:       "sk_array_deep_copy",
+					Arg2:       src + ".value",
+					ReturnType: "sk_array*",
+				})
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op: "call", Result: decl.Name,
+					Arg1:       "sk_arr_new",
+					Arg2:       deep,
+					ReturnType: "sk_arr",
+				})
+				return
+			}
+
 			exprResult := p.processExpressionTyped(decl.Expr, decl.ElemType, irFn)
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
-				Op:     "=",
-				Result: decl.Name,
-				Arg1:   exprResult,
+				Op: "=", Result: decl.Name, Arg1: exprResult,
 			})
 		} else {
 			var elemType int = 5
@@ -1904,27 +1945,36 @@ func (p *Pipeline) processAssign(assign *front.Assign, irFn *IRFunction) {
 
 	// === dict: d.key = value ===
 	if assign.Field != "" {
+		varType := ""
 		if irFn.VarTypes != nil {
-			if varType, ok := irFn.VarTypes[assign.Name]; ok && varType == "dict" {
-				valType := p.getExprType(assign.Expr, irFn)
-				val := p.processExpression(assign.Expr, irFn)
-				valAny := p.wrapToAny(valType, val, irFn)
-
-				keyStr := p.newTemp()
-				irFn.Locals = append(irFn.Locals, "sk_string "+keyStr)
-				irFn.Instructions = append(irFn.Instructions, IRInstruction{
-					Op:     "=",
-					Result: keyStr,
-					Arg1:   fmt.Sprintf("sk_string_new(%q)", assign.Field),
-				})
-				irFn.Instructions = append(irFn.Instructions, IRInstruction{
-					Op:   "call",
-					Arg1: "sk_dict_set",
-					Arg2: assign.Name + ".value, " + keyStr + ", " + valAny,
-				})
-				return
-			}
+			varType = irFn.VarTypes[assign.Name]
 		}
+		if varType != "dict" {
+			// Семантика уже должна была поймать (1539). Здесь — страховка,
+			// чтобы не генерировать `x = sk_int_new(...)` для не-dict.
+			p.crash(
+				fmt.Sprintf("processAssign: field '%s' assigned on non-dict '%s' (type %q)",
+					assign.Field, assign.Name, varType),
+				assign.GetLine(), assign.GetColumn(), irFn.File,
+			)
+			return
+		}
+
+		// dict-ветка
+		valType := p.getExprType(assign.Expr, irFn)
+		val := p.processExpression(assign.Expr, irFn)
+		valAny := p.wrapToAny(valType, val, irFn)
+		keyStr := p.newTemp()
+		irFn.Locals = append(irFn.Locals, "sk_string "+keyStr)
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op: "=", Result: keyStr,
+			Arg1: fmt.Sprintf("sk_string_new(%q)", assign.Field),
+		})
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op: "call", Arg1: "sk_dict_set",
+			Arg2: assign.Name + ".value, " + keyStr + ", " + valAny,
+		})
+		return
 	}
 
 	// === Compound op: x <op>= expr ===
@@ -2986,7 +3036,11 @@ func (p *Pipeline) processExpression(expr front.Node, irFn *IRFunction) string {
 	case *front.ArrayAdd:
 		return p.processArrayAdd(n, irFn)
 	default:
-		return "SK_NULL_int"
+		p.crash(
+			fmt.Sprintf("processExpression: unhandled node %T", expr),
+			expr.GetLine(), expr.GetColumn(), irFn.File,
+		)
+		return ""
 	}
 }
 
@@ -5542,9 +5596,21 @@ func (p *Pipeline) processTernary(t *front.TernaryExpr, irFn *IRFunction) string
 // processFormatExpr — генерация ^Nf или ^X...
 func (p *Pipeline) processFormatExpr(fe *front.FormatExpr, irFn *IRFunction) string {
 	exprType := p.getExprType(fe.Expr, irFn)
-	if exprType != "float" && exprType != "double" && exprType != "int" {
-		// не можем обработать — вернуть expr как есть
+	// int — no-op (для ^Nf с N=0 — trunc, для остальных — return expr)
+	if exprType == "int" {
+		if fe.Mode == "Nf" && fe.N == 0 {
+			return p.processExpression(fe.Expr, irFn)
+		}
 		return p.processExpression(fe.Expr, irFn)
+	}
+
+	if exprType != "float" && exprType != "double" {
+		p.crash(
+			fmt.Sprintf("processFormatExpr: unsupported type %q for ^%s (expr %T)",
+				exprType, fe.Mode, fe.Expr),
+			fe.GetLine(), fe.GetColumn(), irFn.File,
+		)
+		return ""
 	}
 	expr := p.processExpression(fe.Expr, irFn)
 
@@ -5740,4 +5806,15 @@ func (p *Pipeline) processCharBinary(bin *front.BinaryExpr, leftType, rightType 
 		ReturnType: "sk_string",
 	})
 	return result
+}
+
+// crash — внутренняя ошибка компилятора (не ошибка пользователя).
+// Используется в default-ветках вместо fallback'ов sk_int/sk_string_new("<error>").
+// Печатает IMPORTANT-баннер (PrintCrashBanner) и завершает процесс с EX_SOFTWARE.
+func (p *Pipeline) crash(msg string, line, col int, file string) {
+	panicVal := fmt.Sprintf("%s at %s:%d:%d (pipeline)", msg, file, line, col)
+
+	log.PrintCrashBanner(os.Stderr, panicVal, version)
+
+	os.Exit(70) // EX_SOFTWARE
 }

@@ -64,12 +64,16 @@ void main(arr args) {
     string x = """FirstLine
 \"\"\"Экранирование\"\"\"
 "А тут нет"\n
-\t""" + $(a^X{3,5}) + """
+\t""" + $a + """
 SOMETHING
 """
     io.sendln(x)
 
-    io.sendln(json.parse("{ \"hi\": 3 }"))
+    const dict d = {x: "hi"}
+    dict fd = d
+    fd.x = 3
+
+    io.sendln($d + "\n---\n" + $fd)
 
     await something(name)
 }
