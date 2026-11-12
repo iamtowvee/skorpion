@@ -1,6 +1,8 @@
-[ ] Add _ as argument in functions calls
+[V] Add _ as argument in functions calls
 
-[ ] Think about x == |a, b| -> (x == a || x == b)
+[X] Think about x == |a, b| -> (x == a || x == b)
+
+[V] Refactor realisation Dictionary to HashMap
 
 use std/files &fs
 
