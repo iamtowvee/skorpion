@@ -141,7 +141,6 @@ func (sa *SemanticAnalyzer) Analyze() bool {
 			{Name: "msg", Type: "string"},
 		},
 		Parent: "",
-		IsNew:  false,
 	}
 	sa.ErrorTypes["Error"] = errorDecl
 	sa.GlobalScope.Define("Error", SYM_CONST, "Error", true)

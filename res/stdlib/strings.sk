@@ -5,28 +5,28 @@
       Copyrights (c) 2026 iamtowvee
   ------------------------------------- */
 
-const VoidCasingError{} = new Error
+const VoidCasingError{} inherit Error
 
-const VoidMeasurementError{} = new Error 
-const VoidLengthMeasurementError{} = new VoidMeasurementError
-const VoidBytesMeasurementError{} = new VoidMeasurementError
+const VoidMeasurementError{} inherit Error 
+const VoidLengthMeasurementError{} inherit VoidMeasurementError
+const VoidBytesMeasurementError{} inherit VoidMeasurementError
 
-const VoidActionsError{} = new Error
-const VoidConcatError{} = new VoidActionsError
+const VoidActionsError{} inherit Error
+const VoidConcatError{} inherit VoidActionsError
 
-const VoidLowerizeError{} = new VoidCasingError
-const VoidUpperizeError{} = new VoidCasingError
-const VoidCapitalizeError{} = new VoidCasingError
+const VoidLowerizeError{} inherit VoidCasingError
+const VoidUpperizeError{} inherit VoidCasingError
+const VoidCapitalizeError{} inherit VoidCasingError
 
-const VoidSearchError{} = new Error
-const VoidHasError{} = new VoidSearchError
-const VoidStartWithError{} = new VoidSearchError
-const VoidEndWithError{} = new VoidSearchError
+const VoidSearchError{} inherit Error
+const VoidHasError{} inherit VoidSearchError
+const VoidStartWithError{} inherit VoidSearchError
+const VoidEndWithError{} inherit VoidSearchError
 
-const VoidSliceError{} = new VoidMeasurementError
-const OutOfRangeSliceError{} = new Error
-const EmptySeparatorError{} = new Error
-const VoidCrashError{} = new VoidMeasurementError
+const VoidSliceError{} inherit VoidMeasurementError
+const OutOfRangeSliceError{} inherit Error
+const EmptySeparatorError{} inherit Error
+const VoidCrashError{} inherit VoidMeasurementError
 
 includeC ~~~
 // UTF-8: кодирование codepoint в буфер

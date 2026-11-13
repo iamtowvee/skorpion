@@ -11,3 +11,5 @@ buildOutFile["{name}-{channel}-{version}.exe"]
 
 tags[(&channel, "release")]
 #! → ["stable", "release"]
+
+c["./text"]

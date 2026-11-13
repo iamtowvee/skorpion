@@ -5,11 +5,11 @@
       Copyrights (c) 2026 iamtowvee
   ------------------------------------- */
 
-const FileSystemError{} = new Error
-const FileNotFoundError{} = new FileSystemError
-const PermissionDeniedError{} = new FileSystemError
-const FileOperationError{} = new FileSystemError
-const InvalidPathError{} = new FileSystemError
+new FileSystemError{} inherit Error
+new FileNotFoundError{} inherit FileSystemError
+new PermissionDeniedError{} inherit FileSystemError
+new FileOperationError{} inherit FileSystemError
+new InvalidPathError{} inherit FileSystemError
 
 includeC ~~~
 #include <stdlib.h>

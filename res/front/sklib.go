@@ -588,7 +588,6 @@ func (w *binWriter) node(n Node) error {
 			}
 		}
 		w.str(v.Parent)
-		w.bool(v.IsNew)
 		w.str(v.Module)
 		return nil
 	case *ErrorField:
@@ -1826,9 +1825,6 @@ func (r *binReader) errorDeclNode() (*ErrorDecl, error) {
 		d.Fields = append(d.Fields, f)
 	}
 	if d.Parent, err = r.str(); err != nil {
-		return nil, err
-	}
-	if d.IsNew, err = r.bool(); err != nil {
 		return nil, err
 	}
 	if d.Module, err = r.str(); err != nil {

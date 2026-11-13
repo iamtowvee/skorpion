@@ -580,7 +580,6 @@ type ErrorDecl struct {
 	Name   string
 	Fields []*ErrorField
 	Parent string
-	IsNew  bool
 	Module string
 }
 

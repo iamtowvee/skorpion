@@ -5,10 +5,10 @@
       Copyrights (c) 2026 iamtowvee
   ------------------------------------- */
 
-const JsonError{} = new Error
-const JsonParseError{} = new JsonError
-const JsonFileError{} = new JsonError
-const JsonSerializeError{} = new JsonError
+new JsonError{} inherit Error
+new JsonParseError{} inherit JsonError
+new JsonFileError{} inherit JsonError
+new JsonSerializeError{} inherit JsonError
 
 includeC ~~~
 // =====================================================================

@@ -5,9 +5,9 @@
       Copyrights (c) 2026 iamtowvee
   ------------------------------------- */
 
-const ArrayError{} = new Error
-const ArrayIdNotFoundError{} = new ArrayError
-const HeteroArrayRemoveError{} = new ArrayError
+new ArrayError{} inherit Error
+new ArrayIdNotFoundError{} inherit ArrayError
+new HeteroArrayRemoveError{} inherit ArrayError
 
 includeC ~~~
 // Копирует sk_array с полным deep-copy элементов.

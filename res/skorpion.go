@@ -958,6 +958,16 @@ func buildProject() {
 	}
 	sourceLines := strings.Split(string(content), "\n")
 
+	// Резолвер: main.sk отдаём уже прочитанным, остальные (включая builtin)
+	// resolves сам errors.resolveSource.
+	errors.SetSourceResolver(func(path string) []string {
+		if path == mainFile {
+			return sourceLines
+		}
+		return nil // пусть errors.resolveSource сам разбирается (builtin/os.ReadFile)
+	})
+	defer errors.SetSourceResolver(nil)
+
 	mainProg, im, err := front.LoadProgramWithConfig(mainFile, projectPath, cfg.LibsDir, cfg.Dependencies)
 	if err != nil {
 		errors.NewFatalError("0012", fmt.Sprintf("Import error: %v", err), 0, 0, mainFile)
@@ -1150,6 +1160,14 @@ func buildLib(projectPath string) {
 		return
 	}
 	sourceLines := strings.Split(string(content), "\n")
+
+	errors.SetSourceResolver(func(path string) []string {
+		if path == mainFile {
+			return sourceLines
+		}
+		return nil
+	})
+	defer errors.SetSourceResolver(nil)
 
 	// Парсим с учётом импортов и настроек библиотек
 	mainProg, im, err := front.LoadProgramWithConfig(
@@ -1859,11 +1877,7 @@ func printAST(node front.Node, indent int) {
 		fmt.Printf("%s%s %s", prefix,
 			cli.Colors.Magenta("ErrorDecl"),
 			cli.Colors.Bold(n.Name))
-		if n.IsNew {
-			fmt.Printf(" = new %s", n.Parent)
-		} else {
-			fmt.Printf(" = %s", n.Parent)
-		}
+		fmt.Printf(" = %s", n.Parent)
 		fmt.Println()
 		for _, field := range n.Fields {
 			defStr := ""

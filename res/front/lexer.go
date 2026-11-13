@@ -444,6 +444,7 @@ func (l *Lexer) readIdent() Token {
 		"false":    TOKEN_KEYWORD,
 		"T":        TOKEN_KEYWORD,
 		"new":      TOKEN_KEYWORD,
+		"inherit":  TOKEN_KEYWORD,
 		"Error":    TOKEN_KEYWORD,
 		"throw":    TOKEN_KEYWORD,
 		"try":      TOKEN_KEYWORD,

@@ -9,22 +9,22 @@ use #std/strings
 
 /* === Errors === */
 
-const RefactorError{} = new Error
+const RefactorError{} inherit Error
 
-const VoidRefactorError{} = new RefactorError
-const CustomRefactorError{} = new RefactorError
+const VoidRefactorError{} inherit RefactorError
+const CustomRefactorError{} inherit RefactorError
 
-const VoidToIntRefactorError{} = new VoidRefactorError
-const VoidToBoolRefactorError{} = new VoidRefactorError
-const VoidToFloatRefactorError{} = new VoidRefactorError
-const VoidToDoubleRefactorError{} = new VoidRefactorError
-const VoidToStringRefactorError{} = new VoidRefactorError
+const VoidToIntRefactorError{} inherit VoidRefactorError
+const VoidToBoolRefactorError{} inherit VoidRefactorError
+const VoidToFloatRefactorError{} inherit VoidRefactorError
+const VoidToDoubleRefactorError{} inherit VoidRefactorError
+const VoidToStringRefactorError{} inherit VoidRefactorError
 
-const CustomToIntRefactorError{} = new CustomRefactorError
-const CustomToBoolRefactorError{} = new CustomRefactorError
-const CustomToFloatRefactorError{} = new CustomRefactorError
-const CustomToDoubleRefactorError{} = new CustomRefactorError
-const CustomToStringRefactorError{} = new CustomRefactorError
+const CustomToIntRefactorError{} inherit CustomRefactorError
+const CustomToBoolRefactorError{} inherit CustomRefactorError
+const CustomToFloatRefactorError{} inherit CustomRefactorError
+const CustomToDoubleRefactorError{} inherit CustomRefactorError
+const CustomToStringRefactorError{} inherit CustomRefactorError
 
 /* === Basic === */
 

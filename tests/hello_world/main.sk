@@ -57,7 +57,7 @@ void main(arr args) {
     if (fs.exists("./textы")) {
         fs.delete("./textы")
     } else {
-        fs.delete("./text")
+        fs.delete($getConfigField("c"))
     }
 
     float a = 3.143553f

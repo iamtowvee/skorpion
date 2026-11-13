@@ -9,11 +9,11 @@ use std/strings
 
 /* === Errors === */
 
-const TerminalError{} = new Error
-const NullCommandError{} = new TerminalError
-const NullTextError{} = new TerminalError
-const CommandFailedError{} = new TerminalError
-const BadColorCodeError{} = new TerminalError
+const TerminalError{} inherit Error
+const NullCommandError{} inherit TerminalError
+const NullTextError{} inherit TerminalError
+const CommandFailedError{} inherit TerminalError
+const BadColorCodeError{} inherit TerminalError
 
 /* ============================
    Run shell command, return output

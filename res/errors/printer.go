@@ -2,12 +2,77 @@ package errors
 
 import (
 	"fmt"
+	"os"
 	"skrp/res/cli"
+	"skrp/res/stdlib"
 	"strings"
 	"time"
 )
 
-// printTip выводит блок TIP: >>> TIP (салатовый), | текст, | (пустая).
+// ============================================================================
+// Source resolver — единый способ получить строки файла по err.File.
+//
+// По умолчанию:
+//   - builtin:<...>  → stdlib.GetModule
+//   - иначе          → os.ReadFile
+//
+// skorpion.go может переопределить (например, чтобы отдать уже прочитанный
+// main.sk без повторного I/O).
+// ============================================================================
+
+var sourceResolver func(path string) []string
+
+// SetSourceResolver — переопределить резолвер (nil = сбросить на дефолт).
+func SetSourceResolver(fn func(path string) []string) {
+	sourceResolver = fn
+}
+
+// resolveSource возвращает строки файла для err.File.
+//
+// Приоритет:
+//  1. Если задан sourceResolver — его результат (если не nil).
+//  2. builtin:<...>  → stdlib.GetModule.
+//  3. иначе          → os.ReadFile.
+//
+// Возвращает nil, если файл не удалось получить.
+func resolveSource(path string) []string {
+	if path == "" {
+		return nil
+	}
+
+	if sourceResolver != nil {
+		if lines := sourceResolver(path); lines != nil {
+			return lines
+		}
+	}
+
+	if strings.HasPrefix(path, "<builtin:") && strings.HasSuffix(path, ">") {
+		modulePath := strings.TrimSuffix(strings.TrimPrefix(path, "<builtin:"), ">")
+		if content, ok := stdlib.GetModule(modulePath); ok {
+			return strings.Split(content, "\n")
+		}
+		return nil
+	}
+
+	if strings.HasPrefix(path, "builtin:") {
+		modulePath := strings.TrimPrefix(path, "builtin:")
+		if content, ok := stdlib.GetModule(modulePath); ok {
+			return strings.Split(content, "\n")
+		}
+		return nil
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	return strings.Split(string(data), "\n")
+}
+
+// ============================================================================
+// printTip — блок TIP.
+// ============================================================================
+
 func printTip(codeInfo ErrorCode, width int) {
 	if codeInfo.Tip == "" {
 		return
@@ -20,11 +85,13 @@ func printTip(codeInfo ErrorCode, width int) {
 	fmt.Printf("%s\n", cli.Colors.Dim(pipePrefix))
 }
 
+// ============================================================================
 // printDiag — единая отрисовка Error и Warning.
 //
-// Раньше PrintError и PrintWarning были на 95% идентичны:
-// отличались только цвет и префикс ("Err+" vs "Warn+").
-// Параметр isWarn выбирает цветовую схему.
+// sourceLines — строки файла, к которому относится ошибка (или nil).
+// Резолвится вызывающим кодом (PrintErrorReport) через resolveSource.
+// ============================================================================
+
 func printDiag(d SkorpionError, sourceLines []string, isWarn bool) {
 	codeInfo := d.GetCodeInfo()
 
@@ -37,7 +104,6 @@ func printDiag(d SkorpionError, sourceLines []string, isWarn bool) {
 		colonColor = cli.Colors.Yellow
 	}
 
-	// width — для выравнивания контекста и >>>.
 	width := 1
 	hasContext := len(sourceLines) > 0 && d.Line > 0 && d.Line <= len(sourceLines)
 	var ctxStart, ctxEnd int
@@ -66,7 +132,6 @@ func printDiag(d SkorpionError, sourceLines []string, isWarn bool) {
 		filePath = "<unknown>"
 	}
 
-	// Шапка: >>> выровнен с | контекста.
 	arrowPrefix := strings.Repeat(" ", width+1) + ">>>"
 	fmt.Printf("%s %s %s %s %d, %s %d\n",
 		cli.Colors.Dim(arrowPrefix),
@@ -125,25 +190,41 @@ func PrintWarning(warn SkorpionError, sourceLines []string) {
 	printDiag(warn, sourceLines, true)
 }
 
+// ============================================================================
+// PrintErrorReport — группирует сообщения по err.File и рисует
+// каждое с контекстом СВОЕГО файла.
+//
+// report.FilePath и report.SourceCode используются как «главный» файл
+// (main.sk) и fallback — если resolveSource(err.File) вернул nil,
+// берём report.SourceCode, но только когда err.File == report.FilePath
+// ИЛИ report.SourceCode явно просили использовать всегда.
+//
+// Правильное поведение: контекст берётся строго из err.File.
+// report.SourceCode — fallback для случая, когда резолвер не может
+// прочитать файл (например, main.sk передан как уже прочитанные строки).
+// ============================================================================
+
 func PrintErrorReport(report ErrorReport) {
-	// Сначала warnings (с дедупликацией).
+	// Дедупликация warnings.
 	if len(report.Warnings) > 0 {
 		uniqueWarnings := []SkorpionError{}
 		seen := make(map[string]bool)
 		for _, w := range report.Warnings {
-			key := fmt.Sprintf("%s:%d:%d", w.Code, w.Line, w.Column)
+			key := fmt.Sprintf("%s:%s:%d:%d", w.File, w.Code, w.Line, w.Column)
 			if !seen[key] {
 				seen[key] = true
 				uniqueWarnings = append(uniqueWarnings, w)
 			}
 		}
+
+		cache := make(map[string][]string)
 		for _, w := range uniqueWarnings {
-			PrintWarning(w, report.SourceCode)
+			lines := resolveSourceCached(w.File, report, cache)
+			PrintWarning(w, lines)
 			fmt.Println()
 		}
 	}
 
-	// Если ошибок нет — только warnings.
 	if len(report.Errors) == 0 {
 		if len(report.Warnings) > 0 {
 			fmt.Printf("%s in %s (%dms) with %s (count %d).\n",
@@ -156,19 +237,21 @@ func PrintErrorReport(report ErrorReport) {
 		return
 	}
 
-	// Убираем дубли ошибок.
+	// Дедупликация errors.
 	uniqueErrors := []SkorpionError{}
 	seen := make(map[string]bool)
 	for _, err := range report.Errors {
-		key := fmt.Sprintf("%s:%d:%d", err.Code, err.Line, err.Column)
+		key := fmt.Sprintf("%s:%s:%d:%d", err.File, err.Code, err.Line, err.Column)
 		if !seen[key] {
 			seen[key] = true
 			uniqueErrors = append(uniqueErrors, err)
 		}
 	}
 
+	cache := make(map[string][]string)
 	for _, err := range uniqueErrors {
-		PrintError(err, report.SourceCode)
+		lines := resolveSourceCached(err.File, report, cache)
+		PrintError(err, lines)
 		fmt.Println()
 	}
 
@@ -179,6 +262,34 @@ func PrintErrorReport(report ErrorReport) {
 		cli.Colors.Red("errors"),
 		len(uniqueErrors))
 }
+
+// resolveSourceCached — resolveSource с кэшем по файлу.
+//
+// Fallback на report.SourceCode, только если:
+//   - path == report.FilePath, ИЛИ
+//   - resolveSource(path) вернул nil (файл недоступен).
+//
+// ВАЖНО: fallback на report.SourceCode при чужом path'е больше не применяется —
+// лучше показать ошибку без контекста, чем строки из другого файла.
+func resolveSourceCached(path string, report ErrorReport, cache map[string][]string) []string {
+	if lines, ok := cache[path]; ok {
+		return lines
+	}
+
+	lines := resolveSource(path)
+
+	// Если резолвер не смог, и это «главный» файл — отдаём report.SourceCode.
+	if lines == nil && path == report.FilePath && len(report.SourceCode) > 0 {
+		lines = report.SourceCode
+	}
+
+	cache[path] = lines
+	return lines
+}
+
+// ============================================================================
+// ExplainError — без изменений.
+// ============================================================================
 
 func ExplainError(code string) {
 	if len(code) > 5 && code[:5] == "Warn+" {

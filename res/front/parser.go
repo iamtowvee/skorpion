@@ -123,31 +123,52 @@ func (p *Parser) Parse() *Program {
 		}
 	}
 
-	// const на верхнем уровне:
-	//   const int PI = ...             → глобальная константа (экспортируемая)
-	//   const int *PI = ...            → глобальная константа (приватная)
-	//   const MyError{...} = new ...   → объявление error-типа
-	for p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "const" {
+	// const Type name = ...       → глобальная константа
+	// const Type *name = ...      → глобальная константа (приватная)
+	// new Name{...} inherit P     → объявление error-типа
+	for {
 		if p.hasErrors || errors.HasFatal() {
 			break
 		}
-		pos := p.pos()
-		p.advance() // const
 
-		if p.isType(p.peek) {
-			node := p.parseConstVarDeclAfterConst(pos, true)
-			if vd, ok := node.(*VarDecl); ok && vd != nil {
-				prog.GlobalVars = append(prog.GlobalVars, vd)
+		// const Type name = ... (глобальная константа)
+		if p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "const" {
+			pos := p.pos()
+			p.advance() // const
+
+			if p.isType(p.peek) {
+				node := p.parseConstVarDeclAfterConst(pos, true)
+				if vd, ok := node.(*VarDecl); ok && vd != nil {
+					prog.GlobalVars = append(prog.GlobalVars, vd)
+				}
+			} else {
+				p.hasErrors = true
+				errors.NewFatalError("0502",
+					fmt.Sprintf("Expected type after 'const', got '%s'", p.peek.Literal),
+					p.peek.Line, p.peek.Column, p.FileName)
+				return prog
 			}
-		} else {
-			node := p.parseErrorDeclAfterConst(pos)
+			if errors.HasFatal() {
+				return prog
+			}
+			continue
+		}
+
+		// new Name{...} inherit Parent (error-тип)
+		if p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "new" {
+			pos := p.pos()
+			p.advance() // new
+			node := p.parseErrorDecl(pos)
 			if ed, ok := node.(*ErrorDecl); ok && ed != nil {
 				prog.ErrorDecls = append(prog.ErrorDecls, ed)
 			}
+			if errors.HasFatal() {
+				return prog
+			}
+			continue
 		}
-		if errors.HasFatal() {
-			return prog
-		}
+
+		break
 	}
 
 	funcCount := 0
@@ -610,14 +631,21 @@ func (p *Parser) parseStatement() Node {
 				return p.parseConstVarDeclAfterConst(pos, false)
 			}
 
-			if p.peek.Type != TOKEN_IDENT {
-				p.hasErrors = true
-				errors.NewFatalError("0580",
-					fmt.Sprintf("Expected type or error name after 'const', got '%s'", p.peek.Literal),
-					p.peek.Line, p.peek.Column, p.FileName)
-				return nil
-			}
-			return p.parseErrorDeclAfterConst(pos)
+			p.hasErrors = true
+			errors.NewFatalError("0502",
+				fmt.Sprintf("Expected type after 'const', got '%s'", p.peek.Literal),
+				p.peek.Line, p.peek.Column, p.FileName)
+			return nil
+
+		case "new":
+			pos := p.pos()
+			p.advance() // new
+
+			p.hasErrors = true
+			errors.NewFatalError("0598",
+				"Error type declaration ('new Name{...} inherit Parent') is only allowed at module level",
+				pos.Line, pos.Column, p.FileName)
+			return nil
 
 		case "int", "string", "float", "double", "bool", "char", "arr", "dict", "any", "T":
 			return p.parseVarDecl()
@@ -2100,6 +2128,15 @@ func (p *Parser) parsePrimary() Node {
 	case TOKEN_KEYWORD:
 		pos := p.pos()
 
+		if p.peek.Literal == "new" {
+			p.hasErrors = true
+			errors.NewFatalError("0599",
+				"'new' is only allowed at module level for error type declarations: 'new Name{...} inherit Parent'",
+				p.peek.Line, p.peek.Column, p.FileName)
+			p.advance()
+			return nil
+		}
+
 		if p.peek.Literal == "null" {
 			p.advance()
 			return &NullLiteral{Position: pos}
@@ -2307,16 +2344,18 @@ func parseArrayElemTypeFromFullType(fullType string) string {
 	return fullType[4 : len(fullType)-1]
 }
 
-// parseErrorDeclAfterConst — разбор error-типа после 'const'.
-func (p *Parser) parseErrorDeclAfterConst(pos Position) Node {
+// parseErrorDecl — разбирает error-тип: new Name{...} inherit Parent
+// (вызывается после того, как `new` уже съеден).
+func (p *Parser) parseErrorDecl(pos Position) Node {
 	if p.hasErrors || errors.HasFatal() {
 		return nil
 	}
 
+	// Имя типа — с заглавной
 	if p.peek.Type != TOKEN_IDENT {
 		p.hasErrors = true
 		errors.NewFatalError("0580",
-			fmt.Sprintf("Expected error type name, got '%s'", p.peek.Literal),
+			fmt.Sprintf("Expected error type name after 'new', got '%s'", p.peek.Literal),
 			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
 	}
@@ -2417,37 +2456,35 @@ func (p *Parser) parseErrorDeclAfterConst(pos Position) Node {
 	}
 	p.advance()
 
-	if p.peek.Type != TOKEN_EQUALS {
+	// inherit Parent
+	if p.peek.Type != TOKEN_KEYWORD || p.peek.Literal != "inherit" {
 		p.hasErrors = true
-		errors.NewFatalError("0588",
-			fmt.Sprintf("Expected '=' after error fields, got '%s'", p.peek.Literal),
+		errors.NewFatalError("0597",
+			fmt.Sprintf("Expected 'inherit' after error fields, got '%s'", p.peek.Literal),
 			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
 	}
 	p.advance()
 
-	isNew := false
-	if p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "new" {
-		isNew = true
-		p.advance()
-	}
-
 	if p.peek.Type != TOKEN_IDENT && !(p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "Error") {
 		p.hasErrors = true
 		errors.NewFatalError("0589",
-			fmt.Sprintf("Expected parent error type, got '%s'", p.peek.Literal),
+			fmt.Sprintf("Expected parent error type after 'inherit', got '%s'", p.peek.Literal),
 			p.peek.Line, p.peek.Column, p.FileName)
 		return nil
 	}
 	parent := p.peek.Literal
 	p.advance()
 
+	if p.peek.Type == TOKEN_SEMICOLON {
+		p.advance()
+	}
+
 	return &ErrorDecl{
 		Position: pos,
 		Name:     name,
 		Fields:   fields,
 		Parent:   parent,
-		IsNew:    isNew,
 	}
 }
 

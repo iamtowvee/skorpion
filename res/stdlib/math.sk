@@ -7,11 +7,11 @@
 
 use std/strings
 
-const ZeroDivError{} = new Error
-const ImpossibleOperationOverNullError{} = new Error
-const SqrtFromNumLessZeroError{} = new Error
-const BadRootDegreeError{} = new Error
-const DomainError{} = new Error
+const ZeroDivError{} inherit Error
+const ImpossibleOperationOverNullError{} inherit Error
+const SqrtFromNumLessZeroError{} inherit Error
+const BadRootDegreeError{} inherit Error
+const DomainError{} inherit Error
 
 /* ============================
    Helpers

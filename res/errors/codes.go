@@ -416,8 +416,8 @@ var ErrorCodes = map[string]ErrorCode{
 	// --- 0579: Throw ---
 	"0579": {Code: "0579", Message: "throw requires an expression", Description: "'throw' must be followed by an error instance or error variable.", Tip: "Use: 'throw MyError{msg: \"...\"}' or 'throw err'."},
 
-	// --- 0580-0590: Error declaration ---
-	"0580": {Code: "0580", Message: "Expected error type name after 'const'", Description: "'const' for an error type must be followed by a name.", Tip: "Use: 'const MyError{...} = new Error'."},
+	// --- 0580-0599: Error declaration ---
+	"0580": {Code: "0580", Message: "Expected error type name after 'new'", Description: "After 'new', an error type name (with uppercase first letter) is expected.", Tip: "Use: 'new MyError{...} inherit Error'.", Example: "// Wrong:\nnew {msg: string} inherit Error\n\n// Right:\nnew MyError{msg: string} inherit Error"},
 	"0581": {Code: "0581", Message: "Error type name must start with uppercase", Description: "Error type names must be capitalized by convention.", Tip: "Rename the type to start with an uppercase letter."},
 	"0582": {Code: "0582", Message: "Expected '{' after error type name", Description: "After the error type name, '{' with fields is expected.", Tip: "Add '{' after the type name."},
 	"0583": {Code: "0583", Message: "Expected field name", Description: "Inside the error type field list, a field name is expected.", Tip: "Use: '{ msg: string }'."},
@@ -425,8 +425,8 @@ var ErrorCodes = map[string]ErrorCode{
 	"0585": {Code: "0585", Message: "Expected field type", Description: "After ':', a valid type is expected.", Tip: "Use a valid type: int, string, float, double, bool, char, arr, any."},
 	"0586": {Code: "0586", Message: "Expected ']' after default value", Description: "The default value in '[value]' was not closed with ']'.", Tip: "Add ']' after the default value."},
 	"0587": {Code: "0587", Message: "Expected '}' after error fields", Description: "The error type field list was not closed with '}'.", Tip: "Add '}' after the fields."},
-	"0588": {Code: "0588", Message: "Expected '=' after error fields", Description: "After the field list, '=' and a parent type are expected.", Tip: "Use: 'const MyError{...} = new Error'."},
-	"0589": {Code: "0589", Message: "Expected parent error type", Description: "After '=', a parent error type name is expected.", Tip: "Use: '= new Error' or '= SomeOtherError'."},
+	"0588": {Code: "0588", Message: "Expected 'inherit' after error fields", Description: "After the field list '{...}', 'inherit' and a parent error type are expected.", Tip: "Use: 'new MyError{...} inherit Error'.", Example: "// Wrong:\nnew MyError{msg: string} = Error\n\n// Right:\nnew MyError{msg: string} inherit Error"},
+	"0589": {Code: "0589", Message: "Expected parent error type after 'inherit'", Description: "After 'inherit', a parent error type name is expected ('Error' or a previously declared error type).", Tip: "Use: 'inherit Error' or 'inherit ParentError'.", Example: "// Wrong:\nnew MyError{msg: string} inherit\n\n// Right:\nnew MyError{msg: string} inherit Error"},
 	"0590": {Code: "0590", Message: "Expected '{' after 'Error'", Description: "The 'Error' keyword must be followed by '{...}' describing fields.", Tip: "Use: 'Error{msg: \"...\"}'."},
 
 	// --- 0591-0594: Error instance ---
@@ -435,9 +435,11 @@ var ErrorCodes = map[string]ErrorCode{
 	"0593": {Code: "0593", Message: "Expected '}' after error instance fields", Description: "The error instance field list was not closed with '}'.", Tip: "Add '}' after the fields."},
 	"0594": {Code: "0594", Message: "Duplicate field in error instance", Description: "The same field name appears more than once in an error instance.", Tip: "Remove the duplicate field."},
 
-	// --- 0595-0599: Expressions ---
-	"0595": {Code: "0595", Message: "Expected '(' after method name", Description: "After a method name following '.', '(' is expected.", Tip: "Add '(' after the method name."},
-	"0596": {Code: "0596", Message: "Expected field or method name after '.'", Description: "After '.', a field or method name (identifier) is expected.", Tip: "Add a valid identifier after '.'."},
+	// --- 0595-0596: Error declaration (module-level only) ---
+	"0595": {Code: "0595", Message: "Error type declaration only at module level", Description: "Error types ('new Name{...} inherit Parent') can only be declared at the top level of a module, not inside a function body.", Tip: "Move the declaration outside any function."},
+	"0596": {Code: "0596", Message: "'new' only at module level", Description: "'new' is only used for error type declarations at module level. To create an error instance, use 'Name{...}' without 'new'.", Tip: "Replace 'new Name{...} inherit Parent' inside a function with an instance: 'throw Name{...}'.", Example: "// Wrong (inside function):\nvoid f() {\n  new MyError{msg: string} inherit Error\n}\n\n// Right (module level):\nnew MyError{msg: string} inherit Error\n\n// Right (create instance):\nthrow MyError{msg: \"oops\"}"},
+
+	// --- 0597-0599: Expressions ---
 	"0597": {Code: "0597", Message: "Unexpected keyword in statement position", Description: "A keyword appeared where a statement was expected.", Tip: "Check the statement syntax."},
 	"0598": {Code: "0598", Message: "Expected statement", Description: "A statement was expected but none was found.", Tip: "Add a statement or remove the empty construct."},
 	"0599": {Code: "0599", Message: "Expected ')' after expression", Description: "A parenthesized expression was not closed with ')'.", Tip: "Add ')' at this location."},
