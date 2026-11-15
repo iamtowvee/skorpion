@@ -5,69 +5,467 @@
       Copyrights (c) 2026 iamtowvee
   ------------------------------------- */
 
+includeC ~~~
+#if defined(_WIN32)
+    #include <windows.h>
+    #include <direct.h>
+    #include <process.h>
+#else
+    #include <unistd.h>
+    #include <signal.h>
+    #include <sys/types.h>
+    #include <sys/wait.h>
+    #include <sys/sysinfo.h>
+    #include <sys/utsname.h>
+    #include <time.h>
+#endif
+
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include <time.h>
+
+#if defined(__APPLE__)
+    #include <mach-o/dyld.h>
+    #include <sys/sysctl.h>
+#endif
+~~~
+
+// ============================================================
+// Environment variables
+// ============================================================
+
 string getEnv(string env) {
   includeC ~~~
-    if (env.__is_null) return sk_string_new("");
-    char* val = getenv(env.value);
+    if (env.__is_null || env.value == NULL) return sk_string_new("");
+    const char* val = getenv(env.value);
     return sk_string_new(val ? val : "");
   ~~~
   return ""
 }
 
+bool hasEnv(string env) {
+  includeC ~~~
+    if (env.__is_null || env.value == NULL) return sk_bool_new(0);
+    return sk_bool_new(getenv(env.value) != NULL);
+  ~~~
+  return false
+}
+
 void setEnv(string env, string val) {
   includeC ~~~
     if (env.__is_null || val.__is_null) return;
-    #if defined(_WIN32)
-        if (getenv(env.value) == NULL) {
-            _putenv_s(env.value, val.value);
-        }
-    #elif defined(__linux__)
-        setenv(env.value, val.value, 0);
-    #endif
-  ~~~
-}
-
-void setClearEnv(string env, string val, bool confirm) {
-  if (!confirm) {
-    return
-  }
-  includeC ~~~
-    if (env.__is_null || val.__is_null) return;
+    if (env.value == NULL || val.value == NULL) return;
     #if defined(_WIN32)
         _putenv_s(env.value, val.value);
-    #elif defined(__linux__)
+    #else
         setenv(env.value, val.value, 1);
     #endif
   ~~~
 }
 
-string getExePath() {
-    includeC ~~~
-        if (__sk__argc > 0 && __sk__argv[0]) {
-            return sk_string_new(__sk__argv[0]);
-        }
-        return sk_string_new("");
-    ~~~
-    return ""
+void unsetEnv(string env) {
+  includeC ~~~
+    if (env.__is_null || env.value == NULL) return;
+    #if defined(_WIN32)
+        _putenv_s(env.value, "");
+    #else
+        unsetenv(env.value);
+    #endif
+  ~~~
 }
 
-arr[string] getArgs() {
-    includeC ~~~
-        sk_array* arr = sk_array_new(sizeof(sk_string), 1);
-        for (int i = 0; i < __sk__argc; i++) {
-            sk_string s = sk_string_new(__sk__argv[i]);
-            sk_array_push(arr, &s);
+arr[string] getEnvAll() {
+  includeC ~~~
+    sk_array* a = sk_array_new(sizeof(sk_string), 1);
+    #if defined(_WIN32)
+        LPCH envBlock = GetEnvironmentStringsA();
+        if (envBlock != NULL) {
+            char* p = envBlock;
+            while (*p != '\0') {
+                sk_string s = sk_string_new(p);
+                sk_array_push(a, &s);
+                p += strlen(p) + 1;
+            }
+            FreeEnvironmentStringsA(envBlock);
         }
-        return sk_arr_new(arr);
-    ~~~
-    return []
+    #else
+        extern char** environ;
+        if (environ != NULL) {
+            for (char** p = environ; *p != NULL; p++) {
+                sk_string s = sk_string_new(*p);
+                sk_array_push(a, &s);
+            }
+        }
+    #endif
+    return sk_arr_new(a);
+  ~~~
+  return []
 }
+
+// ============================================================
+// Process info
+// ============================================================
+
+string getExePath() {
+  includeC ~~~
+    #if defined(_WIN32)
+        char buf[MAX_PATH];
+        DWORD n = GetModuleFileNameA(NULL, buf, (DWORD)sizeof(buf));
+        if (n == 0 || n >= sizeof(buf)) return sk_string_new("");
+        return sk_string_new(buf);
+    #elif defined(__linux__)
+        char buf[4096];
+        ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+        if (n <= 0) return sk_string_new("");
+        buf[n] = '\0';
+        return sk_string_new(buf);
+    #elif defined(__APPLE__)
+        char buf[4096];
+        uint32_t size = (uint32_t)sizeof(buf);
+        if (_NSGetExecutablePath(buf, &size) != 0) return sk_string_new("");
+        return sk_string_new(buf);
+    #else
+        return sk_string_new("");
+    #endif
+  ~~~
+  return ""
+}
+
+string getCwd() {
+  includeC ~~~
+    char buf[4096];
+    if (getcwd(buf, sizeof(buf)) == NULL) return sk_string_new("");
+    return sk_string_new(buf);
+  ~~~
+  return ""
+}
+
+void setCwd(string path) {
+  includeC ~~~
+    if (path.__is_null || path.value == NULL) return;
+    #if defined(_WIN32)
+        _chdir(path.value);
+    #else
+        chdir(path.value);
+    #endif
+  ~~~
+}
+
+string getHomeDir() {
+  includeC ~~~
+    #if defined(_WIN32)
+        const char* h = getenv("USERPROFILE");
+        if (h == NULL) h = getenv("HOMEPATH");
+        return sk_string_new(h ? h : "");
+    #else
+        const char* h = getenv("HOME");
+        return sk_string_new(h ? h : "");
+    #endif
+  ~~~
+  return ""
+}
+
+string getTempDir() {
+  includeC ~~~
+    #if defined(_WIN32)
+        char buf[MAX_PATH];
+        DWORD n = GetTempPathA((DWORD)sizeof(buf), buf);
+        if (n == 0) return sk_string_new("");
+        return sk_string_new(buf);
+    #else
+        const char* t = getenv("TMPDIR");
+        if (t == NULL || *t == '\0') t = "/tmp";
+        return sk_string_new(t);
+    #endif
+  ~~~
+  return ""
+}
+
+int getPid() {
+  includeC ~~~
+    #if defined(_WIN32)
+        return sk_int_new((int)GetCurrentProcessId());
+    #else
+        return sk_int_new((int)getpid());
+    #endif
+  ~~~
+  return 0
+}
+
+int getPPid() {
+  includeC ~~~
+    #if defined(_WIN32)
+        // на Windows родительский PID не доступен напрямую через WinAPI
+        return sk_int_new(0);
+    #else
+        return sk_int_new((int)getppid());
+    #endif
+  ~~~
+  return 0
+}
+
+// ============================================================
+// Args
+// ============================================================
+
+arr[string] getArgs() {
+  includeC ~~~
+    sk_array* a = sk_array_new(sizeof(sk_string), 1);
+    for (int i = 0; i < __sk__argc; i++) {
+        sk_string s = sk_string_new(__sk__argv[i]);
+        sk_array_push(a, &s);
+    }
+    return sk_arr_new(a);
+  ~~~
+  return []
+}
+
+string getArg(int idx) {
+  includeC ~~~
+    if (idx.__is_null) return sk_string_new("");
+    int i = idx.value;
+    if (i < 0 || i >= __sk__argc) return sk_string_new("");
+    return sk_string_new(__sk__argv[i]);
+  ~~~
+  return ""
+}
+
+int getArgc() {
+  includeC ~~~
+    return sk_int_new(__sk__argc);
+  ~~~
+  return 0
+}
+
+// ============================================================
+// Exit / terminate
+// ============================================================
 
 void exit(int code, string msg = "") {
   includeC ~~~
-    if (msg.value != NULL && msg.value[0] != '\0') {
+    if (!msg.__is_null && msg.value != NULL && msg.value[0] != '\0') {
       fprintf(stderr, "%s\n", msg.value);
     }
+    if (code.__is_null) exit(0);
     exit(code.value);
   ~~~
+}
+
+void abort(string msg = "") {
+  includeC ~~~
+    if (!msg.__is_null && msg.value != NULL && msg.value[0] != '\0') {
+      fprintf(stderr, "%s\n", msg.value);
+    }
+    abort();
+  ~~~
+}
+
+// ============================================================
+// Signals
+// ============================================================
+
+void kill(int pid, int sig) {
+  includeC ~~~
+    if (pid.__is_null || sig.__is_null) return;
+    #if defined(_WIN32)
+        HANDLE h = OpenProcess(PROCESS_TERMINATE, FALSE, (DWORD)pid.value);
+        if (h != NULL) {
+            TerminateProcess(h, (UINT)sig.value);
+            CloseHandle(h);
+        }
+    #else
+        kill((pid_t)pid.value, sig.value);
+    #endif
+  ~~~
+}
+
+// ============================================================
+// System info
+// ============================================================
+
+string getOSName() {
+  includeC ~~~
+    #if defined(_WIN32)
+        return sk_string_new("windows");
+    #elif defined(__APPLE__)
+        return sk_string_new("darwin");
+    #elif defined(__linux__)
+        return sk_string_new("linux");
+    #elif defined(__FreeBSD__)
+        return sk_string_new("freebsd");
+    #else
+        return sk_string_new("unknown");
+    #endif
+  ~~~
+  return ""
+}
+
+string getArchName() {
+  includeC ~~~
+    #if defined(_M_X64) || defined(__x86_64__)
+        return sk_string_new("x86_64");
+    #elif defined(_M_IX86) || defined(__i386__)
+        return sk_string_new("x86");
+    #elif defined(_M_ARM64) || defined(__aarch64__)
+        return sk_string_new("aarch64");
+    #elif defined(_M_ARM) || defined(__arm__)
+        return sk_string_new("arm");
+    #else
+        return sk_string_new("unknown");
+    #endif
+  ~~~
+  return ""
+}
+
+string getHostname() {
+  includeC ~~~
+    char buf[256];
+    if (gethostname(buf, sizeof(buf)) != 0) return sk_string_new("");
+    buf[sizeof(buf) - 1] = '\0';
+    return sk_string_new(buf);
+  ~~~
+  return ""
+}
+
+string getUsername() {
+  includeC ~~~
+    #if defined(_WIN32)
+        char buf[256];
+        DWORD n = (DWORD)sizeof(buf);
+        if (GetUserNameA(buf, &n) == 0) return sk_string_new("");
+        return sk_string_new(buf);
+    #else
+        const char* u = getenv("USER");
+        if (u == NULL) u = getenv("LOGNAME");
+        return sk_string_new(u ? u : "");
+    #endif
+  ~~~
+  return ""
+}
+
+int getCPUCount() {
+  includeC ~~~
+    #if defined(_WIN32)
+        SYSTEM_INFO si;
+        GetSystemInfo(&si);
+        return sk_int_new((int)si.dwNumberOfProcessors);
+    #else
+        long n = sysconf(_SC_NPROCESSORS_ONLN);
+        return sk_int_new(n > 0 ? (int)n : 1);
+    #endif
+  ~~~
+  return 1
+}
+
+int getPageSize() {
+  includeC ~~~
+    #if defined(_WIN32)
+        SYSTEM_INFO si;
+        GetSystemInfo(&si);
+        return sk_int_new((int)si.dwPageSize);
+    #else
+        long n = sysconf(_SC_PAGESIZE);
+        return sk_int_new(n > 0 ? (int)n : 4096);
+    #endif
+  ~~~
+  return 4096
+}
+
+int getTotalMemory() {
+  includeC ~~~
+    #if defined(_WIN32)
+        MEMORYSTATUSEX ms;
+        ms.dwLength = sizeof(ms);
+        if (!GlobalMemoryStatusEx(&ms)) return sk_int_new(0);
+        return sk_int_new((int)ms.ullTotalPhys);
+    #elif defined(__APPLE__)
+        long long pages = 0; long long page_size = 0;
+        size_t sz = sizeof(pages);
+        sysctlbyname("hw.memsize", &pages, &sz, NULL, 0);
+        page_size = 4096;
+        (void)page_size;
+        return sk_int_new((int)pages);
+    #else
+        long pages = sysconf(_SC_PHYS_PAGES);
+        long page_size = sysconf(_SC_PAGESIZE);
+        if (pages <= 0 || page_size <= 0) return sk_int_new(0);
+        return sk_int_new((int)(pages * page_size));
+    #endif
+  ~~~
+  return 0
+}
+
+// ============================================================
+// Sleep / time
+// ============================================================
+
+void sleep(int ms) {
+  includeC ~~~
+    if (ms.__is_null || ms.value <= 0) return;
+    #if defined(_WIN32)
+        Sleep((DWORD)ms.value);
+    #else
+        usleep((useconds_t)ms.value * 1000);
+    #endif
+  ~~~
+}
+
+int monotonicMs() {
+  includeC ~~~
+    #if defined(_WIN32)
+        LARGE_INTEGER f, c;
+        QueryPerformanceFrequency(&f);
+        QueryPerformanceCounter(&c);
+        return sk_int_new((int)((c.QuadPart * 1000) / f.QuadPart));
+    #else
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        return sk_int_new((int)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000));
+    #endif
+  ~~~
+  return 0
+}
+
+int unixTime() {
+  includeC ~~~
+    return sk_int_new((int)time(NULL));
+  ~~~
+  return 0
+}
+
+string unixTimeStr(string fmt) {
+  includeC ~~~
+    time_t t = time(NULL);
+    struct tm tmv;
+    #if defined(_WIN32)
+        localtime_s(&tmv, &t);
+    #else
+        localtime_r(&t, &tmv);
+    #endif
+    const char* f = (fmt.__is_null || fmt.value == NULL) ? "%Y-%m-%d %H:%M:%S" : fmt.value;
+    char buf[256];
+    if (strftime(buf, sizeof(buf), f, &tmv) == 0) return sk_string_new("");
+    return sk_string_new(buf);
+  ~~~
+  return ""
+}
+
+// ============================================================
+// Exec (external process) — блокирующий
+// ============================================================
+
+int exec(string cmd) {
+  includeC ~~~
+    if (cmd.__is_null || cmd.value == NULL) return sk_int_new(-1);
+    int rc = system(cmd.value);
+    #if defined(_WIN32)
+        return sk_int_new(rc);
+    #else
+        if (rc == -1) return sk_int_new(-1);
+        if (WIFEXITED(rc)) return sk_int_new(WEXITSTATUS(rc));
+        return sk_int_new(-1);
+    #endif
+  ~~~
+  return -1
 }

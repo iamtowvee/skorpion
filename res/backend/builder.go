@@ -80,7 +80,7 @@ func (b *Builder) buildForTarget(targetOS string, cFile string) bool {
 	var flags []string
 	switch normOS {
 	case "windows":
-		flags = append(flags, "-DSK_OS_WINDOWS=1")
+		flags = append(flags, "-DSK_OS_WINDOWS=1", "-lws2_32")
 	case "linux":
 		flags = append(flags, "-DSK_OS_LINUX=1", "-lm", "-lpthread")
 	case "darwin":

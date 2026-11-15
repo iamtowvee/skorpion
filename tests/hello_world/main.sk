@@ -1,6 +1,7 @@
 use #lib:iamtowvee/MyLib
 use std/files &fs
 use std/io
+use std/os
 use std/json
 
 const arr X = [15]
@@ -71,7 +72,7 @@ SOMETHING
 
     const dict d = {x: "hi"}
     dict fd = d
-    fd.x = 3
+    fd.d = typeof(3)
 
     io.sendln($d + "\n---\n" + $fd)
 
