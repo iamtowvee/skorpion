@@ -11,9 +11,17 @@
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdint.h>
-
 #ifdef _WIN32
 #include <windows.h>
+#else
+#include <sched.h>
+#endif
+
+// ==== Thread-local state ====
+#if defined(_MSC_VER)
+#define SK_THREAD_LOCAL __declspec(thread)
+#else
+#define SK_THREAD_LOCAL _Thread_local
 #endif
 
 // ==== Call stack for panic reporting ====
@@ -24,8 +32,8 @@ typedef struct {
 } SkCallFrame;
 
 #define SK_CALL_STACK_MAX 256
-SkCallFrame sk_call_stack[SK_CALL_STACK_MAX];
-int sk_call_stack_top = 0;
+SK_THREAD_LOCAL SkCallFrame sk_call_stack[SK_CALL_STACK_MAX];
+SK_THREAD_LOCAL int sk_call_stack_top = 0;
 
 static inline void sk_call_push(const char* file, int line, int col) {
     if (sk_call_stack_top < SK_CALL_STACK_MAX) {
@@ -41,16 +49,16 @@ static inline void sk_call_pop(void) {
 }
 
 // Skorpion type definitions
-typedef struct { int value; int __is_null; } sk_int;
+typedef struct { int value; _Atomic int __is_null; } sk_int;
 typedef uint8_t sk_char;
-typedef struct { float value; uint8_t __is_null; int8_t prec; } sk_float;
-typedef struct { double value; uint8_t __is_null; int8_t prec; } sk_double;
-typedef struct { uint8_t value; uint8_t __is_null; } sk_bool;
-typedef struct { char* value; int __is_null; } sk_string;
+typedef struct { float value; _Atomic int __is_null; int8_t prec; } sk_float;
+typedef struct { double value; _Atomic int __is_null; int8_t prec; } sk_double;
+typedef struct { uint8_t value; _Atomic int __is_null; } sk_bool;
+typedef struct { char* value; _Atomic int __is_null; } sk_string;
 typedef struct sk_array sk_array;
-typedef struct { sk_array* value; int __is_null; } sk_arr;
+typedef struct { sk_array* value; _Atomic int __is_null; } sk_arr;
 typedef struct sk_dict sk_dict;
-typedef struct { sk_dict* value; int __is_null; } sk_dict_ref;
+typedef struct { sk_dict* value; _Atomic int __is_null; } sk_dict_ref;
 
 #define SK_NULL_int    ((sk_int){0, 1})
 #define SK_NULL_char   ((sk_char)0)
@@ -60,7 +68,14 @@ typedef struct { sk_dict* value; int __is_null; } sk_dict_ref;
 #define SK_NULL_string ((sk_string){NULL, 1})
 #define SK_NULL_arr    ((sk_arr){NULL, 1})
 #define SK_NULL_dict   ((sk_dict_ref){NULL, 1})
-#define SK_NULL_any    ((sk_any){6, -1, { .p = NULL } })
+
+#define SK_NOTREADY_int    ((sk_int){0, 2})
+#define SK_NOTREADY_float  ((sk_float){0, 2, -1})
+#define SK_NOTREADY_double ((sk_double){0, 2, -1})
+#define SK_NOTREADY_bool   ((sk_bool){0, 2})
+#define SK_NOTREADY_string ((sk_string){NULL, 2})
+#define SK_NOTREADY_arr    ((sk_arr){NULL, 2})
+#define SK_NOTREADY_dict   ((sk_dict_ref){NULL, 2})
 
 typedef struct {
     int type;
@@ -73,7 +88,11 @@ typedef struct {
         int b;
         void* p;
     } data;
+    _Atomic int __is_null;
 } sk_any;
+
+#define SK_NULL_any     ((sk_any){6, -1, { .p = NULL }, 1})
+#define SK_NOTREADY_any ((sk_any){6, -1, { .p = NULL }, 2})
 
 struct sk_array {
     void* data;
@@ -119,6 +138,7 @@ sk_bool sk_bool_new(int v) { sk_bool r; r.value = v ? 1 : 0; r.__is_null = 0; re
 sk_string sk_string_new(const char* v) { sk_string r; r.value = v ? strdup(v) : NULL; r.__is_null = v ? 0 : 1; return r; }
 sk_string sk_string_new_take(char* v) { sk_string r; r.value = v; r.__is_null = v ? 0 : 1; return r; }
 sk_arr sk_arr_new(sk_array* v) { sk_arr r; r.value = v; r.__is_null = v ? 0 : 1; return r; }
+sk_dict_ref sk_dict_ref_new(sk_dict* d) { sk_dict_ref r; r.value = d; r.__is_null = d ? 0 : 1; return r; }
 
 sk_char sk_char_new(uint8_t v) { return v; }
 sk_string sk_char_to_string(sk_char c) {
@@ -483,9 +503,6 @@ void sk_dict_free(sk_dict* d) {
     if (d->entries) free(d->entries);
     free(d);
 }
-sk_dict_ref sk_dict_ref_new(sk_dict* d) {
-    sk_dict_ref r; r.value = d; r.__is_null = d ? 0 : 1; return r;
-}
 sk_dict* sk_dict_deep_copy(sk_dict* d) {
     if (!d) return NULL;
     sk_dict* copy = sk_dict_new();
@@ -500,15 +517,15 @@ sk_dict* sk_dict_deep_copy(sk_dict* d) {
 }
 void sk_dict_deep_free(sk_dict* d) { sk_dict_free(d); }
 
-sk_any any_null(void) { sk_any a; a.type = 6; a.prec = -1; a.data.p = NULL; return a; }
-sk_any any_int(sk_int v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.data.p = NULL; return a; } a.type = 0; a.prec = -1; a.data.i = v.value; return a; }
-sk_any any_string(sk_string v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.data.p = NULL; return a; } a.type = 1; a.prec = -1; a.data.s = v.value ? strdup(v.value) : NULL; return a; }
-sk_any any_float(sk_float v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.data.p = NULL; return a; } a.type = 2; a.prec = v.prec; a.data.f = v.value; return a; }
-sk_any any_double(sk_double v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.data.p = NULL; return a; } a.type = 3; a.prec = v.prec; a.data.d = v.value; return a; }
-sk_any any_bool(sk_bool v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.data.p = NULL; return a; } a.type = 4; a.prec = -1; a.data.b = v.value; return a; }
-sk_any any_char(sk_char v) { sk_any a; a.type = 7; a.prec = -1; a.data.i = v; return a; }
-sk_any any_arr(sk_arr v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.data.p = NULL; return a; } a.type = 5; a.prec = -1; a.data.p = v.value ? sk_array_deep_copy(v.value) : NULL; return a; }
-sk_any any_dict(sk_dict_ref v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.data.p = NULL; return a; } a.type = 8; a.prec = -1; a.data.p = v.value; return a; }
+sk_any any_null(void) { sk_any a; a.type = 6; a.prec = -1; a.__is_null = 1; a.data.p = NULL; return a; }
+sk_any any_int(sk_int v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.__is_null = 1; a.data.p = NULL; return a; } a.type = 0; a.prec = -1; a.__is_null = 0; a.data.i = v.value; return a; }
+sk_any any_string(sk_string v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.__is_null = 1; a.data.p = NULL; return a; } a.type = 1; a.prec = -1; a.__is_null = 0; a.data.s = v.value ? strdup(v.value) : NULL; return a; }
+sk_any any_float(sk_float v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.__is_null = 1; a.data.p = NULL; return a; } a.type = 2; a.prec = v.prec; a.__is_null = 0; a.data.f = v.value; return a; }
+sk_any any_double(sk_double v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.__is_null = 1; a.data.p = NULL; return a; } a.type = 3; a.prec = v.prec; a.__is_null = 0; a.data.d = v.value; return a; }
+sk_any any_bool(sk_bool v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.__is_null = 1; a.data.p = NULL; return a; } a.type = 4; a.prec = -1; a.__is_null = 0; a.data.b = v.value; return a; }
+sk_any any_char(sk_char v) { sk_any a; a.type = 7; a.prec = -1; a.__is_null = 0; a.data.i = v; return a; }
+sk_any any_arr(sk_arr v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.__is_null = 1; a.data.p = NULL; return a; } a.type = 5; a.prec = -1; a.__is_null = 0; a.data.p = v.value ? sk_array_deep_copy(v.value) : NULL; return a; }
+sk_any any_dict(sk_dict_ref v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.__is_null = 1; a.data.p = NULL; return a; } a.type = 8; a.prec = -1; a.__is_null = 0; a.data.p = v.value; return a; }
 
 sk_any sk_any_deep_copy(sk_any a) {
     sk_any r = a;
@@ -712,6 +729,7 @@ sk_bool sk_any_ge(sk_any a, sk_any b) {
     return SK_NULL_bool;
 }
 sk_bool sk_any_eq(sk_any a, sk_any b) {
+    if (a.__is_null == 2 || b.__is_null == 2) return sk_bool_new(a.__is_null == 2 && b.__is_null == 2);
     if (a.type == 6 || b.type == 6) return SK_NULL_bool;
     if (a.type != b.type) return sk_bool_new(0);
     switch (a.type) {
@@ -724,6 +742,7 @@ sk_bool sk_any_eq(sk_any a, sk_any b) {
     return SK_NULL_bool;
 }
 sk_bool sk_any_ne(sk_any a, sk_any b) {
+    if (a.__is_null == 2 || b.__is_null == 2) return sk_bool_new(!(a.__is_null == 2 && b.__is_null == 2));
     if (a.type == 6 || b.type == 6) return SK_NULL_bool;
     if (a.type != b.type) return sk_bool_new(1);
     switch (a.type) {
@@ -863,50 +882,10 @@ typedef struct SkError {
     sk_string msg;
 } SkError;
 
-typedef struct FileSystemError {
+typedef struct MyError {
     const char* __type;
     sk_string msg;
-} FileSystemError;
-
-typedef struct FileNotFoundError {
-    const char* __type;
-    sk_string msg;
-} FileNotFoundError;
-
-typedef struct PermissionDeniedError {
-    const char* __type;
-    sk_string msg;
-} PermissionDeniedError;
-
-typedef struct FileOperationError {
-    const char* __type;
-    sk_string msg;
-} FileOperationError;
-
-typedef struct InvalidPathError {
-    const char* __type;
-    sk_string msg;
-} InvalidPathError;
-
-typedef struct JsonError {
-    const char* __type;
-    sk_string msg;
-} JsonError;
-
-typedef struct JsonParseError {
-    const char* __type;
-    sk_string msg;
-} JsonParseError;
-
-typedef struct JsonFileError {
-    const char* __type;
-    sk_string msg;
-} JsonFileError;
-
-typedef struct JsonSerializeError {
-    const char* __type;
-    sk_string msg;
-} JsonSerializeError;
+} MyError;
 
 typedef struct SkCleanup {
     void** ptr;
@@ -919,7 +898,7 @@ typedef struct SkTryFrame {
     struct SkTryFrame* prev;
     SkCleanup* cleanup;
 } SkTryFrame;
-SkTryFrame* sk_try_stack = NULL;
+SK_THREAD_LOCAL SkTryFrame* sk_try_stack = NULL;
 void sk_any_free(sk_any* a) {
     if (a->type == 1 && a->data.s) { free(a->data.s); a->data.s = NULL; }
     else if (a->type == 5 && a->data.p) { sk_array_deep_free((sk_array*)a->data.p); a->data.p = NULL; }
@@ -991,1168 +970,47 @@ int sk_error_type_match(const char* actual, const char* expected) {
     return actual[len] == '\0' || actual[len] == '.';
 }
 
-// ==== Async / Promise runtime ====
-typedef struct {
-    _Atomic int owner_ref;
-    _Atomic int task_ref;
-    _Atomic int done;
-    pthread_mutex_t mtx;
-    pthread_cond_t cv;
-} sk_promise_common;
-
-static inline void sk_promise_common_destroy(sk_promise_common* c) {
-    pthread_mutex_destroy(&c->mtx);
-    pthread_cond_destroy(&c->cv);
-}
-
-typedef struct {
-    sk_promise_common common;
-    void* error;
-} sk_promise_void;
-
-static inline sk_promise_void* sk_promise_new_void(void) {
-    sk_promise_void* p = malloc(sizeof(sk_promise_void));
-    atomic_store(&p->common.owner_ref, 1);
-    atomic_store(&p->common.task_ref, 1);
-    atomic_store(&p->common.done, 0);
-    pthread_mutex_init(&p->common.mtx, NULL);
-    pthread_cond_init(&p->common.cv, NULL);
-    p->error = NULL;
-    return p;
-}
-
-static inline void sk_promise_finish_void(sk_promise_void* p) {
-    pthread_mutex_lock(&p->common.mtx);
-    atomic_store(&p->common.done, 1);
-    pthread_cond_broadcast(&p->common.cv);
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline void sk_promise_await_void(sk_promise_void* p) {
-    pthread_mutex_lock(&p->common.mtx);
-    while (!atomic_load(&p->common.done)) {
-        pthread_cond_wait(&p->common.cv, &p->common.mtx);
-    }
-    if (p->error) {
-        void* err = p->error;
-        p->error = NULL;
-        pthread_mutex_unlock(&p->common.mtx);
-        sk_throw(err, "<await>", 0, 0);
-    }
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline void sk_promise_fail_void(sk_promise_void* p, void* err) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->error = err;
-    atomic_store(&p->common.done, 1);
-    pthread_cond_broadcast(&p->common.cv);
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline sk_bool sk_promise_ended_void(sk_promise_void* p) {
-    sk_bool r; r.value = atomic_load(&p->common.done) ? 1 : 0; r.__is_null = 0; return r;
-}
-
-static inline void sk_promise_release_void(sk_promise_void* p) {
-    if (!p) return;
-    atomic_fetch_sub(&p->common.owner_ref, 1);
-    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {
-        sk_promise_common_destroy(&p->common);
-        free(p);
-    }
-}
-
-typedef struct {
-    sk_promise_common common;
-    sk_int value;
-    void* error;
-} sk_promise_int;
-
-static inline sk_promise_int* sk_promise_new_int(void) {
-    sk_promise_int* p = malloc(sizeof(sk_promise_int));
-    atomic_store(&p->common.owner_ref, 1);
-    atomic_store(&p->common.task_ref, 1);
-    atomic_store(&p->common.done, 0);
-    pthread_mutex_init(&p->common.mtx, NULL);
-    pthread_cond_init(&p->common.cv, NULL);
-    p->value = SK_NULL_int;
-    p->error = NULL;
-    return p;
-}
-
-static inline void sk_promise_set_int(sk_promise_int* p, sk_int v) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->value = v;
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline void sk_promise_finish_int(sk_promise_int* p, sk_int v) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->value = v;
-    atomic_store(&p->common.done, 1);
-    pthread_cond_broadcast(&p->common.cv);
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline void sk_promise_fail_int(sk_promise_int* p, void* err) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->error = err;
-    atomic_store(&p->common.done, 1);
-    pthread_cond_broadcast(&p->common.cv);
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline sk_int sk_promise_read_int(sk_promise_int* p) {
-    pthread_mutex_lock(&p->common.mtx);
-    sk_int v = p->value;
-    pthread_mutex_unlock(&p->common.mtx);
-    return v;
-}
-
-static inline sk_int sk_promise_await_int(sk_promise_int* p) {
-    pthread_mutex_lock(&p->common.mtx);
-    while (!atomic_load(&p->common.done)) {
-        pthread_cond_wait(&p->common.cv, &p->common.mtx);
-    }
-    if (p->error) {
-        void* err = p->error;
-        pthread_mutex_unlock(&p->common.mtx);
-        sk_throw(err, "<await>", 0, 0);
-    }
-    sk_int v = p->value;
-    pthread_mutex_unlock(&p->common.mtx);
-    return v;
-}
-
-static inline sk_bool sk_promise_ended_int(sk_promise_int* p) {
-    sk_bool r; r.value = atomic_load(&p->common.done) ? 1 : 0; r.__is_null = 0; return r;
-}
-
-static inline void sk_promise_release_int(sk_promise_int* p) {
-    if (!p) return;
-    atomic_fetch_sub(&p->common.owner_ref, 1);
-    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {
-        sk_promise_common_destroy(&p->common);
-        free(p);
-    }
-}
-
-typedef struct {
-    sk_promise_common common;
-    sk_char value;
-    void* error;
-} sk_promise_char;
-
-static inline sk_promise_char* sk_promise_new_char(void) {
-    sk_promise_char* p = malloc(sizeof(sk_promise_char));
-    atomic_store(&p->common.owner_ref, 1);
-    atomic_store(&p->common.task_ref, 1);
-    atomic_store(&p->common.done, 0);
-    pthread_mutex_init(&p->common.mtx, NULL);
-    pthread_cond_init(&p->common.cv, NULL);
-    p->value = SK_NULL_char;
-    p->error = NULL;
-    return p;
-}
-
-static inline void sk_promise_set_char(sk_promise_char* p, sk_char v) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->value = v;
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline void sk_promise_finish_char(sk_promise_char* p, sk_char v) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->value = v;
-    atomic_store(&p->common.done, 1);
-    pthread_cond_broadcast(&p->common.cv);
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline void sk_promise_fail_char(sk_promise_char* p, void* err) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->error = err;
-    atomic_store(&p->common.done, 1);
-    pthread_cond_broadcast(&p->common.cv);
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline sk_char sk_promise_read_char(sk_promise_char* p) {
-    pthread_mutex_lock(&p->common.mtx);
-    sk_char v = p->value;
-    pthread_mutex_unlock(&p->common.mtx);
-    return v;
-}
-
-static inline sk_char sk_promise_await_char(sk_promise_char* p) {
-    pthread_mutex_lock(&p->common.mtx);
-    while (!atomic_load(&p->common.done)) {
-        pthread_cond_wait(&p->common.cv, &p->common.mtx);
-    }
-    if (p->error) {
-        void* err = p->error;
-        pthread_mutex_unlock(&p->common.mtx);
-        sk_throw(err, "<await>", 0, 0);
-    }
-    sk_char v = p->value;
-    pthread_mutex_unlock(&p->common.mtx);
-    return v;
-}
-
-static inline sk_bool sk_promise_ended_char(sk_promise_char* p) {
-    sk_bool r; r.value = atomic_load(&p->common.done) ? 1 : 0; r.__is_null = 0; return r;
-}
-
-static inline void sk_promise_release_char(sk_promise_char* p) {
-    if (!p) return;
-    atomic_fetch_sub(&p->common.owner_ref, 1);
-    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {
-        sk_promise_common_destroy(&p->common);
-        free(p);
-    }
-}
-
-typedef struct {
-    sk_promise_common common;
-    sk_float value;
-    void* error;
-} sk_promise_float;
-
-static inline sk_promise_float* sk_promise_new_float(void) {
-    sk_promise_float* p = malloc(sizeof(sk_promise_float));
-    atomic_store(&p->common.owner_ref, 1);
-    atomic_store(&p->common.task_ref, 1);
-    atomic_store(&p->common.done, 0);
-    pthread_mutex_init(&p->common.mtx, NULL);
-    pthread_cond_init(&p->common.cv, NULL);
-    p->value = SK_NULL_float;
-    p->error = NULL;
-    return p;
-}
-
-static inline void sk_promise_set_float(sk_promise_float* p, sk_float v) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->value = v;
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline void sk_promise_finish_float(sk_promise_float* p, sk_float v) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->value = v;
-    atomic_store(&p->common.done, 1);
-    pthread_cond_broadcast(&p->common.cv);
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline void sk_promise_fail_float(sk_promise_float* p, void* err) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->error = err;
-    atomic_store(&p->common.done, 1);
-    pthread_cond_broadcast(&p->common.cv);
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline sk_float sk_promise_read_float(sk_promise_float* p) {
-    pthread_mutex_lock(&p->common.mtx);
-    sk_float v = p->value;
-    pthread_mutex_unlock(&p->common.mtx);
-    return v;
-}
-
-static inline sk_float sk_promise_await_float(sk_promise_float* p) {
-    pthread_mutex_lock(&p->common.mtx);
-    while (!atomic_load(&p->common.done)) {
-        pthread_cond_wait(&p->common.cv, &p->common.mtx);
-    }
-    if (p->error) {
-        void* err = p->error;
-        pthread_mutex_unlock(&p->common.mtx);
-        sk_throw(err, "<await>", 0, 0);
-    }
-    sk_float v = p->value;
-    pthread_mutex_unlock(&p->common.mtx);
-    return v;
-}
-
-static inline sk_bool sk_promise_ended_float(sk_promise_float* p) {
-    sk_bool r; r.value = atomic_load(&p->common.done) ? 1 : 0; r.__is_null = 0; return r;
-}
-
-static inline void sk_promise_release_float(sk_promise_float* p) {
-    if (!p) return;
-    atomic_fetch_sub(&p->common.owner_ref, 1);
-    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {
-        sk_promise_common_destroy(&p->common);
-        free(p);
-    }
-}
-
-typedef struct {
-    sk_promise_common common;
-    sk_double value;
-    void* error;
-} sk_promise_double;
-
-static inline sk_promise_double* sk_promise_new_double(void) {
-    sk_promise_double* p = malloc(sizeof(sk_promise_double));
-    atomic_store(&p->common.owner_ref, 1);
-    atomic_store(&p->common.task_ref, 1);
-    atomic_store(&p->common.done, 0);
-    pthread_mutex_init(&p->common.mtx, NULL);
-    pthread_cond_init(&p->common.cv, NULL);
-    p->value = SK_NULL_double;
-    p->error = NULL;
-    return p;
-}
-
-static inline void sk_promise_set_double(sk_promise_double* p, sk_double v) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->value = v;
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline void sk_promise_finish_double(sk_promise_double* p, sk_double v) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->value = v;
-    atomic_store(&p->common.done, 1);
-    pthread_cond_broadcast(&p->common.cv);
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline void sk_promise_fail_double(sk_promise_double* p, void* err) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->error = err;
-    atomic_store(&p->common.done, 1);
-    pthread_cond_broadcast(&p->common.cv);
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline sk_double sk_promise_read_double(sk_promise_double* p) {
-    pthread_mutex_lock(&p->common.mtx);
-    sk_double v = p->value;
-    pthread_mutex_unlock(&p->common.mtx);
-    return v;
-}
-
-static inline sk_double sk_promise_await_double(sk_promise_double* p) {
-    pthread_mutex_lock(&p->common.mtx);
-    while (!atomic_load(&p->common.done)) {
-        pthread_cond_wait(&p->common.cv, &p->common.mtx);
-    }
-    if (p->error) {
-        void* err = p->error;
-        pthread_mutex_unlock(&p->common.mtx);
-        sk_throw(err, "<await>", 0, 0);
-    }
-    sk_double v = p->value;
-    pthread_mutex_unlock(&p->common.mtx);
-    return v;
-}
-
-static inline sk_bool sk_promise_ended_double(sk_promise_double* p) {
-    sk_bool r; r.value = atomic_load(&p->common.done) ? 1 : 0; r.__is_null = 0; return r;
-}
-
-static inline void sk_promise_release_double(sk_promise_double* p) {
-    if (!p) return;
-    atomic_fetch_sub(&p->common.owner_ref, 1);
-    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {
-        sk_promise_common_destroy(&p->common);
-        free(p);
-    }
-}
-
-typedef struct {
-    sk_promise_common common;
-    sk_bool value;
-    void* error;
-} sk_promise_bool;
-
-static inline sk_promise_bool* sk_promise_new_bool(void) {
-    sk_promise_bool* p = malloc(sizeof(sk_promise_bool));
-    atomic_store(&p->common.owner_ref, 1);
-    atomic_store(&p->common.task_ref, 1);
-    atomic_store(&p->common.done, 0);
-    pthread_mutex_init(&p->common.mtx, NULL);
-    pthread_cond_init(&p->common.cv, NULL);
-    p->value = SK_NULL_bool;
-    p->error = NULL;
-    return p;
-}
-
-static inline void sk_promise_set_bool(sk_promise_bool* p, sk_bool v) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->value = v;
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline void sk_promise_finish_bool(sk_promise_bool* p, sk_bool v) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->value = v;
-    atomic_store(&p->common.done, 1);
-    pthread_cond_broadcast(&p->common.cv);
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline void sk_promise_fail_bool(sk_promise_bool* p, void* err) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->error = err;
-    atomic_store(&p->common.done, 1);
-    pthread_cond_broadcast(&p->common.cv);
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline sk_bool sk_promise_read_bool(sk_promise_bool* p) {
-    pthread_mutex_lock(&p->common.mtx);
-    sk_bool v = p->value;
-    pthread_mutex_unlock(&p->common.mtx);
-    return v;
-}
-
-static inline sk_bool sk_promise_await_bool(sk_promise_bool* p) {
-    pthread_mutex_lock(&p->common.mtx);
-    while (!atomic_load(&p->common.done)) {
-        pthread_cond_wait(&p->common.cv, &p->common.mtx);
-    }
-    if (p->error) {
-        void* err = p->error;
-        pthread_mutex_unlock(&p->common.mtx);
-        sk_throw(err, "<await>", 0, 0);
-    }
-    sk_bool v = p->value;
-    pthread_mutex_unlock(&p->common.mtx);
-    return v;
-}
-
-static inline sk_bool sk_promise_ended_bool(sk_promise_bool* p) {
-    sk_bool r; r.value = atomic_load(&p->common.done) ? 1 : 0; r.__is_null = 0; return r;
-}
-
-static inline void sk_promise_release_bool(sk_promise_bool* p) {
-    if (!p) return;
-    atomic_fetch_sub(&p->common.owner_ref, 1);
-    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {
-        sk_promise_common_destroy(&p->common);
-        free(p);
-    }
-}
-
-typedef struct {
-    sk_promise_common common;
-    sk_string value;
-    void* error;
-} sk_promise_string;
-
-static inline sk_promise_string* sk_promise_new_string(void) {
-    sk_promise_string* p = malloc(sizeof(sk_promise_string));
-    atomic_store(&p->common.owner_ref, 1);
-    atomic_store(&p->common.task_ref, 1);
-    atomic_store(&p->common.done, 0);
-    pthread_mutex_init(&p->common.mtx, NULL);
-    pthread_cond_init(&p->common.cv, NULL);
-    p->value = SK_NULL_string;
-    p->error = NULL;
-    return p;
-}
-
-static inline void sk_promise_set_string(sk_promise_string* p, sk_string v) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->value = v;
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline void sk_promise_finish_string(sk_promise_string* p, sk_string v) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->value = v;
-    atomic_store(&p->common.done, 1);
-    pthread_cond_broadcast(&p->common.cv);
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline void sk_promise_fail_string(sk_promise_string* p, void* err) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->error = err;
-    atomic_store(&p->common.done, 1);
-    pthread_cond_broadcast(&p->common.cv);
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline sk_string sk_promise_read_string(sk_promise_string* p) {
-    pthread_mutex_lock(&p->common.mtx);
-    sk_string v = p->value;
-    pthread_mutex_unlock(&p->common.mtx);
-    return v;
-}
-
-static inline sk_string sk_promise_await_string(sk_promise_string* p) {
-    pthread_mutex_lock(&p->common.mtx);
-    while (!atomic_load(&p->common.done)) {
-        pthread_cond_wait(&p->common.cv, &p->common.mtx);
-    }
-    if (p->error) {
-        void* err = p->error;
-        pthread_mutex_unlock(&p->common.mtx);
-        sk_throw(err, "<await>", 0, 0);
-    }
-    sk_string v = p->value;
-    pthread_mutex_unlock(&p->common.mtx);
-    return v;
-}
-
-static inline sk_bool sk_promise_ended_string(sk_promise_string* p) {
-    sk_bool r; r.value = atomic_load(&p->common.done) ? 1 : 0; r.__is_null = 0; return r;
-}
-
-static inline void sk_promise_release_string(sk_promise_string* p) {
-    if (!p) return;
-    atomic_fetch_sub(&p->common.owner_ref, 1);
-    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {
-        sk_promise_common_destroy(&p->common);
-        free(p);
-    }
-}
-
-typedef struct {
-    sk_promise_common common;
-    sk_arr value;
-    void* error;
-} sk_promise_arr;
-
-static inline sk_promise_arr* sk_promise_new_arr(void) {
-    sk_promise_arr* p = malloc(sizeof(sk_promise_arr));
-    atomic_store(&p->common.owner_ref, 1);
-    atomic_store(&p->common.task_ref, 1);
-    atomic_store(&p->common.done, 0);
-    pthread_mutex_init(&p->common.mtx, NULL);
-    pthread_cond_init(&p->common.cv, NULL);
-    p->value = SK_NULL_arr;
-    p->error = NULL;
-    return p;
-}
-
-static inline void sk_promise_set_arr(sk_promise_arr* p, sk_arr v) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->value = v;
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline void sk_promise_finish_arr(sk_promise_arr* p, sk_arr v) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->value = v;
-    atomic_store(&p->common.done, 1);
-    pthread_cond_broadcast(&p->common.cv);
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline void sk_promise_fail_arr(sk_promise_arr* p, void* err) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->error = err;
-    atomic_store(&p->common.done, 1);
-    pthread_cond_broadcast(&p->common.cv);
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline sk_arr sk_promise_read_arr(sk_promise_arr* p) {
-    pthread_mutex_lock(&p->common.mtx);
-    sk_arr v = p->value;
-    pthread_mutex_unlock(&p->common.mtx);
-    return v;
-}
-
-static inline sk_arr sk_promise_await_arr(sk_promise_arr* p) {
-    pthread_mutex_lock(&p->common.mtx);
-    while (!atomic_load(&p->common.done)) {
-        pthread_cond_wait(&p->common.cv, &p->common.mtx);
-    }
-    if (p->error) {
-        void* err = p->error;
-        pthread_mutex_unlock(&p->common.mtx);
-        sk_throw(err, "<await>", 0, 0);
-    }
-    sk_arr v = p->value;
-    pthread_mutex_unlock(&p->common.mtx);
-    return v;
-}
-
-static inline sk_bool sk_promise_ended_arr(sk_promise_arr* p) {
-    sk_bool r; r.value = atomic_load(&p->common.done) ? 1 : 0; r.__is_null = 0; return r;
-}
-
-static inline void sk_promise_release_arr(sk_promise_arr* p) {
-    if (!p) return;
-    atomic_fetch_sub(&p->common.owner_ref, 1);
-    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {
-        sk_promise_common_destroy(&p->common);
-        free(p);
-    }
-}
-
-typedef struct {
-    sk_promise_common common;
-    sk_dict_ref value;
-    void* error;
-} sk_promise_dict;
-
-static inline sk_promise_dict* sk_promise_new_dict(void) {
-    sk_promise_dict* p = malloc(sizeof(sk_promise_dict));
-    atomic_store(&p->common.owner_ref, 1);
-    atomic_store(&p->common.task_ref, 1);
-    atomic_store(&p->common.done, 0);
-    pthread_mutex_init(&p->common.mtx, NULL);
-    pthread_cond_init(&p->common.cv, NULL);
-    p->value = SK_NULL_dict;
-    p->error = NULL;
-    return p;
-}
-
-static inline void sk_promise_set_dict(sk_promise_dict* p, sk_dict_ref v) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->value = v;
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline void sk_promise_finish_dict(sk_promise_dict* p, sk_dict_ref v) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->value = v;
-    atomic_store(&p->common.done, 1);
-    pthread_cond_broadcast(&p->common.cv);
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline void sk_promise_fail_dict(sk_promise_dict* p, void* err) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->error = err;
-    atomic_store(&p->common.done, 1);
-    pthread_cond_broadcast(&p->common.cv);
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline sk_dict_ref sk_promise_read_dict(sk_promise_dict* p) {
-    pthread_mutex_lock(&p->common.mtx);
-    sk_dict_ref v = p->value;
-    pthread_mutex_unlock(&p->common.mtx);
-    return v;
-}
-
-static inline sk_dict_ref sk_promise_await_dict(sk_promise_dict* p) {
-    pthread_mutex_lock(&p->common.mtx);
-    while (!atomic_load(&p->common.done)) {
-        pthread_cond_wait(&p->common.cv, &p->common.mtx);
-    }
-    if (p->error) {
-        void* err = p->error;
-        pthread_mutex_unlock(&p->common.mtx);
-        sk_throw(err, "<await>", 0, 0);
-    }
-    sk_dict_ref v = p->value;
-    pthread_mutex_unlock(&p->common.mtx);
-    return v;
-}
-
-static inline sk_bool sk_promise_ended_dict(sk_promise_dict* p) {
-    sk_bool r; r.value = atomic_load(&p->common.done) ? 1 : 0; r.__is_null = 0; return r;
-}
-
-static inline void sk_promise_release_dict(sk_promise_dict* p) {
-    if (!p) return;
-    atomic_fetch_sub(&p->common.owner_ref, 1);
-    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {
-        sk_promise_common_destroy(&p->common);
-        free(p);
-    }
-}
-
-typedef struct {
-    sk_promise_common common;
-    sk_any value;
-    void* error;
-} sk_promise_any;
-
-static inline sk_promise_any* sk_promise_new_any(void) {
-    sk_promise_any* p = malloc(sizeof(sk_promise_any));
-    atomic_store(&p->common.owner_ref, 1);
-    atomic_store(&p->common.task_ref, 1);
-    atomic_store(&p->common.done, 0);
-    pthread_mutex_init(&p->common.mtx, NULL);
-    pthread_cond_init(&p->common.cv, NULL);
-    p->value = any_null();
-    p->error = NULL;
-    return p;
-}
-
-static inline void sk_promise_set_any(sk_promise_any* p, sk_any v) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->value = v;
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline void sk_promise_finish_any(sk_promise_any* p, sk_any v) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->value = v;
-    atomic_store(&p->common.done, 1);
-    pthread_cond_broadcast(&p->common.cv);
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline void sk_promise_fail_any(sk_promise_any* p, void* err) {
-    pthread_mutex_lock(&p->common.mtx);
-    p->error = err;
-    atomic_store(&p->common.done, 1);
-    pthread_cond_broadcast(&p->common.cv);
-    pthread_mutex_unlock(&p->common.mtx);
-}
-
-static inline sk_any sk_promise_read_any(sk_promise_any* p) {
-    pthread_mutex_lock(&p->common.mtx);
-    sk_any v = p->value;
-    pthread_mutex_unlock(&p->common.mtx);
-    return v;
-}
-
-static inline sk_any sk_promise_await_any(sk_promise_any* p) {
-    pthread_mutex_lock(&p->common.mtx);
-    while (!atomic_load(&p->common.done)) {
-        pthread_cond_wait(&p->common.cv, &p->common.mtx);
-    }
-    if (p->error) {
-        void* err = p->error;
-        pthread_mutex_unlock(&p->common.mtx);
-        sk_throw(err, "<await>", 0, 0);
-    }
-    sk_any v = p->value;
-    pthread_mutex_unlock(&p->common.mtx);
-    return v;
-}
-
-static inline sk_bool sk_promise_ended_any(sk_promise_any* p) {
-    sk_bool r; r.value = atomic_load(&p->common.done) ? 1 : 0; r.__is_null = 0; return r;
-}
-
-static inline void sk_promise_release_any(sk_promise_any* p) {
-    if (!p) return;
-    atomic_fetch_sub(&p->common.owner_ref, 1);
-    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {
-        sk_promise_common_destroy(&p->common);
-        free(p);
-    }
-}
-
-
-// Inline C code
-#include <stdlib.h>
-#include <string.h>
-#include <sys/stat.h>
-#include <errno.h>
-#include <limits.h>
-
+// ==== Cooperative yield used by await spin-wait ====
+static inline void __sk__yield(void) {
 #ifdef _WIN32
-#include <direct.h>
-#define SK_MKDIR(p) _mkdir(p)
-#define SK_IS_DIR(st) ((st.st_mode & _S_IFDIR) != 0)
+    SwitchToThread();
 #else
-#include <unistd.h>
-#define SK_MKDIR(p) mkdir(p, 0755)
-#define SK_IS_DIR(st) S_ISDIR(st.st_mode)
+    sched_yield();
 #endif
-
-void __sk__fs_throw_not_found(const char* path, const char* file, int line, int col) {
-    FileNotFoundError* err = malloc(sizeof(FileNotFoundError));
-    err->__type = "Error.FileSystemError.FileNotFoundError";
-    char buf[512];
-    snprintf(buf, sizeof(buf), "File not found: %s", path);
-    err->msg = sk_string_new(buf);
-    sk_throw(err, file, line, col);
 }
 
-void __sk__fs_throw_permission(const char* path, const char* file, int line, int col) {
-    PermissionDeniedError* err = malloc(sizeof(PermissionDeniedError));
-    err->__type = "Error.FileSystemError.PermissionDeniedError";
-    char buf[512];
-    snprintf(buf, sizeof(buf), "Permission denied: %s", path);
-    err->msg = sk_string_new(buf);
-    sk_throw(err, file, line, col);
-}
+static inline void sk_wait_int(sk_int* v) { while (atomic_load(&v->__is_null) == 2) __sk__yield(); }
+static inline void sk_wait_float(sk_float* v) { while (atomic_load(&v->__is_null) == 2) __sk__yield(); }
+static inline void sk_wait_double(sk_double* v) { while (atomic_load(&v->__is_null) == 2) __sk__yield(); }
+static inline void sk_wait_bool(sk_bool* v) { while (atomic_load(&v->__is_null) == 2) __sk__yield(); }
+static inline void sk_wait_string(sk_string* v) { while (atomic_load(&v->__is_null) == 2) __sk__yield(); }
+static inline void sk_wait_arr(sk_arr* v) { while (atomic_load(&v->__is_null) == 2) __sk__yield(); }
+static inline void sk_wait_dict(sk_dict_ref* v) { while (atomic_load(&v->__is_null) == 2) __sk__yield(); }
+static inline void sk_wait_any(sk_any* v) { while (atomic_load(&v->__is_null) == 2) __sk__yield(); }
 
-#if defined(_WIN32)
-    #include <windows.h>
-    #include <direct.h>
-    #include <process.h>
-#else
-    #include <unistd.h>
-    #include <signal.h>
-    #include <sys/types.h>
-    #include <sys/wait.h>
-    #include <sys/sysinfo.h>
-    #include <sys/utsname.h>
-    #include <time.h>
-#endif
-
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
-#include <time.h>
-
-#if defined(__APPLE__)
-    #include <mach-o/dyld.h>
-    #include <sys/sysctl.h>
-#endif
-
-// =====================================================================
-// JSON PARSER
-// =====================================================================
-
-typedef struct {
-    const char* src;
-    int pos;
-    int len;
-} JsonParser;
-
-static void __sk__json_skip_ws(JsonParser* p) {
-    while (p->pos < p->len && (p->src[p->pos] == ' ' || p->src[p->pos] == '\t' || p->src[p->pos] == '\n' || p->src[p->pos] == '\r')) {
-        p->pos++;
-    }
-}
-
-static sk_any __sk__json_parse_value(JsonParser* p);
-
-static char* __sk__json_parse_string_raw(JsonParser* p) {
-    if (p->src[p->pos] != '"') return NULL;
-    p->pos++;
-
-    size_t cap = 16;
-    size_t len = 0;
-    char* buf = malloc(cap);
-
-    while (p->pos < p->len && p->src[p->pos] != '"') {
-        char c = p->src[p->pos++];
-        if (c == '\\') {
-            if (p->pos >= p->len) { free(buf); return NULL; }
-            char esc = p->src[p->pos++];
-            switch (esc) {
-                case '"': c = '"'; break;
-                case '\\': c = '\\'; break;
-                case '/': c = '/'; break;
-                case 'b': c = '\b'; break;
-                case 'f': c = '\f'; break;
-                case 'n': c = '\n'; break;
-                case 'r': c = '\r'; break;
-                case 't': c = '\t'; break;
-                case 'u': {
-                    if (p->pos + 4 > p->len) { free(buf); return NULL; }
-                    char hex[5] = {p->src[p->pos], p->src[p->pos+1], p->src[p->pos+2], p->src[p->pos+3], 0};
-                    p->pos += 4;
-                    unsigned int cp = (unsigned int)strtol(hex, NULL, 16);
-
-                    if (cp >= 0xD800 && cp <= 0xDBFF) {
-                        if (p->pos + 6 <= p->len && p->src[p->pos] == '\\' && p->src[p->pos+1] == 'u') {
-                            char hex2[5] = {p->src[p->pos+2], p->src[p->pos+3], p->src[p->pos+4], p->src[p->pos+5], 0};
-                            unsigned int low = (unsigned int)strtol(hex2, NULL, 16);
-                            if (low >= 0xDC00 && low <= 0xDFFF) {
-                                p->pos += 6;
-                                cp = 0x10000 + ((cp - 0xD800) << 10) + (low - 0xDC00);
-                            }
-                        }
-                    }
-
-                    if (cp < 0x80) {
-                        if (len + 1 >= cap) { cap *= 2; buf = realloc(buf, cap); }
-                        buf[len++] = (char)cp;
-                    } else if (cp < 0x800) {
-                        if (len + 2 >= cap) { cap *= 2; buf = realloc(buf, cap); }
-                        buf[len++] = (char)(0xC0 | (cp >> 6));
-                        buf[len++] = (char)(0x80 | (cp & 0x3F));
-                    } else if (cp < 0x10000) {
-                        if (len + 3 >= cap) { cap *= 2; buf = realloc(buf, cap); }
-                        buf[len++] = (char)(0xE0 | (cp >> 12));
-                        buf[len++] = (char)(0x80 | ((cp >> 6) & 0x3F));
-                        buf[len++] = (char)(0x80 | (cp & 0x3F));
-                    } else {
-                        if (len + 4 >= cap) { cap *= 2; buf = realloc(buf, cap); }
-                        buf[len++] = (char)(0xF0 | (cp >> 18));
-                        buf[len++] = (char)(0x80 | ((cp >> 12) & 0x3F));
-                        buf[len++] = (char)(0x80 | ((cp >> 6) & 0x3F));
-                        buf[len++] = (char)(0x80 | (cp & 0x3F));
-                    }
-                    continue;
-                }
-                default: free(buf); return NULL;
-            }
-        }
-        if (len + 1 >= cap) { cap *= 2; buf = realloc(buf, cap); }
-        buf[len++] = c;
-    }
-    if (p->pos >= p->len) { free(buf); return NULL; }
-    p->pos++;
-
-    if (len + 1 >= cap) { cap = len + 1; buf = realloc(buf, cap); }
-    buf[len] = '\0';
-    return buf;
-}
-
-static sk_any __sk__json_parse_object(JsonParser* p) {
-    p->pos++;
-    __sk__json_skip_ws(p);
-
-    sk_dict* d = sk_dict_new();
-
-    if (p->pos < p->len && p->src[p->pos] == '}') {
-        p->pos++;
-        return any_dict(sk_dict_ref_new(d));
-    }
-
-    while (p->pos < p->len) {
-        __sk__json_skip_ws(p);
-        char* key = __sk__json_parse_string_raw(p);
-        if (!key) return any_null();
-
-        __sk__json_skip_ws(p);
-        if (p->pos >= p->len || p->src[p->pos] != ':') { free(key); return any_null(); }
-        p->pos++;
-
-        sk_any val = __sk__json_parse_value(p);
-        sk_dict_set(d, sk_string_new(key), val);
-        free(key);
-
-        __sk__json_skip_ws(p);
-        if (p->pos >= p->len) return any_null();
-        if (p->src[p->pos] == ',') { p->pos++; continue; }
-        if (p->src[p->pos] == '}') { p->pos++; break; }
-        return any_null();
-    }
-
-    return any_dict(sk_dict_ref_new(d));
-}
-
-static sk_any __sk__json_parse_array(JsonParser* p) {
-    p->pos++;
-    __sk__json_skip_ws(p);
-
-    sk_array* a = sk_array_new(sizeof(sk_any), 5);
-
-    if (p->pos < p->len && p->src[p->pos] == ']') {
-        p->pos++;
-        return any_arr(sk_arr_new(a));
-    }
-
-    while (p->pos < p->len) {
-        sk_any val = __sk__json_parse_value(p);
-        sk_array_push_any(a, val);
-
-        __sk__json_skip_ws(p);
-        if (p->pos >= p->len) return any_null();
-        if (p->src[p->pos] == ',') { p->pos++; continue; }
-        if (p->src[p->pos] == ']') { p->pos++; break; }
-        return any_null();
-    }
-
-    return any_arr(sk_arr_new(a));
-}
-
-static sk_any __sk__json_parse_value(JsonParser* p) {
-    __sk__json_skip_ws(p);
-    if (p->pos >= p->len) return any_null();
-
-    char c = p->src[p->pos];
-
-    if (c == '{') return __sk__json_parse_object(p);
-    if (c == '[') return __sk__json_parse_array(p);
-    if (c == '"') {
-        char* s = __sk__json_parse_string_raw(p);
-        if (!s) return any_null();
-        sk_string res = sk_string_new_take(s);
-        return any_string(res);
-    }
-    if (c == 't' && p->pos + 4 <= p->len && strncmp(&p->src[p->pos], "true", 4) == 0) {
-        p->pos += 4;
-        return any_bool(sk_bool_new(1));
-    }
-    if (c == 'f' && p->pos + 5 <= p->len && strncmp(&p->src[p->pos], "false", 5) == 0) {
-        p->pos += 5;
-        return any_bool(sk_bool_new(0));
-    }
-    if (c == 'n' && p->pos + 4 <= p->len && strncmp(&p->src[p->pos], "null", 4) == 0) {
-        p->pos += 4;
-        return any_null();
-    }
-
-    int start = p->pos;
-    if (p->src[p->pos] == '-') p->pos++;
-    while (p->pos < p->len && isdigit((unsigned char)p->src[p->pos])) p->pos++;
-    int is_float = 0;
-    if (p->pos < p->len && p->src[p->pos] == '.') {
-        is_float = 1;
-        p->pos++;
-        while (p->pos < p->len && isdigit((unsigned char)p->src[p->pos])) p->pos++;
-    }
-    if (p->pos < p->len && (p->src[p->pos] == 'e' || p->src[p->pos] == 'E')) {
-        is_float = 1;
-        p->pos++;
-        if (p->pos < p->len && (p->src[p->pos] == '+' || p->src[p->pos] == '-')) p->pos++;
-        while (p->pos < p->len && isdigit((unsigned char)p->src[p->pos])) p->pos++;
-    }
-
-    if (p->pos == start) return any_null();
-
-    char* num_str = malloc(p->pos - start + 1);
-    memcpy(num_str, &p->src[start], p->pos - start);
-    num_str[p->pos - start] = '\0';
-
-    sk_any res;
-    if (is_float) {
-        res = any_double(sk_double_new(atof(num_str)));
-    } else {
-        res = any_int(sk_int_new(atoi(num_str)));
-    }
-    free(num_str);
-    return res;
-}
-
-static sk_any __sk__json_parse(const char* src) {
-    JsonParser p;
-    p.src = src;
-    p.pos = 0;
-    p.len = (int)strlen(src);
-
-    sk_any res = __sk__json_parse_value(&p);
-
-    __sk__json_skip_ws(&p);
-    if (p.pos != p.len) {
-        return any_null();
-    }
-    return res;
-}
-
-// =====================================================================
-// JSON SERIALIZER
-// =====================================================================
-
-typedef struct {
-    char* buf;
-    size_t len;
-    size_t cap;
-} JsonOut;
-
-static void __sk__json_out_init(JsonOut* o) {
-    o->cap = 256;
-    o->len = 0;
-    o->buf = malloc(o->cap);
-    o->buf[0] = '\0';
-}
-
-static void __sk__json_out_push(JsonOut* o, const char* s, size_t n) {
-    while (o->len + n + 1 > o->cap) {
-        o->cap *= 2;
-        o->buf = realloc(o->buf, o->cap);
-    }
-    memcpy(o->buf + o->len, s, n);
-    o->len += n;
-    o->buf[o->len] = '\0';
-}
-
-static void __sk__json_out_str(JsonOut* o, const char* s) {
-    __sk__json_out_push(o, s, strlen(s));
-}
-
-static void __sk__json_escape(JsonOut* o, const char* s) {
-    __sk__json_out_push(o, "\"", 1);
-    for (const char* p = s; *p; p++) {
-        switch (*p) {
-            case '"':  __sk__json_out_str(o, "\\\""); break;
-            case '\\': __sk__json_out_str(o, "\\\\"); break;
-            case '\n': __sk__json_out_str(o, "\\n"); break;
-            case '\r': __sk__json_out_str(o, "\\r"); break;
-            case '\t': __sk__json_out_str(o, "\\t"); break;
-            case '\b': __sk__json_out_str(o, "\\b"); break;
-            case '\f': __sk__json_out_str(o, "\\f"); break;
-            default:
-                if ((unsigned char)*p < 0x20) {
-                    char tmp[8];
-                    snprintf(tmp, sizeof(tmp), "\\u%04x", (unsigned char)*p);
-                    __sk__json_out_str(o, tmp);
-                } else {
-                    __sk__json_out_push(o, p, 1);
-                }
-        }
-    }
-    __sk__json_out_push(o, "\"", 1);
-}
-
-static void __sk__json_write_any(JsonOut* o, sk_any a) {
-    switch (a.type) {
-        case 0: {
-            char tmp[32];
-            snprintf(tmp, sizeof(tmp), "%d", a.data.i);
-            __sk__json_out_str(o, tmp);
-            break;
-        }
-        case 1: {
-            __sk__json_escape(o, a.data.s ? a.data.s : "");
-            break;
-        }
-        case 2: {
-            char tmp[64];
-            if (a.prec >= 0) snprintf(tmp, sizeof(tmp), "%.*f", a.prec, a.data.f);
-            else snprintf(tmp, sizeof(tmp), "%g", a.data.f);
-            __sk__json_out_str(o, tmp);
-            break;
-        }
-        case 3: {
-            char tmp[64];
-            if (a.prec >= 0) snprintf(tmp, sizeof(tmp), "%.*f", a.prec, a.data.d);
-            else snprintf(tmp, sizeof(tmp), "%g", a.data.d);
-            __sk__json_out_str(o, tmp);
-            break;
-        }
-        case 4: {
-            __sk__json_out_str(o, a.data.b ? "true" : "false");
-            break;
-        }
-        case 5: {
-            sk_array* arr = (sk_array*)a.data.p;
-            __sk__json_out_push(o, "[", 1);
-            for (int i = 0; i < arr->length; i++) {
-                if (i > 0) __sk__json_out_push(o, ",", 1);
-                sk_any* el = (sk_any*)sk_array_get(arr, i);
-                __sk__json_write_any(o, *el);
-            }
-            __sk__json_out_push(o, "]", 1);
-            break;
-        }
-        case 6: {
-            __sk__json_out_str(o, "null");
-            break;
-        }
-        case 7: {
-            char tmp[2] = { (char)a.data.i, 0 };
-            __sk__json_escape(o, tmp);
-            break;
-        }
-        case 8: {
-            sk_dict* d = (sk_dict*)a.data.p;
-            __sk__json_out_push(o, "{", 1);
-            for (int i = 0; i < d->length; i++) {
-                if (i > 0) __sk__json_out_push(o, ",", 1);
-                __sk__json_escape(o, d->entries[i].key);
-                __sk__json_out_push(o, ":", 1);
-                __sk__json_write_any(o, d->entries[i].value);
-            }
-            __sk__json_out_push(o, "}", 1);
-            break;
-        }
-        default:
-            __sk__json_out_str(o, "null");
-    }
-}
-
-
+static inline sk_bool sk_int_eq_notready(sk_int a) { return sk_bool_new(atomic_load(&a.__is_null) == 2); }
+static inline sk_bool sk_int_ne_notready(sk_int a) { return sk_bool_new(atomic_load(&a.__is_null) != 2); }
+static inline sk_bool sk_float_eq_notready(sk_float a) { return sk_bool_new(atomic_load(&a.__is_null) == 2); }
+static inline sk_bool sk_float_ne_notready(sk_float a) { return sk_bool_new(atomic_load(&a.__is_null) != 2); }
+static inline sk_bool sk_double_eq_notready(sk_double a) { return sk_bool_new(atomic_load(&a.__is_null) == 2); }
+static inline sk_bool sk_double_ne_notready(sk_double a) { return sk_bool_new(atomic_load(&a.__is_null) != 2); }
+static inline sk_bool sk_bool_eq_notready(sk_bool a) { return sk_bool_new(atomic_load(&a.__is_null) == 2); }
+static inline sk_bool sk_bool_ne_notready(sk_bool a) { return sk_bool_new(atomic_load(&a.__is_null) != 2); }
+static inline sk_bool sk_string_eq_notready(sk_string a) { return sk_bool_new(atomic_load(&a.__is_null) == 2); }
+static inline sk_bool sk_string_ne_notready(sk_string a) { return sk_bool_new(atomic_load(&a.__is_null) != 2); }
+static inline sk_bool sk_arr_eq_notready(sk_arr a) { return sk_bool_new(atomic_load(&a.__is_null) == 2); }
+static inline sk_bool sk_arr_ne_notready(sk_arr a) { return sk_bool_new(atomic_load(&a.__is_null) != 2); }
+static inline sk_bool sk_dict_eq_notready(sk_dict_ref a) { return sk_bool_new(atomic_load(&a.__is_null) == 2); }
+static inline sk_bool sk_dict_ne_notready(sk_dict_ref a) { return sk_bool_new(atomic_load(&a.__is_null) != 2); }
+static inline sk_bool sk_any_eq_notready(sk_any a) { return sk_bool_new(atomic_load(&a.__is_null) == 2); }
+static inline sk_bool sk_any_ne_notready(sk_any a) { return sk_bool_new(atomic_load(&a.__is_null) != 2); }
 
 // Generated from manifest.spc
 sk_dict_ref __sk__get_config(void) {
     sk_dict* d = sk_dict_new();
     sk_dict_set(d, sk_string_new("name"), any_string(sk_string_new("MyProject")));
     sk_dict_set(d, sk_string_new("version"), any_string(sk_string_new("1.0.0")));
-    sk_dict_set(d, sk_string_new("main"), any_string(sk_string_new("./main.sk")));
+    sk_dict_set(d, sk_string_new("main"), any_string(sk_string_new("./imp.sk")));
     sk_array* _cfg_arr_authors = sk_array_new(sizeof(sk_string), 1);
     sk_array_push_string(_cfg_arr_authors, sk_string_new("iamtowvee"));
     sk_dict_set(d, sk_string_new("authors"), any_arr(sk_arr_new(_cfg_arr_authors)));
@@ -2169,238 +1027,80 @@ sk_dict_ref __sk__get_config(void) {
 
 
 // Function prototypes
-void __sk__foo(sk_int a, sk_arr some);
-void __sk__foos(sk_int a, sk_int b, sk_arr some);
-void __sk__f(sk_promise_dict* __promise);
-void __sk__something(sk_promise_void* __promise, sk_string msg);
-void __sk__print(sk_any line);
-void __sk__println(sk_any msg);
+sk_int __sk__failFunc(void);
 void __sk__std_io_send(sk_string line);
 sk_string __sk__std_io_input(sk_string prompt);
 void __sk__sendln(sk_any msg);
 void __sk__sendf(sk_any msg);
 sk_string __sk__input(sk_string prefix);
-sk_arr __sk__read(sk_string path);
-sk_string __sk__readText(sk_string path);
-void __sk__write(sk_string path, sk_arr data, sk_bool append);
-void __sk__writeText(sk_string path, sk_string data, sk_bool append);
-sk_string __sk__readLine(sk_string path, sk_int lineNum);
-void __sk__writeLine(sk_string path, sk_int lineNum, sk_string text);
-void __sk__mkdir(sk_string base, sk_string newDir);
-void __sk__delete(sk_string path);
-sk_bool __sk__isReadable(sk_string path);
-sk_bool __sk__isWriteable(sk_string path);
-sk_bool __sk__exists(sk_string path);
-void __sk__copy(sk_string src, sk_string dest);
-void __sk__move(sk_string src, sk_string dest);
-sk_string __sk__getEnv(sk_string env);
-sk_bool __sk__hasEnv(sk_string env);
-void __sk__setEnv(sk_string env, sk_string val);
-void __sk__unsetEnv(sk_string env);
-sk_arr __sk__getEnvAll(void);
-sk_string __sk__getExePath(void);
-sk_string __sk__getCwd(void);
-void __sk__setCwd(sk_string path);
-sk_string __sk__getHomeDir(void);
-sk_string __sk__getTempDir(void);
-sk_int __sk__getPid(void);
-sk_int __sk__getPPid(void);
-sk_arr __sk__getArgs(void);
-sk_string __sk__getArg(sk_int idx);
-sk_int __sk__getArgc(void);
-void __sk__exit(sk_int code, sk_string msg);
-void __sk__abort(sk_string msg);
-void __sk__kill(sk_int pid, sk_int sig);
-sk_string __sk__getOSName(void);
-sk_string __sk__getArchName(void);
-sk_string __sk__getHostname(void);
-sk_string __sk__getUsername(void);
-sk_int __sk__getCPUCount(void);
-sk_int __sk__getPageSize(void);
-sk_int __sk__getTotalMemory(void);
-void __sk__sleep(sk_int ms);
-sk_int __sk__monotonicMs(void);
-sk_int __sk__unixTime(void);
-sk_string __sk__unixTimeStr(sk_string fmt);
-sk_int __sk__exec(sk_string cmd);
-sk_dict_ref __sk__parse(sk_string text);
-sk_dict_ref __sk__parseFile(sk_string path);
-sk_any __sk__parseAny(sk_string text);
-sk_string __sk__toString(sk_dict_ref data);
-sk_string __sk__toStringAny(sk_any data);
-sk_bool __sk__isValid(sk_string text);
-sk_bool __sk__isValidFile(sk_string path);
 
-// Global variables
-static sk_any __sk__garr_X_elems[] = {{ 6, -1, { .p = NULL } }};
-static sk_array __sk__garr_X_arr = { (void*)__sk__garr_X_elems, 1, 1, sizeof(sk_any), 5 };
-sk_arr X = { &__sk__garr_X_arr, 0 };
-sk_float PI = { 3.141592, 0, -1 };
+// ==== Async wrappers ====
 
-typedef struct {
-    sk_promise_dict* p;
-} __sk__async_ctx___sk__f;
+typedef struct __sk__async_ctx_failFunc {
+    sk_int* out;
+} __sk__async_ctx_failFunc;
 
-void* __sk__async_runner___sk__f(void* __arg) {
-    __sk__async_ctx___sk__f* ctx = (__sk__async_ctx___sk__f*)__arg;
-    sk_promise_dict* p = ctx->p;
-
+void* __sk__async_run_failFunc(void* __p) {
+    __sk__async_ctx_failFunc* c = (__sk__async_ctx_failFunc*)__p;
     SkTryFrame frame;
     sk_try_push(&frame);
-    if (setjmp(sk_try_stack->env) != 0) {
+    if (setjmp(frame.env) != 0) {
         void* err = frame.error;
         sk_try_pop(&frame);
-        sk_promise_fail_dict(p, err);
-        free(ctx);
-        atomic_fetch_sub(&p->common.task_ref, 1);
-        if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {
-            sk_promise_common_destroy(&p->common);
-            free(p);
-        }
-        return NULL;
+        const char* __t = *(const char**)err;
+        fprintf(stderr, "Panicked with error (%s) in async function 'failFunc'\n", __t);
+        exit(1);
     }
-
-    __sk__f(p);
-
+    sk_int __r = __sk__failFunc();
     sk_try_pop(&frame);
-    free(ctx);
-    atomic_fetch_sub(&p->common.task_ref, 1);
-    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {
-        sk_promise_common_destroy(&p->common);
-        free(p);
+    if (c->out) {
+        *c->out = __r;
+        atomic_store(&c->out->__is_null, __r.__is_null);
     }
+    free(c);
     return NULL;
 }
 
-typedef struct {
-    sk_promise_void* p;
-    sk_string arg0;  // msg
-} __sk__async_ctx___sk__something;
-
-void* __sk__async_runner___sk__something(void* __arg) {
-    __sk__async_ctx___sk__something* ctx = (__sk__async_ctx___sk__something*)__arg;
-    sk_promise_void* p = ctx->p;
-
-    SkTryFrame frame;
-    sk_try_push(&frame);
-    if (setjmp(sk_try_stack->env) != 0) {
-        void* err = frame.error;
-        sk_try_pop(&frame);
-        sk_promise_fail_void(p, err);
-        free(ctx);
-        atomic_fetch_sub(&p->common.task_ref, 1);
-        if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {
-            sk_promise_common_destroy(&p->common);
-            free(p);
-        }
-        return NULL;
-    }
-
-    __sk__something(p, ctx->arg0);
-
-    sk_try_pop(&frame);
-    free(ctx);
-    atomic_fetch_sub(&p->common.task_ref, 1);
-    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {
-        sk_promise_common_destroy(&p->common);
-        free(p);
-    }
-    return NULL;
+void __sk__async_start_failFunc(sk_int* out) {
+    __sk__async_ctx_failFunc* c = malloc(sizeof(__sk__async_ctx_failFunc));
+    c->out = out;
+    pthread_t __t;
+    pthread_create(&__t, NULL, __sk__async_run_failFunc, c);
+    pthread_detach(__t);
 }
 
-void __sk__foo(sk_int a, sk_arr some) {
-    sk_any t1;
+sk_int __sk__failFunc(void) {
+    sk_int i;
+    sk_int t1;
     sk_int t2;
-    sk_any f;
-    sk_int t3;
+    sk_bool t3;
     sk_int t4;
-    sk_bool t5;
+    sk_int t5;
+    MyError* t6;
+    sk_string t7;
 
-    t1 = any_int(a);
-    sk_call_push("main.sk", 10, 5);
-    __sk__println(t1);
-    sk_call_pop();
-    t2 = sk_int_new(0);
-    t3 = sk_int_new(1);
+    t1 = sk_int_new(0);
+    i = t1;
 L1:
-    t4 = sk_int_new(sk_array_len(some.value));
-    t5 = sk_int_lt(t2, t4);
-    if (t5.value) {
+    t2 = sk_int_new(5000000);
+    t3 = sk_int_lt(i, t2);
+    if (t3.value) {
         goto L2;
     } else {
         goto L3;
     }
 L2:
-    f = *(sk_any*)sk_array_get(some.value, t2.value);
-    sk_call_push("main.sk", 12, 9);
-    __sk__println(f);
-    sk_call_pop();
-    t2 = sk_int_add(t2, t3);
+    t4 = sk_int_new(1);
+    t5 = sk_int_add(i, t4);
+    i = t5;
     goto L1;
 L3:
-    return;
-}
-
-void __sk__foos(sk_int a, sk_int b, sk_arr some) {
-    sk_int t6;
-    sk_any t7;
-    sk_int t8;
-    sk_any f;
-    sk_int t9;
-    sk_int t10;
-    sk_bool t11;
-
-    t6 = sk_int_add(a, b);
-    t7 = any_int(t6);
-    sk_call_push("main.sk", 17, 5);
-    __sk__println(t7);
-    sk_call_pop();
-    t8 = sk_int_new(0);
-    t9 = sk_int_new(1);
-L4:
-    t10 = sk_int_new(sk_array_len(some.value));
-    t11 = sk_int_lt(t8, t10);
-    if (t11.value) {
-        goto L5;
-    } else {
-        goto L6;
-    }
-L5:
-    f = *(sk_any*)sk_array_get(some.value, t8.value);
-    sk_call_push("main.sk", 19, 9);
-    __sk__println(f);
-    sk_call_pop();
-    t8 = sk_int_add(t8, t9);
-    goto L4;
-L6:
-    return;
-}
-
-void __sk__f(sk_promise_dict* __promise) {
-    sk_dict_ref t12;
-    sk_int t13;
-    sk_any t14;
-    sk_string t15;
-
-    t12 = sk_dict_ref_new(sk_dict_new());
-    t13 = sk_int_new(25);
-    t14 = any_int(t13);
-    t15 = sk_string_new("age");
-    sk_dict_set(t12.value, t15, t14);
-    sk_promise_finish_dict(__promise, t12);
-    return;
-    return;
-}
-
-void __sk__something(sk_promise_void* __promise, sk_string msg) {
-    sk_any t16;
-
-    t16 = any_string(msg);
-    sk_call_push("main.sk", 28, 5);
-    __sk__println(t16);
-    sk_call_pop();
-    sk_promise_finish_void(__promise);
-    return;
+    t6 = malloc(sizeof(MyError));
+    t6->__type = "Error.MyError";
+    t7 = sk_string_new("boom in async");
+    t6->msg = t7;
+    sk_throw(t6, "imp.sk", 8, 5);
+    return i;
 }
 
 int main(int argc, char** argv) {
@@ -2421,242 +1121,34 @@ int main(int argc, char** argv) {
     }
     sk_arr args = sk_arr_new(args__arr);
 
-    sk_int MAX;
-    sk_int t17;
-    sk_int i;
-    sk_int t18;
-    sk_int t19;
-    sk_int t20;
-    sk_int t21;
-    sk_int t22;
-    sk_int t23;
-    sk_int t24;
-    sk_int t25;
-    sk_int t26;
-    sk_int t27;
-    sk_int t28;
-    sk_int t29;
-    sk_int t30;
-    sk_int t31;
-    sk_bool t32;
-    sk_float t33;
-    sk_float t34;
-    sk_any t35;
-    sk_promise_dict* t36;
-    sk_dict_ref t37;
-    sk_any t38;
-    sk_int t39;
-    sk_int t40;
-    sk_arr t41;
-    sk_string s;
-    sk_string t42;
-    sk_string t43;
-    sk_string t44;
-    sk_char t45;
-    sk_string t46;
-    sk_string t47;
-    sk_string t48;
-    sk_string t49;
-    sk_bool t50;
-    sk_string name;
-    sk_string t51;
-    sk_string t52;
-    sk_string t53;
-    sk_string t54;
-    sk_string t55;
-    sk_string t56;
-    sk_bool t57;
-    sk_string t58;
-    sk_dict_ref t59;
-    sk_string t60;
-    sk_any t61;
-    sk_string t62;
-    sk_float a;
-    sk_float t63;
-    sk_string x;
-    sk_string t64;
-    sk_string t65;
-    sk_string t66;
-    sk_string t67;
-    sk_string t68;
-    sk_any t69;
-    sk_dict_ref d;
-    sk_dict_ref t70;
-    sk_string t71;
-    sk_any t72;
-    sk_string t73;
-    sk_dict_ref fd;
-    sk_int t74;
-    sk_string t75;
-    sk_any t76;
-    sk_string t77;
-    sk_string t78;
-    sk_string t79;
-    sk_string t80;
-    sk_string t81;
-    sk_string t82;
-    sk_any t83;
-    sk_promise_void* t84;
+    sk_string t8;
+    sk_any t9;
+    sk_int r;
+    sk_string t10;
+    sk_any t11;
+    sk_string t12;
+    sk_any t13;
 
-    t17 = sk_int_new(100);
-    MAX = t17;
-    t18 = sk_int_new(0);
-    i = t18;
-    t19 = sk_int_new(1);
-    t20 = sk_int_add(i, t19);
-    i = t20;
-    t21 = sk_int_new(2);
-    t22 = sk_int_sub(i, t21);
-    i = t22;
-    t23 = sk_int_new(3);
-    t24 = sk_int_mul(i, t23);
-    i = t24;
-    t25 = sk_int_new(2);
-    t26 = sk_int_div(i, t25);
-    i = t26;
-    t27 = sk_int_new(2);
-    t28 = sk_int_mod(i, t27);
-    i = t28;
-    t29 = sk_int_new(2);
-    t30 = sk_int_pow(i, t29);
-    i = t30;
-    t31 = sk_int_new(100);
-    t32 = sk_int_eq(MAX, t31);
-    if (t32.value) {
-        goto L7;
-    } else {
-        goto L8;
-    }
-L7:
-    t33 = sk_float_from_int(MAX);
-    t34 = sk_float_add(t33, PI);
-    t35 = any_float(t34);
-    sk_call_push("main.sk", 43, 9);
-    __sk__println(t35);
+    t8 = sk_string_new("Запускаем падающий async...");
+    t9 = any_string(t8);
+    sk_call_push("imp.sk", 13, 5);
+    __sk__sendln(t9);
     sk_call_pop();
-    goto L9;
-L8:
-L9:
-    t36 = sk_promise_new_dict();
-    __sk__async_ctx___sk__f* __ctx_t36 = malloc(sizeof(__sk__async_ctx___sk__f));
-    __ctx_t36->p = t36;
-    pthread_t __tid_t36;
-    pthread_create(&__tid_t36, NULL, __sk__async_runner___sk__f, __ctx_t36);
-    pthread_detach(__tid_t36);
-    t37 = sk_promise_await_dict(t36);
-    t38 = any_dict(t37);
-    sk_call_push("main.sk", 46, 5);
-    __sk__sendln(t38);
+    r = SK_NOTREADY_int;
+    r = SK_NOTREADY_int;
+    __sk__async_start_failFunc(&r);
+    t10 = sk_string_new("Ждем...");
+    t11 = any_string(t10);
+    sk_call_push("imp.sk", 15, 5);
+    __sk__sendln(t11);
     sk_call_pop();
-    t39 = sk_int_new(10);
-    t40 = sk_int_new(10);
-    t41 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    sk_call_push("main.sk", 50, 5);
-    __sk__foos(t39, t40, t41);
+    sk_wait_int(&r);
+    t12 = sk_string_new("Этого не должно быть видно!");
+    t13 = any_string(t12);
+    sk_call_push("imp.sk", 17, 5);
+    __sk__sendln(t13);
     sk_call_pop();
-    t42 = sk_string_new("hello");
-    s = t42;
-    t43 = sk_string_new(" world");
-    t44 = sk_string_concat(s, t43);
-    s = t44;
-    t45 = sk_char_new(33);
-    t46 = sk_char_to_string(t45);
-    t47 = sk_string_concat(s, t46);
-    s = t47;
-    t48 = sk_string_new("./text");
-    t49 = sk_string_new("x");
-    t50 = sk_bool_new(1);
-    sk_call_push("main.sk", 56, 5);
-    __sk__writeText(t48, t49, t50);
-    sk_call_pop();
-    t51 = sk_string_new("Skorpion");
-    t52 = sk_string_new("./text");
-    sk_call_push("main.sk", 57, 43);
-    t53 = __sk__readText(t52);
-    sk_call_pop();
-    t54 = t53;
-    t55 = sk_string_concat(t51, t54);
-    name = t55;
-    t56 = sk_string_new("./textы");
-    sk_call_push("main.sk", 58, 12);
-    t57 = __sk__exists(t56);
-    sk_call_pop();
-    if (t57.value) {
-        goto L10;
-    } else {
-        goto L11;
-    }
-L10:
-    t58 = sk_string_new("./textы");
-    sk_call_push("main.sk", 59, 9);
-    __sk__delete(t58);
-    sk_call_pop();
-    goto L12;
-L11:
-    t59 = __sk__get_config();
-    t60 = sk_string_new("c");
-    t61 = sk_dict_get(t59.value, t60);
-    t62 = any_to_string(t61);
-    sk_call_push("main.sk", 61, 9);
-    __sk__delete(t62);
-    sk_call_pop();
-L12:
-    t63 = sk_float_new(3.143553f);
-    a = t63;
-    t64 = sk_string_new("FirstLine\r\n\"\"\"Экранирование\"\"\"\r\n\"А тут нет\"\n\r\n\t");
-    t65 = sk_float_to_string(a);
-    t66 = sk_string_concat(t64, t65);
-    t67 = sk_string_new("\r\nSOMETHING\r\n");
-    t68 = sk_string_concat(t66, t67);
-    x = t68;
-    t69 = any_string(x);
-    sk_call_push("main.sk", 71, 5);
-    __sk__sendln(t69);
-    sk_call_pop();
-    t70 = sk_dict_ref_new(sk_dict_new());
-    t71 = sk_string_new("hi");
-    t72 = any_string(t71);
-    t73 = sk_string_new("x");
-    sk_dict_set(t70.value, t73, t72);
-    d = t70;
-    fd = sk_dict_ref_new(sk_dict_deep_copy(d.value));
-    t74 = sk_int_new(3);
-    t75 = sk_string_new("int");
-    t76 = any_string(t75);
-    t77 = sk_string_new("d");
-    sk_dict_set(fd.value, t77, t76);
-    t78 = any_to_string(any_dict(d));
-    t79 = sk_string_new("\n---\n");
-    t80 = sk_string_concat(t78, t79);
-    t81 = any_to_string(any_dict(fd));
-    t82 = sk_string_concat(t80, t81);
-    t83 = any_string(t82);
-    sk_call_push("main.sk", 77, 5);
-    __sk__sendln(t83);
-    sk_call_pop();
-    t84 = sk_promise_new_void();
-    __sk__async_ctx___sk__something* __ctx_t84 = malloc(sizeof(__sk__async_ctx___sk__something));
-    __ctx_t84->p = t84;
-    __ctx_t84->arg0 = name;
-    pthread_t __tid_t84;
-    pthread_create(&__tid_t84, NULL, __sk__async_runner___sk__something, __ctx_t84);
-    pthread_detach(__tid_t84);
-    sk_promise_await_void(t84);
     return 0;
-}
-
-void __sk__print(sk_any line) {
-    sk_call_push("lib.sk", 6, 5);
-    __sk__sendln(line);
-    sk_call_pop();
-    return;
-}
-
-void __sk__println(sk_any msg) {
-    sk_call_push("lib.sk", 10, 5);
-    __sk__print(msg);
-    sk_call_pop();
-    return;
 }
 
 void __sk__std_io_send(sk_string line) {
@@ -2670,8 +1162,8 @@ void __sk__std_io_send(sk_string line) {
 }
 
 sk_string __sk__std_io_input(sk_string prompt) {
-    sk_string t85;
-    sk_string t86;
+    sk_string t14;
+    sk_string t15;
 
     if (!prompt.__is_null) {
                 printf("%s", prompt.value);
@@ -2683,1098 +1175,42 @@ sk_string __sk__std_io_input(sk_string prompt) {
                 buffer[len-1] = '\0';
             }
             return sk_string_new(buffer);
-    t85 = sk_string_new("");
-    prompt = t85;
-    t86 = sk_string_new("");
-    return t86;
+    t14 = sk_string_new("");
+    prompt = t14;
+    t15 = sk_string_new("");
+    return t15;
 }
 
 void __sk__sendln(sk_any msg) {
-    sk_string t87;
-    sk_string t88;
-    sk_string t89;
+    sk_string t16;
+    sk_string t17;
+    sk_string t18;
 
-    t87 = any_to_string(msg);
-    t88 = sk_string_new("\n");
-    t89 = sk_string_concat(t87, t88);
+    t16 = any_to_string(msg);
+    t17 = sk_string_new("\n");
+    t18 = sk_string_concat(t16, t17);
     sk_call_push("<builtin:std/io>", 37, 5);
-    __sk__std_io_send(t89);
+    __sk__std_io_send(t18);
     sk_call_pop();
     return;
 }
 
 void __sk__sendf(sk_any msg) {
-    sk_string t90;
+    sk_string t19;
 
-    t90 = any_to_string(msg);
+    t19 = any_to_string(msg);
     sk_call_push("<builtin:std/io>", 41, 5);
-    __sk__std_io_send(t90);
+    __sk__std_io_send(t19);
     sk_call_pop();
     return;
 }
 
 sk_string __sk__input(sk_string prefix) {
-    sk_string t91;
+    sk_string t20;
 
     sk_call_push("<builtin:std/io>", 45, 12);
-    t91 = __sk__std_io_input(prefix);
+    t20 = __sk__std_io_input(prefix);
     sk_call_pop();
-    return t91;
-}
-
-sk_arr __sk__read(sk_string path) {
-    sk_arr t92;
-
-    if (path.__is_null) {
-            InvalidPathError* err = malloc(sizeof(InvalidPathError));
-            err->__type = "Error.FileSystemError.InvalidPathError";
-            err->msg = sk_string_new("Path cannot be null.");
-            sk_throw(err, "<builtin:std/files>", 44, 5);
-        }
-        FILE* f = fopen(path.value, "rb");
-        if (!f) {
-            if (errno == ENOENT) __sk__fs_throw_not_found(path.value, "<builtin:std/files>", 49, 5);
-            if (errno == EACCES) __sk__fs_throw_permission(path.value, "<builtin:std/files>", 50, 5);
-            FileOperationError* err = malloc(sizeof(FileOperationError));
-            err->__type = "Error.FileSystemError.FileOperationError";
-            err->msg = sk_string_new("Failed to open file for reading.");
-            sk_throw(err, "<builtin:std/files>", 54, 5);
-        }
-        fseek(f, 0, SEEK_END);
-        long size = ftell(f);
-        fseek(f, 0, SEEK_SET);
-        sk_array* arr = sk_array_new(sizeof(sk_char), 7);
-        if (size > 0) {
-            char* buf = malloc(size);
-            size_t read_bytes = fread(buf, 1, size, f);
-            fclose(f);
-            arr->capacity = (int)read_bytes;
-            arr->length = (int)read_bytes;
-            arr->data = malloc(read_bytes * sizeof(sk_char));
-            memcpy(arr->data, buf, read_bytes);
-            free(buf);
-        } else {
-            fclose(f);
-        }
-        return sk_arr_new(arr);
-    t92 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t92;
-}
-
-sk_string __sk__readText(sk_string path) {
-    sk_string t93;
-
-    sk_arr bytes = __sk__read(path);
-        if (bytes.__is_null || bytes.value == NULL || bytes.value->length == 0) {
-            return sk_string_new("");
-        }
-        int len = bytes.value->length;
-        char* buf = malloc(len + 1);
-        memcpy(buf, bytes.value->data, len);
-        buf[len] = '\0';
-        return sk_string_new_take(buf);
-    t93 = sk_string_new("");
-    return t93;
-}
-
-void __sk__write(sk_string path, sk_arr data, sk_bool append) {
-    if (path.__is_null || data.__is_null) {
-            InvalidPathError* err = malloc(sizeof(InvalidPathError));
-            err->__type = "Error.FileSystemError.InvalidPathError";
-            err->msg = sk_string_new("Path or data cannot be null.");
-            sk_throw(err, "<builtin:std/files>", 91, 5);
-        }
-        const char* mode = append.value ? "ab" : "wb";
-        FILE* f = fopen(path.value, mode);
-        if (!f) {
-            if (errno == EACCES) __sk__fs_throw_permission(path.value, "<builtin:std/files>", 97, 5);
-            FileOperationError* err = malloc(sizeof(FileOperationError));
-            err->__type = "Error.FileSystemError.FileOperationError";
-            err->msg = sk_string_new("Failed to open file for writing.");
-            sk_throw(err, "<builtin:std/files>", 102, 5);
-        }
-        if (data.value->length > 0) {
-            fwrite(data.value->data, 1, data.value->length, f);
-        }
-        fclose(f);
-    return;
-}
-
-void __sk__writeText(sk_string path, sk_string data, sk_bool append) {
-    if (path.__is_null || data.__is_null) {
-            InvalidPathError* err = malloc(sizeof(InvalidPathError));
-            err->__type = "Error.FileSystemError.InvalidPathError";
-            err->msg = sk_string_new("Path or data cannot be null.");
-            sk_throw(err, "<builtin:std/files>", 120, 5);
-        }
-        const char* mode = append.value ? "ab" : "wb";
-        FILE* f = fopen(path.value, mode);
-        if (!f) {
-            if (errno == EACCES) __sk__fs_throw_permission(path.value, "<builtin:std/files>", 126, 5);
-            FileOperationError* err = malloc(sizeof(FileOperationError));
-            err->__type = "Error.FileSystemError.FileOperationError";
-            err->msg = sk_string_new("Failed to open file for writing.");
-            sk_throw(err, "<builtin:std/files>", 131, 5);
-        }
-        fwrite(data.value, 1, strlen(data.value), f);
-        fclose(f);
-    return;
-}
-
-sk_string __sk__readLine(sk_string path, sk_int lineNum) {
-    sk_string t94;
-
-    if (path.__is_null || lineNum.value < 1) {
-            InvalidPathError* err = malloc(sizeof(InvalidPathError));
-            err->__type = "Error.FileSystemError.InvalidPathError";
-            err->msg = sk_string_new("Invalid path or line number.");
-            sk_throw(err, "<builtin:std/files>", 123, 5);
-        }
-        FILE* f = fopen(path.value, "rb");
-        if (!f) {
-            if (errno == ENOENT) __sk__fs_throw_not_found(path.value, "<builtin:std/files>", 129, 5);
-            if (errno == EACCES) __sk__fs_throw_permission(path.value, "<builtin:std/files>", 130, 5);
-            FileOperationError* err = malloc(sizeof(FileOperationError));
-            err->__type = "Error.FileSystemError.FileOperationError";
-            err->msg = sk_string_new("Failed to open file.");
-            sk_throw(err, "<builtin:std/files>", 134, 5);
-        }
-        char chunk[1024];
-        int current = 1;
-        int found = 0;
-        char* result = NULL;
-        size_t result_len = 0;
-        size_t result_cap = 0;
-        while (fgets(chunk, sizeof(chunk), f)) {
-            size_t chunk_len = strlen(chunk);
-            int is_newline = chunk_len > 0 && chunk[chunk_len - 1] == '\n';
-            if (current == lineNum.value) {
-                if (result_len + chunk_len + 1 > result_cap) {
-                    result_cap = (result_cap == 0 ? 1024 : result_cap * 2);
-                    while (result_cap < result_len + chunk_len + 1) result_cap *= 2;
-                    result = realloc(result, result_cap);
-                }
-                memcpy(result + result_len, chunk, chunk_len);
-                result_len += chunk_len;
-                result[result_len] = '\0';
-                found = 1;
-                if (is_newline) break;
-            } else {
-                if (is_newline) current++;
-            }
-        }
-        fclose(f);
-        if (!found) {
-            free(result);
-            FileOperationError* err = malloc(sizeof(FileOperationError));
-            err->__type = "Error.FileSystemError.FileOperationError";
-            err->msg = sk_string_new("Line not found or file is smaller.");
-            sk_throw(err, "<builtin:std/files>", 168, 5);
-        }
-        while (result_len > 0 && (result[result_len-1] == '\n' || result[result_len-1] == '\r')) {
-            result[--result_len] = '\0';
-        }
-        return sk_string_new_take(result);
-    t94 = sk_string_new("");
-    return t94;
-}
-
-void __sk__writeLine(sk_string path, sk_int lineNum, sk_string text) {
-    if (path.__is_null || text.__is_null) {
-            InvalidPathError* err = malloc(sizeof(InvalidPathError));
-            err->__type = "Error.FileSystemError.InvalidPathError";
-            err->msg = sk_string_new("Path or text cannot be null.");
-            sk_throw(err, "<builtin:std/files>", 190, 5);
-        }
-        FILE* f = fopen(path.value, "rb");
-        if (!f) {
-            if (errno == ENOENT) __sk__fs_throw_not_found(path.value, "<builtin:std/files>", 196, 5);
-            FileOperationError* err = malloc(sizeof(FileOperationError));
-            err->__type = "Error.FileSystemError.FileOperationError";
-            err->msg = sk_string_new("Failed to open file.");
-            sk_throw(err, "<builtin:std/files>", 200, 5);
-        }
-        char** lines = NULL;
-        int count = 0, cap = 0;
-        char chunk[1024];
-        char* current_line = NULL;
-        size_t current_len = 0, current_cap = 0;
-        while (fgets(chunk, sizeof(chunk), f)) {
-            size_t chunk_len = strlen(chunk);
-            int is_newline = chunk_len > 0 && chunk[chunk_len - 1] == '\n';
-            if (current_len + chunk_len + 1 > current_cap) {
-                current_cap = (current_cap == 0 ? 256 : current_cap * 2);
-                while (current_cap < current_len + chunk_len + 1) current_cap *= 2;
-                current_line = realloc(current_line, current_cap);
-            }
-            memcpy(current_line + current_len, chunk, chunk_len);
-            current_len += chunk_len;
-            current_line[current_len] = '\0';
-            if (is_newline) {
-                if (count >= cap) {
-                    cap = (cap == 0 ? 16 : cap * 2);
-                    lines = realloc(lines, cap * sizeof(char*));
-                }
-                lines[count++] = current_line;
-                current_line = NULL;
-                current_len = 0;
-                current_cap = 0;
-            }
-        }
-        if (current_len > 0) {
-            if (count >= cap) {
-                cap = (cap == 0 ? 16 : cap * 2);
-                lines = realloc(lines, cap * sizeof(char*));
-            }
-            lines[count++] = current_line;
-        } else {
-            free(current_line);
-        }
-        fclose(f);
-        if (lineNum.value > 0 && lineNum.value <= count) {
-            free(lines[lineNum.value - 1]);
-            char* new_line = malloc(strlen(text.value) + 2);
-            sprintf(new_line, "%s\n", text.value);
-            lines[lineNum.value - 1] = new_line;
-        } else if (lineNum.value == count + 1) {
-            lines = realloc(lines, (count + 1) * sizeof(char*));
-            char* new_line = malloc(strlen(text.value) + 2);
-            sprintf(new_line, "%s\n", text.value);
-            lines[count++] = new_line;
-        } else {
-            for (int i = 0; i < count; i++) free(lines[i]);
-            free(lines);
-            FileOperationError* err = malloc(sizeof(FileOperationError));
-            err->__type = "Error.FileSystemError.FileOperationError";
-            err->msg = sk_string_new("Line number out of range.");
-            sk_throw(err, "<builtin:std/files>", 260, 5);
-        }
-        f = fopen(path.value, "wb");
-        if (!f) {
-            for (int i = 0; i < count; i++) free(lines[i]);
-            free(lines);
-            __sk__fs_throw_permission(path.value, "<builtin:std/files>", 270, 5);
-        }
-        for (int i = 0; i < count; i++) {
-            fputs(lines[i], f);
-            free(lines[i]);
-        }
-        free(lines);
-        fclose(f);
-    return;
-}
-
-void __sk__mkdir(sk_string base, sk_string newDir) {
-    if (base.__is_null || newDir.__is_null) {
-            InvalidPathError* err = malloc(sizeof(InvalidPathError));
-            err->__type = "Error.FileSystemError.InvalidPathError";
-            err->msg = sk_string_new("Paths cannot be null.");
-            sk_throw(err, "<builtin:std/files>", 295, 5);
-        }
-        char full_path[1024];
-        if (strlen(base.value) > 0) {
-            snprintf(full_path, sizeof(full_path), "%s/%s", base.value, newDir.value);
-        } else {
-            snprintf(full_path, sizeof(full_path), "%s", newDir.value);
-        }
-        if (SK_MKDIR(full_path) != 0 && errno != EEXIST) {
-            if (errno == EACCES) __sk__fs_throw_permission(full_path, "<builtin:std/files>", 308, 5);
-            FileOperationError* err = malloc(sizeof(FileOperationError));
-            err->__type = "Error.FileSystemError.FileOperationError";
-            err->msg = sk_string_new("Failed to create directory.");
-            sk_throw(err, "<builtin:std/files>", 312, 5);
-        }
-    return;
-}
-
-void __sk__delete(sk_string path) {
-    if (path.__is_null) {
-            InvalidPathError* err = malloc(sizeof(InvalidPathError));
-            err->__type = "Error.FileSystemError.InvalidPathError";
-            err->msg = sk_string_new("Path cannot be null.");
-            sk_throw(err, "<builtin:std/files>", 325, 5);
-        }
-        if (remove(path.value) != 0) {
-            if (errno == ENOENT) __sk__fs_throw_not_found(path.value, "<builtin:std/files>", 328, 5);
-            if (errno == EACCES) __sk__fs_throw_permission(path.value, "<builtin:std/files>", 329, 5);
-            FileOperationError* err = malloc(sizeof(FileOperationError));
-            err->__type = "Error.FileSystemError.FileOperationError";
-            err->msg = sk_string_new("Failed to delete file.");
-            sk_throw(err, "<builtin:std/files>", 334, 5);
-        }
-    return;
-}
-
-sk_bool __sk__isReadable(sk_string path) {
-    sk_bool t95;
-
-    if (path.__is_null) return sk_bool_new(0);
-        FILE* f = fopen(path.value, "rb");
-        if (f) { fclose(f); return sk_bool_new(1); }
-        return sk_bool_new(0);
-    t95 = sk_bool_new(0);
-    return t95;
-}
-
-sk_bool __sk__isWriteable(sk_string path) {
-    sk_bool t96;
-
-    if (path.__is_null) return sk_bool_new(0);
-        FILE* f = fopen(path.value, "ab");
-        if (f) { fclose(f); return sk_bool_new(1); }
-        return sk_bool_new(0);
-    t96 = sk_bool_new(0);
-    return t96;
-}
-
-sk_bool __sk__exists(sk_string path) {
-    sk_bool t97;
-
-    if (path.__is_null || path.value == NULL || path.value[0] == '\0') {
-            return sk_bool_new(0);
-        }
-        struct stat st;
-        if (stat(path.value, &st) == 0) {
-            // Файл или директория — существует
-            return sk_bool_new(1);
-        }
-        // ENOENT / ENOTDIR / EACCES — считаем, что не существует
-        return sk_bool_new(0);
-    t97 = sk_bool_new(0);
-    return t97;
-}
-
-void __sk__copy(sk_string src, sk_string dest) {
-    if (src.__is_null || dest.__is_null) {
-            InvalidPathError* err = malloc(sizeof(InvalidPathError));
-            err->__type = "Error.FileSystemError.InvalidPathError";
-            err->msg = sk_string_new("Paths cannot be null.");
-            sk_throw(err, "<builtin:std/files>", 375, 5);
-        }
-        FILE* in = fopen(src.value, "rb");
-        if (!in) {
-            if (errno == ENOENT) __sk__fs_throw_not_found(src.value, "<builtin:std/files>", 380, 5);
-            FileOperationError* err = malloc(sizeof(FileOperationError));
-            err->__type = "Error.FileSystemError.FileOperationError";
-            err->msg = sk_string_new("Source file not found or unreadable.");
-            sk_throw(err, "<builtin:std/files>", 384, 5);
-        }
-        char target[1024];
-        struct stat st;
-        if (stat(dest.value, &st) == 0 && SK_IS_DIR(st)) {
-            const char* filename = strrchr(src.value, '/');
-            if (!filename) filename = strrchr(src.value, '\\');
-            filename = filename ? filename + 1 : src.value;
-            snprintf(target, sizeof(target), "%s/%s", dest.value, filename);
-        } else {
-            snprintf(target, sizeof(target), "%s", dest.value);
-        }
-        FILE* out = fopen(target, "wb");
-        if (!out) {
-            fclose(in);
-            if (errno == EACCES) __sk__fs_throw_permission(target, "<builtin:std/files>", 402, 5);
-            FileOperationError* err = malloc(sizeof(FileOperationError));
-            err->__type = "Error.FileSystemError.FileOperationError";
-            err->msg = sk_string_new("Cannot open destination for writing.");
-            sk_throw(err, "<builtin:std/files>", 406, 5);
-        }
-        char buf[8192];
-        size_t n;
-        while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
-            fwrite(buf, 1, n, out);
-        }
-        fclose(in);
-        fclose(out);
-    return;
-}
-
-void __sk__move(sk_string src, sk_string dest) {
-    if (src.__is_null || dest.__is_null) {
-            InvalidPathError* err = malloc(sizeof(InvalidPathError));
-            err->__type = "Error.FileSystemError.InvalidPathError";
-            err->msg = sk_string_new("Paths cannot be null.");
-            sk_throw(err, "<builtin:std/files>", 430, 5);
-        }
-        char target[1024];
-        struct stat st;
-        if (stat(dest.value, &st) == 0 && SK_IS_DIR(st)) {
-            const char* filename = strrchr(src.value, '/');
-            if (!filename) filename = strrchr(src.value, '\\');
-            filename = filename ? filename + 1 : src.value;
-            snprintf(target, sizeof(target), "%s/%s", dest.value, filename);
-        } else {
-            snprintf(target, sizeof(target), "%s", dest.value);
-        }
-        if (rename(src.value, target) != 0) {
-            if (errno == ENOENT) __sk__fs_throw_not_found(src.value, "<builtin:std/files>", 445, 5);
-            if (errno == EACCES) __sk__fs_throw_permission(src.value, "<builtin:std/files>", 446, 5);
-            FileOperationError* err = malloc(sizeof(FileOperationError));
-            err->__type = "Error.FileSystemError.FileOperationError";
-            err->msg = sk_string_new("Failed to move file.");
-            sk_throw(err, "<builtin:std/files>", 451, 5);
-        }
-    return;
-}
-
-sk_string __sk__getEnv(sk_string env) {
-    sk_string t98;
-
-    if (env.__is_null || env.value == NULL) return sk_string_new("");
-        const char* val = getenv(env.value);
-        return sk_string_new(val ? val : "");
-    t98 = sk_string_new("");
-    return t98;
-}
-
-sk_bool __sk__hasEnv(sk_string env) {
-    sk_bool t99;
-
-    if (env.__is_null || env.value == NULL) return sk_bool_new(0);
-        return sk_bool_new(getenv(env.value) != NULL);
-    t99 = sk_bool_new(0);
-    return t99;
-}
-
-void __sk__setEnv(sk_string env, sk_string val) {
-    if (env.__is_null || val.__is_null) return;
-        if (env.value == NULL || val.value == NULL) return;
-        #if defined(_WIN32)
-            _putenv_s(env.value, val.value);
-        #else
-            setenv(env.value, val.value, 1);
-        #endif
-    return;
-}
-
-void __sk__unsetEnv(sk_string env) {
-    if (env.__is_null || env.value == NULL) return;
-        #if defined(_WIN32)
-            _putenv_s(env.value, "");
-        #else
-            unsetenv(env.value);
-        #endif
-    return;
-}
-
-sk_arr __sk__getEnvAll(void) {
-    sk_arr t100;
-
-    sk_array* a = sk_array_new(sizeof(sk_string), 1);
-        #if defined(_WIN32)
-            LPCH envBlock = GetEnvironmentStringsA();
-            if (envBlock != NULL) {
-                char* p = envBlock;
-                while (*p != '\0') {
-                    sk_string s = sk_string_new(p);
-                    sk_array_push(a, &s);
-                    p += strlen(p) + 1;
-                }
-                FreeEnvironmentStringsA(envBlock);
-            }
-        #else
-            extern char** environ;
-            if (environ != NULL) {
-                for (char** p = environ; *p != NULL; p++) {
-                    sk_string s = sk_string_new(*p);
-                    sk_array_push(a, &s);
-                }
-            }
-        #endif
-        return sk_arr_new(a);
-    t100 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t100;
-}
-
-sk_string __sk__getExePath(void) {
-    sk_string t101;
-
-    #if defined(_WIN32)
-            char buf[MAX_PATH];
-            DWORD n = GetModuleFileNameA(NULL, buf, (DWORD)sizeof(buf));
-            if (n == 0 || n >= sizeof(buf)) return sk_string_new("");
-            return sk_string_new(buf);
-        #elif defined(__linux__)
-            char buf[4096];
-            ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
-            if (n <= 0) return sk_string_new("");
-            buf[n] = '\0';
-            return sk_string_new(buf);
-        #elif defined(__APPLE__)
-            char buf[4096];
-            uint32_t size = (uint32_t)sizeof(buf);
-            if (_NSGetExecutablePath(buf, &size) != 0) return sk_string_new("");
-            return sk_string_new(buf);
-        #else
-            return sk_string_new("");
-        #endif
-    t101 = sk_string_new("");
-    return t101;
-}
-
-sk_string __sk__getCwd(void) {
-    sk_string t102;
-
-    char buf[4096];
-        if (getcwd(buf, sizeof(buf)) == NULL) return sk_string_new("");
-        return sk_string_new(buf);
-    t102 = sk_string_new("");
-    return t102;
-}
-
-void __sk__setCwd(sk_string path) {
-    if (path.__is_null || path.value == NULL) return;
-        #if defined(_WIN32)
-            _chdir(path.value);
-        #else
-            chdir(path.value);
-        #endif
-    return;
-}
-
-sk_string __sk__getHomeDir(void) {
-    sk_string t103;
-
-    #if defined(_WIN32)
-            const char* h = getenv("USERPROFILE");
-            if (h == NULL) h = getenv("HOMEPATH");
-            return sk_string_new(h ? h : "");
-        #else
-            const char* h = getenv("HOME");
-            return sk_string_new(h ? h : "");
-        #endif
-    t103 = sk_string_new("");
-    return t103;
-}
-
-sk_string __sk__getTempDir(void) {
-    sk_string t104;
-
-    #if defined(_WIN32)
-            char buf[MAX_PATH];
-            DWORD n = GetTempPathA((DWORD)sizeof(buf), buf);
-            if (n == 0) return sk_string_new("");
-            return sk_string_new(buf);
-        #else
-            const char* t = getenv("TMPDIR");
-            if (t == NULL || *t == '\0') t = "/tmp";
-            return sk_string_new(t);
-        #endif
-    t104 = sk_string_new("");
-    return t104;
-}
-
-sk_int __sk__getPid(void) {
-    sk_int t105;
-
-    #if defined(_WIN32)
-            return sk_int_new((int)GetCurrentProcessId());
-        #else
-            return sk_int_new((int)getpid());
-        #endif
-    t105 = sk_int_new(0);
-    return t105;
-}
-
-sk_int __sk__getPPid(void) {
-    sk_int t106;
-
-    #if defined(_WIN32)
-            // на Windows родительский PID не доступен напрямую через WinAPI
-            return sk_int_new(0);
-        #else
-            return sk_int_new((int)getppid());
-        #endif
-    t106 = sk_int_new(0);
-    return t106;
-}
-
-sk_arr __sk__getArgs(void) {
-    sk_arr t107;
-
-    sk_array* a = sk_array_new(sizeof(sk_string), 1);
-        for (int i = 0; i < __sk__argc; i++) {
-            sk_string s = sk_string_new(__sk__argv[i]);
-            sk_array_push(a, &s);
-        }
-        return sk_arr_new(a);
-    t107 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t107;
-}
-
-sk_string __sk__getArg(sk_int idx) {
-    sk_string t108;
-
-    if (idx.__is_null) return sk_string_new("");
-        int i = idx.value;
-        if (i < 0 || i >= __sk__argc) return sk_string_new("");
-        return sk_string_new(__sk__argv[i]);
-    t108 = sk_string_new("");
-    return t108;
-}
-
-sk_int __sk__getArgc(void) {
-    sk_int t109;
-
-    return sk_int_new(__sk__argc);
-    t109 = sk_int_new(0);
-    return t109;
-}
-
-void __sk__exit(sk_int code, sk_string msg) {
-    if (!msg.__is_null && msg.value != NULL && msg.value[0] != '\0') {
-          fprintf(stderr, "%s\n", msg.value);
-        }
-        if (code.__is_null) exit(0);
-        exit(code.value);
-    return;
-}
-
-void __sk__abort(sk_string msg) {
-    if (!msg.__is_null && msg.value != NULL && msg.value[0] != '\0') {
-          fprintf(stderr, "%s\n", msg.value);
-        }
-        abort();
-    return;
-}
-
-void __sk__kill(sk_int pid, sk_int sig) {
-    if (pid.__is_null || sig.__is_null) return;
-        #if defined(_WIN32)
-            HANDLE h = OpenProcess(PROCESS_TERMINATE, FALSE, (DWORD)pid.value);
-            if (h != NULL) {
-                TerminateProcess(h, (UINT)sig.value);
-                CloseHandle(h);
-            }
-        #else
-            kill((pid_t)pid.value, sig.value);
-        #endif
-    return;
-}
-
-sk_string __sk__getOSName(void) {
-    sk_string t110;
-
-    #if defined(_WIN32)
-            return sk_string_new("windows");
-        #elif defined(__APPLE__)
-            return sk_string_new("darwin");
-        #elif defined(__linux__)
-            return sk_string_new("linux");
-        #elif defined(__FreeBSD__)
-            return sk_string_new("freebsd");
-        #else
-            return sk_string_new("unknown");
-        #endif
-    t110 = sk_string_new("");
-    return t110;
-}
-
-sk_string __sk__getArchName(void) {
-    sk_string t111;
-
-    #if defined(_M_X64) || defined(__x86_64__)
-            return sk_string_new("x86_64");
-        #elif defined(_M_IX86) || defined(__i386__)
-            return sk_string_new("x86");
-        #elif defined(_M_ARM64) || defined(__aarch64__)
-            return sk_string_new("aarch64");
-        #elif defined(_M_ARM) || defined(__arm__)
-            return sk_string_new("arm");
-        #else
-            return sk_string_new("unknown");
-        #endif
-    t111 = sk_string_new("");
-    return t111;
-}
-
-sk_string __sk__getHostname(void) {
-    sk_string t112;
-
-    char buf[256];
-        if (gethostname(buf, sizeof(buf)) != 0) return sk_string_new("");
-        buf[sizeof(buf) - 1] = '\0';
-        return sk_string_new(buf);
-    t112 = sk_string_new("");
-    return t112;
-}
-
-sk_string __sk__getUsername(void) {
-    sk_string t113;
-
-    #if defined(_WIN32)
-            char buf[256];
-            DWORD n = (DWORD)sizeof(buf);
-            if (GetUserNameA(buf, &n) == 0) return sk_string_new("");
-            return sk_string_new(buf);
-        #else
-            const char* u = getenv("USER");
-            if (u == NULL) u = getenv("LOGNAME");
-            return sk_string_new(u ? u : "");
-        #endif
-    t113 = sk_string_new("");
-    return t113;
-}
-
-sk_int __sk__getCPUCount(void) {
-    sk_int t114;
-
-    #if defined(_WIN32)
-            SYSTEM_INFO si;
-            GetSystemInfo(&si);
-            return sk_int_new((int)si.dwNumberOfProcessors);
-        #else
-            long n = sysconf(_SC_NPROCESSORS_ONLN);
-            return sk_int_new(n > 0 ? (int)n : 1);
-        #endif
-    t114 = sk_int_new(1);
-    return t114;
-}
-
-sk_int __sk__getPageSize(void) {
-    sk_int t115;
-
-    #if defined(_WIN32)
-            SYSTEM_INFO si;
-            GetSystemInfo(&si);
-            return sk_int_new((int)si.dwPageSize);
-        #else
-            long n = sysconf(_SC_PAGESIZE);
-            return sk_int_new(n > 0 ? (int)n : 4096);
-        #endif
-    t115 = sk_int_new(4096);
-    return t115;
-}
-
-sk_int __sk__getTotalMemory(void) {
-    sk_int t116;
-
-    #if defined(_WIN32)
-            MEMORYSTATUSEX ms;
-            ms.dwLength = sizeof(ms);
-            if (!GlobalMemoryStatusEx(&ms)) return sk_int_new(0);
-            return sk_int_new((int)ms.ullTotalPhys);
-        #elif defined(__APPLE__)
-            long long pages = 0; long long page_size = 0;
-            size_t sz = sizeof(pages);
-            sysctlbyname("hw.memsize", &pages, &sz, NULL, 0);
-            page_size = 4096;
-            (void)page_size;
-            return sk_int_new((int)pages);
-        #else
-            long pages = sysconf(_SC_PHYS_PAGES);
-            long page_size = sysconf(_SC_PAGESIZE);
-            if (pages <= 0 || page_size <= 0) return sk_int_new(0);
-            return sk_int_new((int)(pages * page_size));
-        #endif
-    t116 = sk_int_new(0);
-    return t116;
-}
-
-void __sk__sleep(sk_int ms) {
-    if (ms.__is_null || ms.value <= 0) return;
-        #if defined(_WIN32)
-            Sleep((DWORD)ms.value);
-        #else
-            usleep((useconds_t)ms.value * 1000);
-        #endif
-    return;
-}
-
-sk_int __sk__monotonicMs(void) {
-    sk_int t117;
-
-    #if defined(_WIN32)
-            LARGE_INTEGER f, c;
-            QueryPerformanceFrequency(&f);
-            QueryPerformanceCounter(&c);
-            return sk_int_new((int)((c.QuadPart * 1000) / f.QuadPart));
-        #else
-            struct timespec ts;
-            clock_gettime(CLOCK_MONOTONIC, &ts);
-            return sk_int_new((int)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000));
-        #endif
-    t117 = sk_int_new(0);
-    return t117;
-}
-
-sk_int __sk__unixTime(void) {
-    sk_int t118;
-
-    return sk_int_new((int)time(NULL));
-    t118 = sk_int_new(0);
-    return t118;
-}
-
-sk_string __sk__unixTimeStr(sk_string fmt) {
-    sk_string t119;
-
-    time_t t = time(NULL);
-        struct tm tmv;
-        #if defined(_WIN32)
-            localtime_s(&tmv, &t);
-        #else
-            localtime_r(&t, &tmv);
-        #endif
-        const char* f = (fmt.__is_null || fmt.value == NULL) ? "%Y-%m-%d %H:%M:%S" : fmt.value;
-        char buf[256];
-        if (strftime(buf, sizeof(buf), f, &tmv) == 0) return sk_string_new("");
-        return sk_string_new(buf);
-    t119 = sk_string_new("");
-    return t119;
-}
-
-sk_int __sk__exec(sk_string cmd) {
-    sk_int t120;
-
-    if (cmd.__is_null || cmd.value == NULL) return sk_int_new(-1);
-        int rc = system(cmd.value);
-        #if defined(_WIN32)
-            return sk_int_new(rc);
-        #else
-            if (rc == -1) return sk_int_new(-1);
-            if (WIFEXITED(rc)) return sk_int_new(WEXITSTATUS(rc));
-            return sk_int_new(-1);
-        #endif
-    t120 = sk_int_new(-1);
-    return t120;
-}
-
-sk_dict_ref __sk__parse(sk_string text) {
-    sk_dict_ref t121;
-
-    if (text.__is_null) {
-            JsonParseError* err = malloc(sizeof(JsonParseError));
-            err->__type = "Error.JsonError.JsonParseError";
-            err->msg = sk_string_new("Cannot parse 'null'.");
-            sk_throw(err, "<builtin:std/json>", 340, 5);
-        }
-        sk_any res = __sk__json_parse(text.value);
-        if (res.type == 6 && strcmp(text.value, "null") != 0) {
-            JsonParser p;
-            p.src = text.value;
-            p.pos = 0;
-            p.len = (int)strlen(text.value);
-            __sk__json_skip_ws(&p);
-            if (p.pos + 4 <= p.len && strncmp(&p.src[p.pos], "null", 4) == 0) {
-                p.pos += 4;
-                __sk__json_skip_ws(&p);
-                if (p.pos != p.len) {
-                    JsonParseError* err = malloc(sizeof(JsonParseError));
-                    err->__type = "Error.JsonError.JsonParseError";
-                    err->msg = sk_string_new("Trailing garbage after JSON value.");
-                    sk_throw(err, "<builtin:std/json>", 350, 5);
-                }
-            } else {
-                JsonParseError* err = malloc(sizeof(JsonParseError));
-                err->__type = "Error.JsonError.JsonParseError";
-                err->msg = sk_string_new("Invalid JSON.");
-                sk_throw(err, "<builtin:std/json>", 355, 5);
-            }
-        }
-        if (res.type == 8) {
-            return any_to_dict(res);
-        }
-        sk_dict* d = sk_dict_new();
-        sk_dict_set(d, sk_string_new("value"), res);
-        return sk_dict_ref_new(d);
-    t121 = sk_dict_ref_new(sk_dict_new());
-    return t121;
-}
-
-sk_dict_ref __sk__parseFile(sk_string path) {
-    sk_dict_ref t122;
-
-    if (path.__is_null) {
-            JsonFileError* err = malloc(sizeof(JsonFileError));
-            err->__type = "Error.JsonError.JsonFileError";
-            err->msg = sk_string_new("Path cannot be null.");
-            sk_throw(err, "<builtin:std/json>", 380, 5);
-        }
-        FILE* f = fopen(path.value, "rb");
-        if (!f) {
-            JsonFileError* err = malloc(sizeof(JsonFileError));
-            err->__type = "Error.JsonError.JsonFileError";
-            err->msg = sk_string_new("Cannot open JSON file.");
-            sk_throw(err, "<builtin:std/json>", 386, 5);
-        }
-        fseek(f, 0, SEEK_END);
-        long size = ftell(f);
-        fseek(f, 0, SEEK_SET);
-        if (size <= 0) {
-            fclose(f);
-            JsonFileError* err = malloc(sizeof(JsonFileError));
-            err->__type = "Error.JsonError.JsonFileError";
-            err->msg = sk_string_new("JSON file is empty.");
-            sk_throw(err, "<builtin:std/json>", 396, 5);
-        }
-        char* content = malloc(size + 1);
-        size_t n = fread(content, 1, size, f);
-        content[n] = '\0';
-        fclose(f);
-        sk_any res = __sk__json_parse(content);
-        if (res.type == 6 && strcmp(content, "null") != 0) {
-            JsonParser p;
-            p.src = content;
-            p.pos = 0;
-            p.len = (int)n;
-            __sk__json_skip_ws(&p);
-            if (p.pos + 4 <= p.len && strncmp(&p.src[p.pos], "null", 4) == 0) {
-                p.pos += 4;
-                __sk__json_skip_ws(&p);
-                if (p.pos != p.len) {
-                    free(content);
-                    JsonParseError* err = malloc(sizeof(JsonParseError));
-                    err->__type = "Error.JsonError.JsonParseError";
-                    err->msg = sk_string_new("Trailing garbage after JSON value in file.");
-                    sk_throw(err, "<builtin:std/json>", 412, 5);
-                }
-            } else {
-                free(content);
-                JsonParseError* err = malloc(sizeof(JsonParseError));
-                err->__type = "Error.JsonError.JsonParseError";
-                err->msg = sk_string_new("Invalid JSON in file.");
-                sk_throw(err, "<builtin:std/json>", 418, 5);
-            }
-        }
-        free(content);
-        if (res.type == 8) {
-            return any_to_dict(res);
-        }
-        sk_dict* d = sk_dict_new();
-        sk_dict_set(d, sk_string_new("value"), res);
-        return sk_dict_ref_new(d);
-    t122 = sk_dict_ref_new(sk_dict_new());
-    return t122;
-}
-
-sk_any __sk__parseAny(sk_string text) {
-    sk_any t123;
-
-    if (text.__is_null) {
-            JsonParseError* err = malloc(sizeof(JsonParseError));
-            err->__type = "Error.JsonError.JsonParseError";
-            err->msg = sk_string_new("Cannot parse 'null'.");
-            sk_throw(err, "<builtin:std/json>", 440, 5);
-        }
-        sk_any res = __sk__json_parse(text.value);
-        if (res.type == 6 && strcmp(text.value, "null") != 0) {
-            JsonParser p;
-            p.src = text.value;
-            p.pos = 0;
-            p.len = (int)strlen(text.value);
-            __sk__json_skip_ws(&p);
-            if (p.pos + 4 <= p.len && strncmp(&p.src[p.pos], "null", 4) == 0) {
-                p.pos += 4;
-                __sk__json_skip_ws(&p);
-                if (p.pos != p.len) {
-                    JsonParseError* err = malloc(sizeof(JsonParseError));
-                    err->__type = "Error.JsonError.JsonParseError";
-                    err->msg = sk_string_new("Trailing garbage after JSON value.");
-                    sk_throw(err, "<builtin:std/json>", 452, 5);
-                }
-            } else {
-                JsonParseError* err = malloc(sizeof(JsonParseError));
-                err->__type = "Error.JsonError.JsonParseError";
-                err->msg = sk_string_new("Invalid JSON.");
-                sk_throw(err, "<builtin:std/json>", 457, 5);
-            }
-        }
-        return res;
-    t123 = SK_NULL_any;
-    return t123;
-}
-
-sk_string __sk__toString(sk_dict_ref data) {
-    sk_string t124;
-
-    if (data.__is_null) {
-            JsonSerializeError* err = malloc(sizeof(JsonSerializeError));
-            err->__type = "Error.JsonError.JsonSerializeError";
-            err->msg = sk_string_new("Cannot serialize 'null' dict.");
-            sk_throw(err, "<builtin:std/json>", 480, 5);
-        }
-        JsonOut o;
-        __sk__json_out_init(&o);
-        sk_any any = any_dict(data);
-        __sk__json_write_any(&o, any);
-        return sk_string_new_take(o.buf);
-    t124 = sk_string_new("");
-    return t124;
-}
-
-sk_string __sk__toStringAny(sk_any data) {
-    sk_string t125;
-
-    JsonOut o;
-        __sk__json_out_init(&o);
-        __sk__json_write_any(&o, data);
-        return sk_string_new_take(o.buf);
-    t125 = sk_string_new("");
-    return t125;
-}
-
-sk_bool __sk__isValid(sk_string text) {
-    sk_bool t126;
-
-    if (text.__is_null || text.value == NULL) return sk_bool_new(0);
-        JsonParser p;
-        p.src = text.value;
-        p.pos = 0;
-        p.len = (int)strlen(text.value);
-        sk_any res = __sk__json_parse_value(&p);
-        __sk__json_skip_ws(&p);
-        if (p.pos != p.len) return sk_bool_new(0);
-        if (res.type == 6) {
-            JsonParser p2;
-            p2.src = text.value;
-            p2.pos = 0;
-            p2.len = (int)strlen(text.value);
-            __sk__json_skip_ws(&p2);
-            if (p2.pos + 4 <= p2.len && strncmp(&p2.src[p2.pos], "null", 4) == 0) {
-                return sk_bool_new(1);
-            }
-            return sk_bool_new(0);
-        }
-        return sk_bool_new(1);
-    t126 = sk_bool_new(0);
-    return t126;
-}
-
-sk_bool __sk__isValidFile(sk_string path) {
-    sk_bool t127;
-
-    if (path.__is_null || path.value == NULL) return sk_bool_new(0);
-        FILE* f = fopen(path.value, "rb");
-        if (!f) return sk_bool_new(0);
-        fseek(f, 0, SEEK_END);
-        long size = ftell(f);
-        fseek(f, 0, SEEK_SET);
-        if (size <= 0) { fclose(f); return sk_bool_new(0); }
-        char* buf = malloc(size + 1);
-        size_t n = fread(buf, 1, size, f);
-        buf[n] = '\0';
-        fclose(f);
-        JsonParser p;
-        p.src = buf;
-        p.pos = 0;
-        p.len = (int)n;
-        sk_any res = __sk__json_parse_value(&p);
-        __sk__json_skip_ws(&p);
-        bool ok = 1;
-        if (p.pos != p.len) ok = 0;
-        if (res.type == 6) {
-            JsonParser p2;
-            p2.src = buf;
-            p2.pos = 0;
-            p2.len = (int)n;
-            __sk__json_skip_ws(&p2);
-            if (!(p2.pos + 4 <= p2.len && strncmp(&p2.src[p2.pos], "null", 4) == 0)) {
-                ok = 0;
-            }
-        }
-        free(buf);
-        return sk_bool_new(ok);
-    t127 = sk_bool_new(0);
-    return t127;
+    return t20;
 }
 

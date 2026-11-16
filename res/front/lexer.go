@@ -433,7 +433,7 @@ func (l *Lexer) readIdent() Token {
 		"string":   TOKEN_KEYWORD,
 		"async":    TOKEN_KEYWORD,
 		"await":    TOKEN_KEYWORD,
-		"Promise":  TOKEN_KEYWORD,
+		"notready": TOKEN_KEYWORD,
 		"arr":      TOKEN_KEYWORD,
 		"dict":     TOKEN_KEYWORD,
 		"float":    TOKEN_KEYWORD,

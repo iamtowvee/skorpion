@@ -44,8 +44,7 @@ const (
 	NODE_TRY            NodeType = "Try"
 	NODE_CATCH          NodeType = "Catch"
 	NODE_AWAIT_EXPR     NodeType = "AwaitExpr"
-	NODE_PROMISE_SET    NodeType = "PromiseSet"
-	NODE_ISAE           NodeType = "IsAsyncEnded"
+	NODE_NOT_READY      NodeType = "NotReady"
 )
 
 type Node interface {
@@ -118,13 +117,6 @@ type Function struct {
 	File        string
 }
 
-type PromiseSet struct {
-	Position
-	Value Node
-}
-
-func (p *PromiseSet) GetType() NodeType { return NODE_PROMISE_SET }
-
 type AwaitExpr struct {
 	Position
 	Expr Node
@@ -132,17 +124,21 @@ type AwaitExpr struct {
 
 func (a *AwaitExpr) GetType() NodeType { return NODE_AWAIT_EXPR }
 
-type IsAsyncEnded struct {
-	Position
-	FuncName string
-}
-
-func (i *IsAsyncEnded) GetType() NodeType { return NODE_ISAE }
-
 func (f *Function) GetType() NodeType { return NODE_FUNCTION }
 
 func (f *Function) GetNameLine() int   { return f.NamePos.Line }
 func (f *Function) GetNameColumn() int { return f.NamePos.Column }
+
+// ============================================================================
+// NotReady — литерал 'notready' (внутреннее состояние async-значения).
+// ============================================================================
+
+type NotReady struct {
+	Position
+}
+
+func (n *NotReady) GetType() NodeType     { return NODE_NOT_READY }
+func (n *NotReady) GetTypeString() string { return "void" }
 
 // ============================================================================
 // Param

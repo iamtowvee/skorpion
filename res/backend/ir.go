@@ -141,18 +141,11 @@ const (
 	OpErrorCast   Opcode = "error_cast"    // Result = (Type*)Arg1
 	OpErrorFree   Opcode = "error_free"    // free(Arg1)
 
-	// --- Async / Promise ---
-	OpPromiseNew        Opcode = "promise_new"         // Result = new promise (Arg1 = Skorpion-тип)
-	OpPromiseSet        Opcode = "promise_set"         // Arg1.promise = Arg2 (start value)
-	OpPromiseFinish     Opcode = "promise_finish"      // Arg1.promise = Arg2 (final value)
-	OpPromiseFinishVoid Opcode = "promise_finish_void" // Arg1 = promise
-	OpPromiseFail       Opcode = "promise_fail"        // Arg1.promise = Arg2 (error)
-	OpPromiseRead       Opcode = "promise_read"        // Result = promise.value (Arg1 = promise)
-	OpPromiseAwait      Opcode = "promise_await"       // Result = await Arg1 (skType = ReturnType)
-	OpPromiseAwaitVoid  Opcode = "promise_await_void"  // await Arg1 (void)
-	OpPromiseEnded      Opcode = "promise_ended"       // Result = bool (Arg1 = promise)
-	OpPromiseRelease    Opcode = "promise_release"     // release Arg1
-	OpAsyncSpawn        Opcode = "async_spawn"         // Arg1 = funcName, Arg2 = args, Result = promise
+	// --- Async / notready ---
+	OpConstNotReady Opcode = "const_notready" // Result = notready of ReturnType (__is_null=2)
+	OpAwaitStart    Opcode = "await_start"    // Arg1=out-var, Arg2=fName, Arg3=args (start pthread, write to *&Arg1)
+	OpAwait         Opcode = "await"          // Arg1=var (spin-wait while __is_null == 2)
+	OpIsNotReady    Opcode = "is_notready"    // Result=bool, Arg1=var, Metadata="eq"|"ne"
 )
 
 // IRInstruction — одна инструкция IR.

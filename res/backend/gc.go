@@ -71,7 +71,6 @@ func (gc *GCAnalyzer) collectVariables(fn *IRFunction) []string {
 	return variables
 }
 
-// isHeapType — какие Skorpion-типы владеют heap-памятью.
 func (gc *GCAnalyzer) isHeapType(t string) bool {
 	if strings.Contains(t, "string") {
 		return true
@@ -80,9 +79,6 @@ func (gc *GCAnalyzer) isHeapType(t string) bool {
 		return true
 	}
 	if strings.Contains(t, "dict") {
-		return true
-	}
-	if strings.Contains(t, "promise") {
 		return true
 	}
 	if strings.Contains(t, "error_ptr") {
@@ -109,7 +105,7 @@ func (gc *GCAnalyzer) findOwners(fn *IRFunction, variables []string) map[string]
 		switch ins.Op {
 		case OpConstString, OpConstNull, OpArrayNew, OpDictNew,
 			OpConcat, OpConcatCC, OpConcatCS, OpConcatSC, OpConcatAll,
-			OpPromiseNew, OpCopy, OpAsyncSpawn:
+			OpCopy:
 			allocated[ins.Result] = true
 		case OpCall:
 			if gc.callAllocates(ins.Arg1) {
@@ -155,20 +151,6 @@ func (gc *GCAnalyzer) findOwners(fn *IRFunction, variables []string) map[string]
 		}
 		if ins.Op == OpFieldSet && ins.Arg3 != "" {
 			moved[ins.Arg3] = true
-		}
-	}
-
-	// Передача владения в Promise / return.
-	for _, ins := range fn.Instructions {
-		switch ins.Op {
-		case OpPromiseSet, OpPromiseFinish:
-			if ins.Arg2 != "" {
-				moved[ins.Arg2] = true
-			}
-		case OpRet:
-			if ins.Arg1 != "" {
-				moved[ins.Arg1] = true
-			}
 		}
 	}
 
@@ -701,17 +683,8 @@ func (gc *GCAnalyzer) emitFree(out []IRInstruction, fn *IRFunction, i int, v str
 		return out
 	}
 	skType := gc.findVarSkType(fn, v)
-	if strings.Contains(skType, "promise") {
-		suffix := strings.TrimSuffix(strings.TrimPrefix(skType, "sk_promise_"), "*")
-		out = append(out, IRInstruction{
-			Op:         OpPromiseRelease,
-			Arg1:       v,
-			ReturnType: suffix,
-		})
-	} else {
-		op := gc.freeOpFor(skType)
-		out = append(out, IRInstruction{Op: op, Arg1: v})
-	}
+	op := gc.freeOpFor(skType)
+	out = append(out, IRInstruction{Op: op, Arg1: v})
 	if cyclicVars[v] {
 		out = append(out, IRInstruction{Op: OpAssign, Result: v, Arg1: ""})
 	}
@@ -745,7 +718,7 @@ func (gc *GCAnalyzer) hasFreeAfter(fn *IRFunction, idx int, varName string) bool
 	for j := idx + 1; j < len(fn.Instructions); j++ {
 		if fn.Instructions[j].Arg1 == varName {
 			switch fn.Instructions[j].Op {
-			case OpFreeString, OpFreeArray, OpFreeDict, OpPromiseRelease:
+			case OpFreeString, OpFreeArray, OpFreeDict:
 				return true
 			}
 		}

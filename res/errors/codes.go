@@ -489,22 +489,84 @@ var ErrorCodes = map[string]ErrorCode{
 	"0652": {Code: "0652", Message: "Expected '}' in dict literal", Description: "The dict literal was not closed with '}'.", Tip: "Add '}' at the end."},
 	"0653": {Code: "0653", Message: "Config error", Description: "manifest.spc could not be parsed.", Tip: "Check the manifest.spc syntax (key[value] pairs)."},
 
-	// --- 0660-0678: Async / Promise ---
-	"0660": {Code: "0660", Message: "Expected '[' after 'Promise'", Description: "The 'Promise' keyword must be followed by '[' and a literal value.", Tip: "Use: 'Promise[0]', 'Promise[\"\"]', 'Promise[null]'."},
-	"0661": {Code: "0661", Message: "Expected ']' after Promise value", Description: "The Promise[...] construct was not closed with ']'.", Tip: "Add ']' after the literal."},
-	"0662": {Code: "0662", Message: "'Promise[...]' can only be used inside an async function", Description: "The Promise[...] construct is only valid inside a function declared with 'async'.", Tip: "Add 'async' to the function declaration, or remove 'Promise[...]'."},
-	"0663": {Code: "0663", Message: "'await' requires a function call or a promise variable", Description: "'await' can only be applied to an async function call or a variable that holds a promise.", Tip: "Use 'await asyncFunc(...)' or 'await someVariable'."},
-	"0664": {Code: "0664", Message: "Not an async function", Description: "The function referenced here is not declared with 'async'.", Tip: "Add 'async' to the function declaration, or remove 'await'/'isAsyncEnded'."},
-	"0666": {Code: "0666", Message: "isAsyncEnded requires exactly one argument", Description: "The builtin 'isAsyncEnded' takes exactly one argument — the async function name as a string literal.", Tip: "Use: 'isAsyncEnded(\"funcName\")'."},
-	"0667": {Code: "0667", Message: "isAsyncEnded argument must be a string literal", Description: "The argument to 'isAsyncEnded' must be a string literal with the async function name.", Tip: "Use: 'isAsyncEnded(\"funcName\")'."},
-	"0668": {Code: "0668", Message: "No async call found in scope", Description: "isAsyncEnded(...) could not find a variable in the current scope that holds a promise from the given async function.", Tip: "Assign the async call to a variable first: 'int x = f(...)'."},
-	"0669": {Code: "0669", Message: "Promise[...] value type mismatch", Description: "The type of the value inside Promise[...] does not match the async function's return type.", Tip: "Use a value of the same type as the function's return type."},
-	"0670": {Code: "0670", Message: "'Promise[...]' must be the first statement in an async function", Description: "In the current async model, Promise[...] can only appear as the very first statement of the function body.", Tip: "Move 'Promise[...]' to the top of the function."},
-	"0671": {Code: "0671", Message: "Promise[...] requires a literal", Description: "The value inside Promise[...] must be a literal — number, string, char, true, false, or null.", Tip: "Use a literal: 'Promise[0]', 'Promise[\"\"]', 'Promise[null]'."},
-	"0674": {Code: "0674", Message: "Cannot assign to promise variable", Description: "Promise variables are read-only from the outside.", Tip: "Don't assign to it; read it or await it instead."},
-	"0675": {Code: "0675", Message: "async function must have exactly one Promise[...]", Description: "Each async function must declare its starting value with exactly one Promise[...] as its first statement.", Tip: "Add exactly one 'Promise[<literal>]' at the top of the function."},
-	"0676": {Code: "0676", Message: "'Promise[...]' cannot be used in async void function", Description: "An async void function has no value to report, so Promise[...] is meaningless.", Tip: "Either change the return type to a concrete type, or remove Promise[...]."},
-	"0678": {Code: "0678", Message: "Cannot assign async void result to a variable", Description: "An async void function produces no value, so its result cannot be assigned.", Tip: "Change the function's return type, or call it without assigning."},
+	// --- 0650-0664: Async / notready ---
+	"0654": {
+		Code:        "0654",
+		Message:     "Cannot assign 'notready' to a variable",
+		Description: "'notready' is an internal state of async values. It cannot be assigned explicitly.",
+		Tip:         "Assign the result of an async call: 'int x = asyncFunc()'. Or use 'await' / 'while (x == notready)' to wait.",
+		Example:     "// Wrong:\nint x = notready\n\n// Right:\nint x = asyncFunc()",
+	},
+	"0655": {
+		Code:        "0655",
+		Message:     "Cannot return 'notready' from a function",
+		Description: "'notready' is an internal state, not a real value. It cannot be returned.",
+		Tip:         "Return a real value, or make the function async and let 'return' finalize the value.",
+		Example:     "// Wrong:\nint f() { return notready }\n\n// Right:\nasync int f() { return 42 }",
+	},
+	"0656": {
+		Code:        "0656",
+		Message:     "Cannot pass 'notready' as an argument",
+		Description: "'notready' is an internal state, not a real value. It cannot be passed to functions.",
+		Tip:         "Use 'await' or 'while (x == notready)' first.",
+	},
+	"0657": {
+		Code:        "0657",
+		Message:     "Cannot use 'notready' in arithmetic",
+		Description: "'notready' can only be compared with '==' and '!='. Arithmetic is forbidden.",
+		Tip:         "Wait until the value is ready: 'while (x == notready) { }' or 'await x'.",
+	},
+	"0658": {
+		Code:        "0658",
+		Message:     "Cannot use 'notready' in conversion",
+		Description: "'notready' can only be compared with '==' and '!='. Conversions (to_int, to_string, ...) are forbidden.",
+		Tip:         "Wait until the value is ready: 'while (x == notready) { }' or 'await x'.",
+	},
+	"0659": {
+		Code:        "0659",
+		Message:     "Cannot use 'notready' in '^' format",
+		Description: "'notready' can only be compared with '==' and '!='. Format operators ('^Nf', '^X') are forbidden.",
+		Tip:         "Wait until the value is ready.",
+	},
+	"0660": {
+		Code:        "0660",
+		Message:     "'notready' cannot be used in array literal",
+		Description: "Elements of an array literal cannot be 'notready'. Wait for each async call before building the array.",
+		Tip:         "Use 'await' or 'while' before creating the array.",
+		Example:     "// Wrong:\narr[int] xs = [x(), y()]\n\n// Right:\nint a = x(); await a\nint b = y(); await b\narr[int] xs = [a, b]",
+	},
+	"0661": {
+		Code:        "0661",
+		Message:     "'notready' cannot be used in dict literal",
+		Description: "Values of a dict literal cannot be 'notready'. Wait for each async call before building the dict.",
+		Tip:         "Use 'await' or 'while' before creating the dict.",
+	},
+	"0662": {
+		Code:        "0662",
+		Message:     "'notready' is not a type",
+		Description: "'notready' is a literal (like 'null' or 'true'), not a type. It cannot be used in type positions.",
+		Tip:         "Use a concrete type (int, string, ...).",
+	},
+	"0663": {
+		Code:        "0663",
+		Message:     "Cannot await on this expression",
+		Description: "'await' works on a variable that may hold 'notready' (or on an async function call). It cannot be applied to arbitrary expressions.",
+		Tip:         "Assign the async call to a variable first: 'int x = asyncFunc(); await x'.",
+	},
+
+	// --- 0665-0669: Async declarations ---
+	"0665": {
+		Code:        "0665",
+		Message:     "'async char' is not allowed",
+		Description: "'char' is a raw byte without a null/notready state, so 'async char' cannot be implemented.",
+		Tip:         "Use 'int' or 'string' instead.",
+	},
+	"0666": {
+		Code:        "0666",
+		Message:     "async function has no 'return'",
+		Description: "An async function should contain at least one 'return' statement. Otherwise the returned value stays 'notready' forever.",
+		Tip:         "Add a 'return' to the function body.",
+	},
 
 	// ============================================================================
 	// 1500-1599: Semantic errors

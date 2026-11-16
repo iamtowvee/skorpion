@@ -72,7 +72,7 @@ SOMETHING
 
     const dict d = {x: "hi"}
     dict fd = d
-    fd.d = typeof(3)
+    fd.d = detruncate(d.x)
 
     io.sendln($d + "\n---\n" + $fd)
 

@@ -110,9 +110,8 @@ import (
 //  46  ContinueStmt   Position
 //  47  DoWhileStmt    Position, Block Body, Node Cond
 //  48  PostfixExpr    Position, string VarName, string Op
-//  49  PromiseSet     Position, Node Value
+//  49  NotReady       Position
 //  50  AwaitExpr      Position, Node Expr
-//  51  IsAsyncEnded   Position, string FuncName
 //
 // ── Замечания по реализации ────────────────────────────────────────────────
 //
@@ -191,9 +190,8 @@ const (
 	tagContinueStmt   byte = 46
 	tagDoWhileStmt    byte = 47
 	tagPostfixExpr    byte = 48
-	tagPromiseSet     byte = 49
+	tagNotReady       byte = 49
 	tagAwaitExpr      byte = 50
-	tagIsAsyncEnded   byte = 51
 )
 
 // ============================================================================
@@ -663,19 +661,14 @@ func (w *binWriter) node(n Node) error {
 		w.str(v.VarName)
 		w.str(v.Op)
 		return nil
-	case *PromiseSet:
-		w.u8(tagPromiseSet)
+	case *NotReady:
+		w.u8(tagNotReady)
 		w.pos(v.Position)
-		return w.node(v.Value)
+		return nil
 	case *AwaitExpr:
 		w.u8(tagAwaitExpr)
 		w.pos(v.Position)
 		return w.node(v.Expr)
-	case *IsAsyncEnded:
-		w.u8(tagIsAsyncEnded)
-		w.pos(v.Position)
-		w.str(v.FuncName)
-		return nil
 	default:
 		return fmt.Errorf("sklib: cannot encode node of type %T", n)
 	}
@@ -1005,12 +998,10 @@ func (r *binReader) node() (Node, error) {
 		return r.doWhileStmtNode()
 	case tagPostfixExpr:
 		return r.postfixExprNode()
-	case tagPromiseSet:
-		return r.promiseSetNode()
 	case tagAwaitExpr:
 		return r.awaitExprNode()
-	case tagIsAsyncEnded:
-		return r.isAsyncEndedNode()
+	case tagNotReady:
+		return r.notReadyNode()
 	default:
 		return nil, fmt.Errorf("unknown node tag %d at byte %d", tag, r.off-1)
 	}
@@ -1998,18 +1989,6 @@ func (r *binReader) postfixExprNode() (*PostfixExpr, error) {
 	return p, nil
 }
 
-func (r *binReader) promiseSetNode() (*PromiseSet, error) {
-	pos, err := r.readPos()
-	if err != nil {
-		return nil, err
-	}
-	p := &PromiseSet{Position: pos}
-	if p.Value, err = r.node(); err != nil {
-		return nil, err
-	}
-	return p, nil
-}
-
 func (r *binReader) awaitExprNode() (*AwaitExpr, error) {
 	pos, err := r.readPos()
 	if err != nil {
@@ -2022,16 +2001,12 @@ func (r *binReader) awaitExprNode() (*AwaitExpr, error) {
 	return a, nil
 }
 
-func (r *binReader) isAsyncEndedNode() (*IsAsyncEnded, error) {
+func (r *binReader) notReadyNode() (*NotReady, error) {
 	pos, err := r.readPos()
 	if err != nil {
 		return nil, err
 	}
-	i := &IsAsyncEnded{Position: pos}
-	if i.FuncName, err = r.str(); err != nil {
-		return nil, err
-	}
-	return i, nil
+	return &NotReady{Position: pos}, nil
 }
 
 // ============================================================================

@@ -585,36 +585,10 @@ func (p *Parser) parseStatement() Node {
 		case "throw":
 			return p.parseThrow()
 
-		case "Promise":
-			pos := p.pos()
-			p.advance() // Promise
-			if p.peek.Type != TOKEN_LBRACKET {
-				p.hasErrors = true
-				errors.NewFatalError("0660",
-					"Expected '[' after 'Promise'", p.peek.Line, p.peek.Column, p.FileName)
-				return nil
-			}
-			p.advance()
-			val := p.parseExpression()
-			if val == nil {
-				return nil
-			}
-			if p.peek.Type != TOKEN_RBRACKET {
-				p.hasErrors = true
-				errors.NewFatalError("0661",
-					"Expected ']' after Promise value", p.peek.Line, p.peek.Column, p.FileName)
-				return nil
-			}
-			p.advance()
-			if p.peek.Type == TOKEN_SEMICOLON {
-				p.advance()
-			}
-			return &PromiseSet{Position: pos, Value: val}
-
 		case "await":
 			pos := p.pos()
 			p.advance()
-			expr := p.parseUnary()
+			expr := p.parseExpression()
 			if expr == nil {
 				return nil
 			}
@@ -1776,6 +1750,15 @@ func (p *Parser) parseUnary() Node {
 
 	pos := p.pos()
 
+	if p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "await" {
+		p.advance()
+		expr := p.parseUnary()
+		if expr == nil {
+			return nil
+		}
+		return &AwaitExpr{Position: pos, Expr: expr}
+	}
+
 	if p.peek.Type == TOKEN_DOLLAR {
 		p.advance()
 		expr := p.parseUnary()
@@ -2166,38 +2149,19 @@ func (p *Parser) parsePrimary() Node {
 			}
 			return p.parseErrorInstance("Error", pos)
 		}
-		if p.peek.Literal == "Promise" {
-			pos := p.pos()
-			p.advance()
-			if p.peek.Type != TOKEN_LBRACKET {
-				p.hasErrors = true
-				errors.NewFatalError("0660",
-					"Expected '[' after 'Promise'", p.peek.Line, p.peek.Column, p.FileName)
-				return nil
-			}
-			p.advance()
-			value := p.parseExpression()
-			if value == nil {
-				return nil
-			}
-			if p.peek.Type != TOKEN_RBRACKET {
-				p.hasErrors = true
-				errors.NewFatalError("0661",
-					"Expected ']' after Promise value", p.peek.Line, p.peek.Column, p.FileName)
-				return nil
-			}
-			p.advance()
-			return &PromiseSet{Position: pos, Value: value}
-		}
 
-		if p.peek.Literal == "await" {
-			pos := p.pos()
+		if p.peek.Literal == "notready" {
+			litPos := p.pos()
 			p.advance()
-			expr := p.parseUnary()
-			if expr == nil {
+			// 'notready' не может быть функцией или индексироваться.
+			if p.peek.Type == TOKEN_LPAREN || p.peek.Type == TOKEN_LBRACKET {
+				p.hasErrors = true
+				errors.NewFatalError("0662",
+					"'notready' is not a type and not callable",
+					p.peek.Line, p.peek.Column, p.FileName)
 				return nil
 			}
-			return &AwaitExpr{Position: pos, Expr: expr}
+			return &NotReady{Position: litPos}
 		}
 		p.hasErrors = true
 		errors.NewFatalError("0505",
@@ -2680,6 +2644,18 @@ func (p *Parser) parsePostfix(expr Node) Node {
 	for {
 		if p.hasErrors || errors.HasFatal() {
 			return nil
+		}
+
+		// Проверка на notready ТОЛЬКО если дальше идет [ или .
+		if _, isNR := expr.(*NotReady); isNR {
+			if p.peek.Type == TOKEN_LBRACKET || p.peek.Type == TOKEN_DOT {
+				p.hasErrors = true
+				errors.NewFatalError("0662",
+					"'notready' is not a type and not callable/indexable",
+					p.peek.Line, p.peek.Column, p.FileName)
+				return nil
+			}
+			return expr // Если после notready ничего нет — возвращаем как есть
 		}
 
 		if p.peek.Type == TOKEN_LBRACKET {

@@ -31,9 +31,10 @@ func (cg *CodeGenerator) Generate() string {
 		cg.writeLine(fmt.Sprintf("#include %s", inc))
 	}
 
-	cg.writeLine("")
 	cg.writeLine("#ifdef _WIN32")
 	cg.writeLine("#include <windows.h>")
+	cg.writeLine("#else")
+	cg.writeLine("#include <sched.h>")
 	cg.writeLine("#endif")
 	cg.writeLine("")
 
@@ -67,6 +68,13 @@ func (cg *CodeGenerator) Generate() string {
 // ============================================================================
 
 func (cg *CodeGenerator) writeRuntime() {
+	cg.writeLine("// ==== Thread-local state ====")
+	cg.writeLine("#if defined(_MSC_VER)")
+	cg.writeLine("#define SK_THREAD_LOCAL __declspec(thread)")
+	cg.writeLine("#else")
+	cg.writeLine("#define SK_THREAD_LOCAL _Thread_local")
+	cg.writeLine("#endif")
+	cg.writeLine("")
 	cg.writeLine("// ==== Call stack for panic reporting ====")
 	cg.writeLine("typedef struct {")
 	cg.writeLine("    const char* file;")
@@ -75,8 +83,8 @@ func (cg *CodeGenerator) writeRuntime() {
 	cg.writeLine("} SkCallFrame;")
 	cg.writeLine("")
 	cg.writeLine("#define SK_CALL_STACK_MAX 256")
-	cg.writeLine("SkCallFrame sk_call_stack[SK_CALL_STACK_MAX];")
-	cg.writeLine("int sk_call_stack_top = 0;")
+	cg.writeLine("SK_THREAD_LOCAL SkCallFrame sk_call_stack[SK_CALL_STACK_MAX];")
+	cg.writeLine("SK_THREAD_LOCAL int sk_call_stack_top = 0;")
 	cg.writeLine("")
 	cg.writeLine("static inline void sk_call_push(const char* file, int line, int col) {")
 	cg.writeLine("    if (sk_call_stack_top < SK_CALL_STACK_MAX) {")
@@ -95,16 +103,16 @@ func (cg *CodeGenerator) writeRuntime() {
 
 func (cg *CodeGenerator) writeTypes() {
 	cg.writeLine("// Skorpion type definitions")
-	cg.writeLine("typedef struct { int value; int __is_null; } sk_int;")
+	cg.writeLine("typedef struct { int value; _Atomic int __is_null; } sk_int;")
 	cg.writeLine("typedef uint8_t sk_char;")
-	cg.writeLine("typedef struct { float value; uint8_t __is_null; int8_t prec; } sk_float;")
-	cg.writeLine("typedef struct { double value; uint8_t __is_null; int8_t prec; } sk_double;")
-	cg.writeLine("typedef struct { uint8_t value; uint8_t __is_null; } sk_bool;")
-	cg.writeLine("typedef struct { char* value; int __is_null; } sk_string;")
+	cg.writeLine("typedef struct { float value; _Atomic int __is_null; int8_t prec; } sk_float;")
+	cg.writeLine("typedef struct { double value; _Atomic int __is_null; int8_t prec; } sk_double;")
+	cg.writeLine("typedef struct { uint8_t value; _Atomic int __is_null; } sk_bool;")
+	cg.writeLine("typedef struct { char* value; _Atomic int __is_null; } sk_string;")
 	cg.writeLine("typedef struct sk_array sk_array;")
-	cg.writeLine("typedef struct { sk_array* value; int __is_null; } sk_arr;")
+	cg.writeLine("typedef struct { sk_array* value; _Atomic int __is_null; } sk_arr;")
 	cg.writeLine("typedef struct sk_dict sk_dict;")
-	cg.writeLine("typedef struct { sk_dict* value; int __is_null; } sk_dict_ref;")
+	cg.writeLine("typedef struct { sk_dict* value; _Atomic int __is_null; } sk_dict_ref;")
 	cg.writeLine("")
 	cg.writeLine("#define SK_NULL_int    ((sk_int){0, 1})")
 	cg.writeLine("#define SK_NULL_char   ((sk_char)0)")
@@ -114,7 +122,14 @@ func (cg *CodeGenerator) writeTypes() {
 	cg.writeLine("#define SK_NULL_string ((sk_string){NULL, 1})")
 	cg.writeLine("#define SK_NULL_arr    ((sk_arr){NULL, 1})")
 	cg.writeLine("#define SK_NULL_dict   ((sk_dict_ref){NULL, 1})")
-	cg.writeLine("#define SK_NULL_any    ((sk_any){6, -1, { .p = NULL } })")
+	cg.writeLine("")
+	cg.writeLine("#define SK_NOTREADY_int    ((sk_int){0, 2})")
+	cg.writeLine("#define SK_NOTREADY_float  ((sk_float){0, 2, -1})")
+	cg.writeLine("#define SK_NOTREADY_double ((sk_double){0, 2, -1})")
+	cg.writeLine("#define SK_NOTREADY_bool   ((sk_bool){0, 2})")
+	cg.writeLine("#define SK_NOTREADY_string ((sk_string){NULL, 2})")
+	cg.writeLine("#define SK_NOTREADY_arr    ((sk_arr){NULL, 2})")
+	cg.writeLine("#define SK_NOTREADY_dict   ((sk_dict_ref){NULL, 2})")
 	cg.writeLine("")
 
 	cg.writeLine("typedef struct {")
@@ -128,7 +143,11 @@ func (cg *CodeGenerator) writeTypes() {
 	cg.writeLine("        int b;")
 	cg.writeLine("        void* p;")
 	cg.writeLine("    } data;")
+	cg.writeLine("    _Atomic int __is_null;")
 	cg.writeLine("} sk_any;")
+	cg.writeLine("")
+	cg.writeLine("#define SK_NULL_any     ((sk_any){6, -1, { .p = NULL }, 1})")
+	cg.writeLine("#define SK_NOTREADY_any ((sk_any){6, -1, { .p = NULL }, 2})")
 	cg.writeLine("")
 
 	cg.writeLine("struct sk_array {")
@@ -179,6 +198,7 @@ func (cg *CodeGenerator) writeTypes() {
 	cg.writeLine("sk_string sk_string_new(const char* v) { sk_string r; r.value = v ? strdup(v) : NULL; r.__is_null = v ? 0 : 1; return r; }")
 	cg.writeLine("sk_string sk_string_new_take(char* v) { sk_string r; r.value = v; r.__is_null = v ? 0 : 1; return r; }")
 	cg.writeLine("sk_arr sk_arr_new(sk_array* v) { sk_arr r; r.value = v; r.__is_null = v ? 0 : 1; return r; }")
+	cg.writeLine("sk_dict_ref sk_dict_ref_new(sk_dict* d) { sk_dict_ref r; r.value = d; r.__is_null = d ? 0 : 1; return r; }")
 	cg.writeLine("")
 
 	cg.writeLine("sk_char sk_char_new(uint8_t v) { return v; }")
@@ -555,9 +575,6 @@ func (cg *CodeGenerator) writeTypes() {
 	cg.writeLine("    if (d->entries) free(d->entries);")
 	cg.writeLine("    free(d);")
 	cg.writeLine("}")
-	cg.writeLine("sk_dict_ref sk_dict_ref_new(sk_dict* d) {")
-	cg.writeLine("    sk_dict_ref r; r.value = d; r.__is_null = d ? 0 : 1; return r;")
-	cg.writeLine("}")
 	cg.writeLine("sk_dict* sk_dict_deep_copy(sk_dict* d) {")
 	cg.writeLine("    if (!d) return NULL;")
 	cg.writeLine("    sk_dict* copy = sk_dict_new();")
@@ -573,15 +590,15 @@ func (cg *CodeGenerator) writeTypes() {
 	cg.writeLine("void sk_dict_deep_free(sk_dict* d) { sk_dict_free(d); }")
 	cg.writeLine("")
 
-	cg.writeLine("sk_any any_null(void) { sk_any a; a.type = 6; a.prec = -1; a.data.p = NULL; return a; }")
-	cg.writeLine("sk_any any_int(sk_int v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.data.p = NULL; return a; } a.type = 0; a.prec = -1; a.data.i = v.value; return a; }")
-	cg.writeLine("sk_any any_string(sk_string v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.data.p = NULL; return a; } a.type = 1; a.prec = -1; a.data.s = v.value ? strdup(v.value) : NULL; return a; }")
-	cg.writeLine("sk_any any_float(sk_float v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.data.p = NULL; return a; } a.type = 2; a.prec = v.prec; a.data.f = v.value; return a; }")
-	cg.writeLine("sk_any any_double(sk_double v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.data.p = NULL; return a; } a.type = 3; a.prec = v.prec; a.data.d = v.value; return a; }")
-	cg.writeLine("sk_any any_bool(sk_bool v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.data.p = NULL; return a; } a.type = 4; a.prec = -1; a.data.b = v.value; return a; }")
-	cg.writeLine("sk_any any_char(sk_char v) { sk_any a; a.type = 7; a.prec = -1; a.data.i = v; return a; }")
-	cg.writeLine("sk_any any_arr(sk_arr v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.data.p = NULL; return a; } a.type = 5; a.prec = -1; a.data.p = v.value ? sk_array_deep_copy(v.value) : NULL; return a; }")
-	cg.writeLine("sk_any any_dict(sk_dict_ref v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.data.p = NULL; return a; } a.type = 8; a.prec = -1; a.data.p = v.value; return a; }")
+	cg.writeLine("sk_any any_null(void) { sk_any a; a.type = 6; a.prec = -1; a.__is_null = 1; a.data.p = NULL; return a; }")
+	cg.writeLine("sk_any any_int(sk_int v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.__is_null = 1; a.data.p = NULL; return a; } a.type = 0; a.prec = -1; a.__is_null = 0; a.data.i = v.value; return a; }")
+	cg.writeLine("sk_any any_string(sk_string v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.__is_null = 1; a.data.p = NULL; return a; } a.type = 1; a.prec = -1; a.__is_null = 0; a.data.s = v.value ? strdup(v.value) : NULL; return a; }")
+	cg.writeLine("sk_any any_float(sk_float v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.__is_null = 1; a.data.p = NULL; return a; } a.type = 2; a.prec = v.prec; a.__is_null = 0; a.data.f = v.value; return a; }")
+	cg.writeLine("sk_any any_double(sk_double v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.__is_null = 1; a.data.p = NULL; return a; } a.type = 3; a.prec = v.prec; a.__is_null = 0; a.data.d = v.value; return a; }")
+	cg.writeLine("sk_any any_bool(sk_bool v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.__is_null = 1; a.data.p = NULL; return a; } a.type = 4; a.prec = -1; a.__is_null = 0; a.data.b = v.value; return a; }")
+	cg.writeLine("sk_any any_char(sk_char v) { sk_any a; a.type = 7; a.prec = -1; a.__is_null = 0; a.data.i = v; return a; }")
+	cg.writeLine("sk_any any_arr(sk_arr v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.__is_null = 1; a.data.p = NULL; return a; } a.type = 5; a.prec = -1; a.__is_null = 0; a.data.p = v.value ? sk_array_deep_copy(v.value) : NULL; return a; }")
+	cg.writeLine("sk_any any_dict(sk_dict_ref v) { sk_any a; if (v.__is_null) { a.type = 6; a.prec = -1; a.__is_null = 1; a.data.p = NULL; return a; } a.type = 8; a.prec = -1; a.__is_null = 0; a.data.p = v.value; return a; }")
 	cg.writeLine("")
 
 	cg.writeLine("sk_any sk_any_deep_copy(sk_any a) {")
@@ -788,6 +805,7 @@ func (cg *CodeGenerator) writeTypes() {
 	cg.writeLine("    return SK_NULL_bool;")
 	cg.writeLine("}")
 	cg.writeLine("sk_bool sk_any_eq(sk_any a, sk_any b) {")
+	cg.writeLine("    if (a.__is_null == 2 || b.__is_null == 2) return sk_bool_new(a.__is_null == 2 && b.__is_null == 2);")
 	cg.writeLine("    if (a.type == 6 || b.type == 6) return SK_NULL_bool;")
 	cg.writeLine("    if (a.type != b.type) return sk_bool_new(0);")
 	cg.writeLine("    switch (a.type) {")
@@ -800,6 +818,7 @@ func (cg *CodeGenerator) writeTypes() {
 	cg.writeLine("    return SK_NULL_bool;")
 	cg.writeLine("}")
 	cg.writeLine("sk_bool sk_any_ne(sk_any a, sk_any b) {")
+	cg.writeLine("    if (a.__is_null == 2 || b.__is_null == 2) return sk_bool_new(!(a.__is_null == 2 && b.__is_null == 2));")
 	cg.writeLine("    if (a.type == 6 || b.type == 6) return SK_NULL_bool;")
 	cg.writeLine("    if (a.type != b.type) return sk_bool_new(1);")
 	cg.writeLine("    switch (a.type) {")
@@ -969,7 +988,7 @@ func (cg *CodeGenerator) writeTypes() {
 	cg.writeLine("    struct SkTryFrame* prev;")
 	cg.writeLine("    SkCleanup* cleanup;")
 	cg.writeLine("} SkTryFrame;")
-	cg.writeLine("SkTryFrame* sk_try_stack = NULL;")
+	cg.writeLine("SK_THREAD_LOCAL SkTryFrame* sk_try_stack = NULL;")
 	cg.writeLine("void sk_any_free(sk_any* a) {")
 	cg.writeLine("    if (a->type == 1 && a->data.s) { free(a->data.s); a->data.s = NULL; }")
 	cg.writeLine("    else if (a->type == 5 && a->data.p) { sk_array_deep_free((sk_array*)a->data.p); a->data.p = NULL; }")
@@ -1044,10 +1063,35 @@ func (cg *CodeGenerator) writeTypes() {
 }
 
 func (cg *CodeGenerator) writeAsyncRuntime() {
-	// Async/promise runtime (идентичен предыдущей версии).
-	// Для экономии места — тот же код, что в предыдущей версии codegen.go
-	// (функция generateAsyncRuntime).
-	cg.generateAsyncRuntimeInner()
+	cg.writeLine("// ==== Cooperative yield used by await spin-wait ====")
+	cg.writeLine("static inline void __sk__yield(void) {")
+	cg.writeLine("#ifdef _WIN32")
+	cg.writeLine("    SwitchToThread();")
+	cg.writeLine("#else")
+	cg.writeLine("    sched_yield();")
+	cg.writeLine("#endif")
+	cg.writeLine("}")
+	cg.writeLine("")
+
+	types := []string{"int", "float", "double", "bool", "string", "arr", "dict", "any"}
+	for _, t := range types {
+		cType := "sk_" + t
+		if t == "dict" {
+			cType = "sk_dict_ref"
+		}
+		cg.writeLine(fmt.Sprintf("static inline void sk_wait_%s(%s* v) { while (atomic_load(&v->__is_null) == 2) __sk__yield(); }", t, cType))
+	}
+	cg.writeLine("")
+
+	for _, t := range types {
+		cType := "sk_" + t
+		if t == "dict" {
+			cType = "sk_dict_ref"
+		}
+		cg.writeLine(fmt.Sprintf("static inline sk_bool sk_%s_eq_notready(%s a) { return sk_bool_new(atomic_load(&a.__is_null) == 2); }", t, cType))
+		cg.writeLine(fmt.Sprintf("static inline sk_bool sk_%s_ne_notready(%s a) { return sk_bool_new(atomic_load(&a.__is_null) != 2); }", t, cType))
+	}
+	cg.writeLine("")
 }
 
 func (cg *CodeGenerator) writePrototypes() {
@@ -1056,16 +1100,8 @@ func (cg *CodeGenerator) writePrototypes() {
 		if fn.Name == "main" {
 			continue
 		}
-		var returnType string
-		if fn.IsAsync {
-			returnType = "void"
-		} else {
-			returnType = cg.typeToC(fn.ReturnType)
-		}
+		returnType := cg.typeToC(fn.ReturnType)
 		params := []string{}
-		if fn.IsAsync {
-			params = append(params, fmt.Sprintf("sk_promise_%s* __promise", cg.promiseSuffix(fn.ReturnType)))
-		}
 		for _, p := range fn.Params {
 			params = append(params, fmt.Sprintf("%s %s", cg.typeToC(p.Type), p.Name))
 		}
@@ -1076,6 +1112,94 @@ func (cg *CodeGenerator) writePrototypes() {
 		cg.writeLine(fmt.Sprintf("%s %s(%s);", returnType, fn.CName, paramsStr))
 	}
 	cg.writeLine("")
+}
+
+func (cg *CodeGenerator) generateAsyncWrappers() {
+	asyncFns := []IRFunction{}
+	for _, fn := range cg.IR.Functions {
+		if fn.IsAsync && fn.Name != "main" {
+			asyncFns = append(asyncFns, fn)
+		}
+	}
+	if len(asyncFns) == 0 {
+		return
+	}
+
+	cg.writeLine("// ==== Async wrappers ====")
+	cg.writeLine("")
+
+	for _, fn := range asyncFns {
+		ctxName := "__sk__async_ctx_" + fn.Name
+		runName := "__sk__async_run_" + fn.Name
+		startName := "__sk__async_start_" + fn.Name
+		outType := cg.typeToC(fn.ReturnType)
+		if fn.ReturnType == "void" {
+			outType = "sk_int"
+		}
+
+		cg.writeLine(fmt.Sprintf("typedef struct %s {", ctxName))
+		cg.writeLine(fmt.Sprintf("    %s* out;", outType))
+		for i, p := range fn.Params {
+			cg.writeLine(fmt.Sprintf("    %s arg%d;", cg.typeToC(p.Type), i))
+		}
+		cg.writeLine(fmt.Sprintf("} %s;", ctxName))
+		cg.writeLine("")
+
+		cg.writeLine(fmt.Sprintf("void* %s(void* __p) {", runName))
+		cg.writeLine(fmt.Sprintf("    %s* c = (%s*)__p;", ctxName, ctxName))
+		cg.writeLine("    SkTryFrame frame;")
+		cg.writeLine("    sk_try_push(&frame);")
+		cg.writeLine("    if (setjmp(frame.env) != 0) {")
+		cg.writeLine("        void* err = frame.error;")
+		cg.writeLine("        sk_try_pop(&frame);")
+		cg.writeLine("        const char* __t = *(const char**)err;")
+		cg.writeLine(fmt.Sprintf("        fprintf(stderr, \"Panicked with error (%%s) in async function '%s'\\n\", __t);", fn.Name))
+		cg.writeLine("        exit(1);")
+		cg.writeLine("    }")
+
+		argList := []string{}
+		for i := range fn.Params {
+			argList = append(argList, fmt.Sprintf("c->arg%d", i))
+		}
+		argStr := strings.Join(argList, ", ")
+
+		if fn.ReturnType == "void" {
+			cg.writeLine(fmt.Sprintf("    %s(%s);", fn.CName, argStr))
+			cg.writeLine("    sk_try_pop(&frame);")
+			cg.writeLine("    if (c->out) {")
+			cg.writeLine("        sk_int __r = sk_int_new(0);")
+			cg.writeLine("        *c->out = __r;")
+			cg.writeLine("        atomic_store(&c->out->__is_null, 0);")
+			cg.writeLine("    }")
+		} else {
+			cg.writeLine(fmt.Sprintf("    %s __r = %s(%s);", outType, fn.CName, argStr))
+			cg.writeLine("    sk_try_pop(&frame);")
+			cg.writeLine("    if (c->out) {")
+			cg.writeLine("        *c->out = __r;")
+			cg.writeLine("        atomic_store(&c->out->__is_null, __r.__is_null);")
+			cg.writeLine("    }")
+		}
+		cg.writeLine("    free(c);")
+		cg.writeLine("    return NULL;")
+		cg.writeLine("}")
+		cg.writeLine("")
+
+		startParams := []string{fmt.Sprintf("%s* out", outType)}
+		for _, p := range fn.Params {
+			startParams = append(startParams, fmt.Sprintf("%s %s", cg.typeToC(p.Type), p.Name))
+		}
+		cg.writeLine(fmt.Sprintf("void %s(%s) {", startName, strings.Join(startParams, ", ")))
+		cg.writeLine(fmt.Sprintf("    %s* c = malloc(sizeof(%s));", ctxName, ctxName))
+		cg.writeLine("    c->out = out;")
+		for i, p := range fn.Params {
+			cg.writeLine(fmt.Sprintf("    c->arg%d = %s;", i, p.Name))
+		}
+		cg.writeLine("    pthread_t __t;")
+		cg.writeLine(fmt.Sprintf("    pthread_create(&__t, NULL, %s, c);", runName))
+		cg.writeLine("    pthread_detach(__t);")
+		cg.writeLine("}")
+		cg.writeLine("")
+	}
 }
 
 func (cg *CodeGenerator) writeGlobals() {
@@ -1284,21 +1408,15 @@ func (cg *CodeGenerator) renderGlobalAny(name string, init IRGlobalInit, prelude
 
 func (cg *CodeGenerator) generateFunction(fn *IRFunction) {
 	isMain := fn.Name == "main"
-	isAsync := fn.IsAsync
 
 	var returnType string
 	if isMain {
 		returnType = "int"
-	} else if isAsync {
-		returnType = "void"
 	} else {
 		returnType = cg.typeToC(fn.ReturnType)
 	}
 
 	params := []string{}
-	if isAsync {
-		params = append(params, fmt.Sprintf("sk_promise_%s* __promise", cg.promiseSuffix(fn.ReturnType)))
-	}
 	if isMain {
 		params = append(params, "int argc", "char** argv")
 	} else {
@@ -1324,14 +1442,13 @@ func (cg *CodeGenerator) generateFunction(fn *IRFunction) {
 		cg.writeLine("        SetConsoleCP(CP_UTF8);")
 		cg.writeLine("    #endif")
 		cg.writeLine("")
-
 		if len(fn.Params) == 1 && utils.IsArrayType(fn.Params[0].Type) {
 			argName := fn.Params[0].Name
 			cg.writeLine(fmt.Sprintf("    sk_array* %s__arr = sk_array_new(sizeof(sk_string), 1);", argName))
-			cg.writeLine(fmt.Sprintf("    for (int i = 1; i < argc; i++) {"))
-			cg.writeLine(fmt.Sprintf("        sk_string s = sk_string_new(argv[i]);"))
+			cg.writeLine("    for (int i = 1; i < argc; i++) {")
+			cg.writeLine("        sk_string s = sk_string_new(argv[i]);")
 			cg.writeLine(fmt.Sprintf("        sk_array_push(%s__arr, &s);", argName))
-			cg.writeLine(fmt.Sprintf("    }"))
+			cg.writeLine("    }")
 			cg.writeLine(fmt.Sprintf("    sk_arr %s = sk_arr_new(%s__arr);", argName, argName))
 			cg.writeLine("")
 		}
@@ -1348,38 +1465,23 @@ func (cg *CodeGenerator) generateFunction(fn *IRFunction) {
 		cg.emit(&ins, fn)
 	}
 
-	if isAsync {
-		finished := false
-		for i := len(fn.Instructions) - 1; i >= 0; i-- {
-			op := fn.Instructions[i].Op
-			if op == OpPromiseFinish || op == OpPromiseFail || op == OpPromiseFinishVoid {
-				finished = true
-				break
-			}
-			if op == OpRet {
-				continue
-			}
-			break
-		}
-		if !finished {
-			if fn.ReturnType == "void" {
-				cg.writeLine("    sk_promise_finish_void(__promise);")
-			} else {
-				suffix := cg.promiseSuffix(fn.ReturnType)
-				cg.writeLine(fmt.Sprintf("    sk_promise_finish_%s(__promise, SK_NULL_%s);", suffix, suffix))
-			}
-		}
-		cg.writeLine("    return;")
-	} else if fn.ReturnType == "void" && len(fn.Instructions) > 0 {
-		lastIns := fn.Instructions[len(fn.Instructions)-1]
-		if lastIns.Op != OpRet {
-			if isMain {
-				cg.writeLine("    return 0;")
-			} else {
-				cg.writeLine("    return;")
-			}
+	needReturn := true
+	if len(fn.Instructions) > 0 {
+		lastOp := fn.Instructions[len(fn.Instructions)-1].Op
+		if lastOp == OpRet {
+			needReturn = false
 		}
 	}
+	if needReturn {
+		if returnType == "void" {
+			cg.writeLine("    return;")
+		} else if isMain {
+			cg.writeLine("    return 0;")
+		} else {
+			cg.writeLine(fmt.Sprintf("    return %s;", cg.nullMacroFor(fn.ReturnType)))
+		}
+	}
+
 	cg.writeLine("}")
 	cg.writeLine("")
 }
@@ -1584,9 +1686,7 @@ func (cg *CodeGenerator) emit(ins *IRInstruction, fn *IRFunction) {
 		cg.writeLine(fmt.Sprintf("%s    goto %s;", indent, ins.Arg2))
 		cg.writeLine("%s}", indent)
 	case OpRet:
-		if fn.IsAsync {
-			cg.writeLine("%sreturn;", indent)
-		} else if ins.Arg1 != "" {
+		if ins.Arg1 != "" {
 			cg.writeLine(fmt.Sprintf("%sreturn %s;", indent, ins.Arg1))
 		} else if fn.Name == "main" {
 			cg.writeLine("%sreturn 0;", indent)
@@ -1615,19 +1715,13 @@ func (cg *CodeGenerator) emit(ins *IRInstruction, fn *IRFunction) {
 			}
 		}
 
-	// --- Errors ---
+		// --- Errors ---
 	case OpThrow:
-		if fn.IsAsync {
-			suffix := cg.promiseSuffix(fn.ReturnType)
-			cg.writeLine(fmt.Sprintf("%ssk_promise_fail_%s(__promise, %s);", indent, suffix, ins.Arg1))
-			cg.writeLine("%sreturn;", indent)
-		} else {
-			fileArg := `"<unknown>"`
-			if ins.File != "" {
-				fileArg = fmt.Sprintf("%q", ins.File)
-			}
-			cg.writeLine(fmt.Sprintf("%ssk_throw(%s, %s, %d, %d);", indent, ins.Arg1, fileArg, ins.Line, ins.Column))
+		fileArg := `"<unknown>"`
+		if ins.File != "" {
+			fileArg = fmt.Sprintf("%q", ins.File)
 		}
+		cg.writeLine(fmt.Sprintf("%ssk_throw(%s, %s, %d, %d);", indent, ins.Arg1, fileArg, ins.Line, ins.Column))
 
 	case OpErrorNew:
 		cName := ins.ReturnType
@@ -1669,37 +1763,42 @@ func (cg *CodeGenerator) emit(ins *IRInstruction, fn *IRFunction) {
 	case OpErrorFree:
 		cg.writeLine(fmt.Sprintf("%ssk_error_free(%s);", indent, ins.Arg1))
 
-	// --- Promise ---
-	case OpPromiseNew:
-		suffix := cg.promiseSuffix(ins.Metadata)
-		cg.writeLine(fmt.Sprintf("%s%s = sk_promise_new_%s();", indent, ins.Result, suffix))
-	case OpPromiseSet:
-		suffix := cg.promiseSuffix(ins.ReturnType)
-		cg.writeLine(fmt.Sprintf("%ssk_promise_set_%s(%s, %s);", indent, suffix, ins.Arg1, ins.Arg2))
-	case OpPromiseFinish:
-		suffix := cg.promiseSuffix(ins.ReturnType)
-		cg.writeLine(fmt.Sprintf("%ssk_promise_finish_%s(%s, %s);", indent, suffix, ins.Arg1, ins.Arg2))
-	case OpPromiseFinishVoid:
-		cg.writeLine(fmt.Sprintf("%ssk_promise_finish_void(%s);", indent, ins.Arg1))
-	case OpPromiseFail:
-		suffix := cg.promiseSuffix(ins.ReturnType)
-		cg.writeLine(fmt.Sprintf("%ssk_promise_fail_%s(%s, %s);", indent, suffix, ins.Arg1, ins.Arg2))
-	case OpPromiseRead:
-		suffix := cg.promiseSuffix(ins.ReturnType)
-		cg.writeLine(fmt.Sprintf("%s%s = sk_promise_read_%s(%s);", indent, ins.Result, suffix, ins.Arg1))
-	case OpPromiseAwait:
-		suffix := cg.promiseSuffix(ins.ReturnType)
-		cg.writeLine(fmt.Sprintf("%s%s = sk_promise_await_%s(%s);", indent, ins.Result, suffix, ins.Arg1))
-	case OpPromiseAwaitVoid:
-		cg.writeLine(fmt.Sprintf("%ssk_promise_await_void(%s);", indent, ins.Arg1))
-	case OpPromiseEnded:
-		suffix := cg.promiseSuffix(ins.ReturnType)
-		cg.writeLine(fmt.Sprintf("%s%s = sk_promise_ended_%s(%s);", indent, ins.Result, suffix, ins.Arg1))
-	case OpPromiseRelease:
-		suffix := cg.promiseSuffix(ins.Arg1)
-		cg.writeLine(fmt.Sprintf("%ssk_promise_release_%s(%s);", indent, suffix, ins.Arg1))
-	case OpAsyncSpawn:
-		cg.emitAsyncSpawn(ins)
+	// --- Notready / async ---
+	case OpConstNotReady:
+		cg.writeLine(fmt.Sprintf("%s%s = SK_NOTREADY_%s;", indent, ins.Result, cg.notreadySuffix(ins.ReturnType)))
+
+	case OpAwaitStart:
+		retType := ins.Metadata
+		outVar := ins.Arg1
+		fnName := ins.Arg2
+		args := ins.Arg3
+		starterName := "__sk__async_start_" + fnName
+		if outVar == "" {
+			if args == "" {
+				cg.writeLine(fmt.Sprintf("%s%s(NULL);", indent, starterName))
+			} else {
+				cg.writeLine(fmt.Sprintf("%s%s(NULL, %s);", indent, starterName, args))
+			}
+		} else {
+			cg.writeLine(fmt.Sprintf("%s%s = SK_NOTREADY_%s;", indent, outVar, cg.notreadySuffix(retType)))
+			if args == "" {
+				cg.writeLine(fmt.Sprintf("%s%s(&%s);", indent, starterName, outVar))
+			} else {
+				cg.writeLine(fmt.Sprintf("%s%s(&%s, %s);", indent, starterName, outVar, args))
+			}
+		}
+
+	case OpAwait:
+		varName := ins.Arg1
+		varType := ins.ReturnType
+		cg.writeLine(fmt.Sprintf("%ssk_wait_%s(&%s);", indent, cg.notreadySuffix(varType), varName))
+
+	case OpIsNotReady:
+		varName := ins.Arg1
+		varType := ins.Arg2
+		mode := ins.Metadata
+		fnName := "sk_" + cg.notreadySuffix(varType) + "_" + mode + "_notready"
+		cg.writeLine(fmt.Sprintf("%s%s = %s(%s);", indent, ins.Result, fnName, varName))
 
 	// --- default: неизвестный opcode ---
 	default:
@@ -2081,30 +2180,6 @@ func (cg *CodeGenerator) emitCall(ins *IRInstruction) {
 	}
 }
 
-func (cg *CodeGenerator) emitAsyncSpawn(ins *IRInstruction) {
-	indent := "    "
-	promiseVar := ins.Result
-	funcName := utils.SanitizeCIdent(ins.Arg1)
-	args := ins.Arg2
-
-	ctxVar := "__ctx_" + promiseVar
-	cg.writeLine(fmt.Sprintf("%s__sk__async_ctx_%s* %s = malloc(sizeof(__sk__async_ctx_%s));",
-		indent, funcName, ctxVar, funcName))
-	cg.writeLine(fmt.Sprintf("%s%s->p = %s;", indent, ctxVar, promiseVar))
-
-	if args != "" {
-		argList := strings.Split(args, ", ")
-		for i, a := range argList {
-			cg.writeLine(fmt.Sprintf("%s%s->arg%d = %s;", indent, ctxVar, i, a))
-		}
-	}
-
-	cg.writeLine(fmt.Sprintf("%spthread_t __tid_%s;", indent, promiseVar))
-	cg.writeLine(fmt.Sprintf("%spthread_create(&__tid_%s, NULL, __sk__async_runner_%s, %s);",
-		indent, promiseVar, funcName, ctxVar))
-	cg.writeLine("%spthread_detach(__tid_%s);", indent, promiseVar)
-}
-
 // ============================================================================
 // Остальные хелперы (typeToC, promiseSuffix, writeLine, generateAsyncRuntimeInner)
 // ============================================================================
@@ -2116,7 +2191,7 @@ func (cg *CodeGenerator) typeToC(typ string) string {
 	if utils.IsArrayType(typ) {
 		return "sk_arr"
 	}
-	if strings.HasPrefix(typ, "sk_promise_") {
+	if strings.HasSuffix(typ, "*") {
 		return typ
 	}
 	switch typ {
@@ -2157,20 +2232,6 @@ func (cg *CodeGenerator) typeToC(typ string) string {
 		}
 	}
 	return "sk_int"
-}
-
-func (cg *CodeGenerator) promiseSuffix(t string) string {
-	if utils.IsUnionType(t) {
-		return "any"
-	}
-	if utils.IsArrayType(t) {
-		return "arr"
-	}
-	switch t {
-	case "int", "char", "float", "double", "bool", "string", "dict", "any", "void":
-		return t
-	}
-	return "int"
 }
 
 func (cg *CodeGenerator) writeLine(format string, args ...interface{}) {
@@ -2221,235 +2282,32 @@ func GenerateConfigC(cfg *front.Config) string {
 	return sb.String()
 }
 
-func (cg *CodeGenerator) generateAsyncWrappers() {
-	for _, fn := range cg.IR.Functions {
-		if !fn.IsAsync {
-			continue
-		}
-		suffix := cg.promiseSuffix(fn.ReturnType)
-		cName := utils.SanitizeCIdent(fn.CName)
-
-		cg.writeLine(fmt.Sprintf("typedef struct {"))
-		cg.writeLine(fmt.Sprintf("    sk_promise_%s* p;", suffix))
-		for i, p := range fn.Params {
-			cg.writeLine(fmt.Sprintf("    %s arg%d;  // %s", cg.typeToC(p.Type), i, p.Name))
-		}
-		cg.writeLine(fmt.Sprintf("} __sk__async_ctx_%s;", cName))
-		cg.writeLine("")
-
-		cg.writeLine(fmt.Sprintf("void* __sk__async_runner_%s(void* __arg) {", cName))
-		cg.writeLine(fmt.Sprintf("    __sk__async_ctx_%s* ctx = (__sk__async_ctx_%s*)__arg;", cName, cName))
-		cg.writeLine(fmt.Sprintf("    sk_promise_%s* p = ctx->p;", suffix))
-		cg.writeLine("")
-		cg.writeLine("    SkTryFrame frame;")
-		cg.writeLine("    sk_try_push(&frame);")
-		cg.writeLine("    if (setjmp(sk_try_stack->env) != 0) {")
-		cg.writeLine("        void* err = frame.error;")
-		cg.writeLine("        sk_try_pop(&frame);")
-		cg.writeLine(fmt.Sprintf("        sk_promise_fail_%s(p, err);", suffix))
-		cg.writeLine("        free(ctx);")
-		cg.writeLine("        atomic_fetch_sub(&p->common.task_ref, 1);")
-		cg.writeLine("        if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {")
-		cg.writeLine("            sk_promise_common_destroy(&p->common);")
-		cg.writeLine("            free(p);")
-		cg.writeLine("        }")
-		cg.writeLine("        return NULL;")
-		cg.writeLine("    }")
-		cg.writeLine("")
-
-		callArgs := []string{"p"}
-		for i := range fn.Params {
-			callArgs = append(callArgs, fmt.Sprintf("ctx->arg%d", i))
-		}
-		cg.writeLine(fmt.Sprintf("    %s(%s);", fn.CName, strings.Join(callArgs, ", ")))
-		cg.writeLine("")
-		cg.writeLine("    sk_try_pop(&frame);")
-		cg.writeLine("    free(ctx);")
-		cg.writeLine("    atomic_fetch_sub(&p->common.task_ref, 1);")
-		cg.writeLine("    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {")
-		cg.writeLine("        sk_promise_common_destroy(&p->common);")
-		cg.writeLine("        free(p);")
-		cg.writeLine("    }")
-		cg.writeLine("    return NULL;")
-		cg.writeLine("}")
-		cg.writeLine("")
+func (cg *CodeGenerator) notreadySuffix(t string) string {
+	if utils.IsUnionType(t) {
+		return "any"
 	}
-}
-
-func (cg *CodeGenerator) generateAsyncRuntimeInner() {
-	cg.writeLine("// ==== Async / Promise runtime ====")
-	cg.writeLine("typedef struct {")
-	cg.writeLine("    _Atomic int owner_ref;")
-	cg.writeLine("    _Atomic int task_ref;")
-	cg.writeLine("    _Atomic int done;")
-	cg.writeLine("    pthread_mutex_t mtx;")
-	cg.writeLine("    pthread_cond_t cv;")
-	cg.writeLine("} sk_promise_common;")
-	cg.writeLine("")
-	cg.writeLine("static inline void sk_promise_common_destroy(sk_promise_common* c) {")
-	cg.writeLine("    pthread_mutex_destroy(&c->mtx);")
-	cg.writeLine("    pthread_cond_destroy(&c->cv);")
-	cg.writeLine("}")
-	cg.writeLine("")
-
-	cg.writeLine("typedef struct {")
-	cg.writeLine("    sk_promise_common common;")
-	cg.writeLine("    void* error;")
-	cg.writeLine("} sk_promise_void;")
-	cg.writeLine("")
-	cg.writeLine("static inline sk_promise_void* sk_promise_new_void(void) {")
-	cg.writeLine("    sk_promise_void* p = malloc(sizeof(sk_promise_void));")
-	cg.writeLine("    atomic_store(&p->common.owner_ref, 1);")
-	cg.writeLine("    atomic_store(&p->common.task_ref, 1);")
-	cg.writeLine("    atomic_store(&p->common.done, 0);")
-	cg.writeLine("    pthread_mutex_init(&p->common.mtx, NULL);")
-	cg.writeLine("    pthread_cond_init(&p->common.cv, NULL);")
-	cg.writeLine("    p->error = NULL;")
-	cg.writeLine("    return p;")
-	cg.writeLine("}")
-	cg.writeLine("")
-	cg.writeLine("static inline void sk_promise_finish_void(sk_promise_void* p) {")
-	cg.writeLine("    pthread_mutex_lock(&p->common.mtx);")
-	cg.writeLine("    atomic_store(&p->common.done, 1);")
-	cg.writeLine("    pthread_cond_broadcast(&p->common.cv);")
-	cg.writeLine("    pthread_mutex_unlock(&p->common.mtx);")
-	cg.writeLine("}")
-	cg.writeLine("")
-	cg.writeLine("static inline void sk_promise_await_void(sk_promise_void* p) {")
-	cg.writeLine("    pthread_mutex_lock(&p->common.mtx);")
-	cg.writeLine("    while (!atomic_load(&p->common.done)) {")
-	cg.writeLine("        pthread_cond_wait(&p->common.cv, &p->common.mtx);")
-	cg.writeLine("    }")
-	cg.writeLine("    if (p->error) {")
-	cg.writeLine("        void* err = p->error;")
-	cg.writeLine("        p->error = NULL;")
-	cg.writeLine("        pthread_mutex_unlock(&p->common.mtx);")
-	cg.writeLine("        sk_throw(err, \"<await>\", 0, 0);")
-	cg.writeLine("    }")
-	cg.writeLine("    pthread_mutex_unlock(&p->common.mtx);")
-	cg.writeLine("}")
-	cg.writeLine("")
-	cg.writeLine("static inline void sk_promise_fail_void(sk_promise_void* p, void* err) {")
-	cg.writeLine("    pthread_mutex_lock(&p->common.mtx);")
-	cg.writeLine("    p->error = err;")
-	cg.writeLine("    atomic_store(&p->common.done, 1);")
-	cg.writeLine("    pthread_cond_broadcast(&p->common.cv);")
-	cg.writeLine("    pthread_mutex_unlock(&p->common.mtx);")
-	cg.writeLine("}")
-	cg.writeLine("")
-	cg.writeLine("static inline sk_bool sk_promise_ended_void(sk_promise_void* p) {")
-	cg.writeLine("    sk_bool r; r.value = atomic_load(&p->common.done) ? 1 : 0; r.__is_null = 0; return r;")
-	cg.writeLine("}")
-	cg.writeLine("")
-	cg.writeLine("static inline void sk_promise_release_void(sk_promise_void* p) {")
-	cg.writeLine("    if (!p) return;")
-	cg.writeLine("    atomic_fetch_sub(&p->common.owner_ref, 1);")
-	cg.writeLine("    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {")
-	cg.writeLine("        sk_promise_common_destroy(&p->common);")
-	cg.writeLine("        free(p);")
-	cg.writeLine("    }")
-	cg.writeLine("}")
-	cg.writeLine("")
-
-	types := []string{"int", "char", "float", "double", "bool", "string", "arr", "dict", "any"}
-	for _, t := range types {
-		var ctype string
-		switch t {
-		case "dict":
-			ctype = "sk_dict_ref"
-		case "any":
-			ctype = "sk_any"
-		default:
-			ctype = "sk_" + t
-		}
-
-		cg.writeLine(fmt.Sprintf("typedef struct {"))
-		cg.writeLine(fmt.Sprintf("    sk_promise_common common;"))
-		cg.writeLine(fmt.Sprintf("    %s value;", ctype))
-		cg.writeLine(fmt.Sprintf("    void* error;"))
-		cg.writeLine(fmt.Sprintf("} sk_promise_%s;", t))
-		cg.writeLine("")
-
-		cg.writeLine(fmt.Sprintf("static inline sk_promise_%s* sk_promise_new_%s(void) {", t, t))
-		cg.writeLine(fmt.Sprintf("    sk_promise_%s* p = malloc(sizeof(sk_promise_%s));", t, t))
-		cg.writeLine("    atomic_store(&p->common.owner_ref, 1);")
-		cg.writeLine("    atomic_store(&p->common.task_ref, 1);")
-		cg.writeLine("    atomic_store(&p->common.done, 0);")
-		cg.writeLine("    pthread_mutex_init(&p->common.mtx, NULL);")
-		cg.writeLine("    pthread_cond_init(&p->common.cv, NULL);")
-		if t == "any" {
-			cg.writeLine("    p->value = any_null();")
-		} else {
-			cg.writeLine(fmt.Sprintf("    p->value = SK_NULL_%s;", t))
-		}
-		cg.writeLine("    p->error = NULL;")
-		cg.writeLine("    return p;")
-		cg.writeLine("}")
-		cg.writeLine("")
-
-		cg.writeLine(fmt.Sprintf("static inline void sk_promise_set_%s(sk_promise_%s* p, %s v) {", t, t, ctype))
-		cg.writeLine("    pthread_mutex_lock(&p->common.mtx);")
-		cg.writeLine("    p->value = v;")
-		cg.writeLine("    pthread_mutex_unlock(&p->common.mtx);")
-		cg.writeLine("}")
-		cg.writeLine("")
-
-		cg.writeLine(fmt.Sprintf("static inline void sk_promise_finish_%s(sk_promise_%s* p, %s v) {", t, t, ctype))
-		cg.writeLine("    pthread_mutex_lock(&p->common.mtx);")
-		cg.writeLine("    p->value = v;")
-		cg.writeLine("    atomic_store(&p->common.done, 1);")
-		cg.writeLine("    pthread_cond_broadcast(&p->common.cv);")
-		cg.writeLine("    pthread_mutex_unlock(&p->common.mtx);")
-		cg.writeLine("}")
-		cg.writeLine("")
-
-		cg.writeLine(fmt.Sprintf("static inline void sk_promise_fail_%s(sk_promise_%s* p, void* err) {", t, t))
-		cg.writeLine("    pthread_mutex_lock(&p->common.mtx);")
-		cg.writeLine("    p->error = err;")
-		cg.writeLine("    atomic_store(&p->common.done, 1);")
-		cg.writeLine("    pthread_cond_broadcast(&p->common.cv);")
-		cg.writeLine("    pthread_mutex_unlock(&p->common.mtx);")
-		cg.writeLine("}")
-		cg.writeLine("")
-
-		cg.writeLine(fmt.Sprintf("static inline %s sk_promise_read_%s(sk_promise_%s* p) {", ctype, t, t))
-		cg.writeLine("    pthread_mutex_lock(&p->common.mtx);")
-		cg.writeLine(fmt.Sprintf("    %s v = p->value;", ctype))
-		cg.writeLine("    pthread_mutex_unlock(&p->common.mtx);")
-		cg.writeLine("    return v;")
-		cg.writeLine("}")
-		cg.writeLine("")
-
-		cg.writeLine(fmt.Sprintf("static inline %s sk_promise_await_%s(sk_promise_%s* p) {", ctype, t, t))
-		cg.writeLine("    pthread_mutex_lock(&p->common.mtx);")
-		cg.writeLine("    while (!atomic_load(&p->common.done)) {")
-		cg.writeLine("        pthread_cond_wait(&p->common.cv, &p->common.mtx);")
-		cg.writeLine("    }")
-		cg.writeLine("    if (p->error) {")
-		cg.writeLine("        void* err = p->error;")
-		cg.writeLine("        pthread_mutex_unlock(&p->common.mtx);")
-		cg.writeLine("        sk_throw(err, \"<await>\", 0, 0);")
-		cg.writeLine("    }")
-		cg.writeLine(fmt.Sprintf("    %s v = p->value;", ctype))
-		cg.writeLine("    pthread_mutex_unlock(&p->common.mtx);")
-		cg.writeLine("    return v;")
-		cg.writeLine("}")
-		cg.writeLine("")
-
-		cg.writeLine(fmt.Sprintf("static inline sk_bool sk_promise_ended_%s(sk_promise_%s* p) {", t, t))
-		cg.writeLine("    sk_bool r; r.value = atomic_load(&p->common.done) ? 1 : 0; r.__is_null = 0; return r;")
-		cg.writeLine("}")
-		cg.writeLine("")
-
-		cg.writeLine(fmt.Sprintf("static inline void sk_promise_release_%s(sk_promise_%s* p) {", t, t))
-		cg.writeLine("    if (!p) return;")
-		cg.writeLine("    atomic_fetch_sub(&p->common.owner_ref, 1);")
-		cg.writeLine("    if (atomic_load(&p->common.owner_ref) == 0 && atomic_load(&p->common.task_ref) == 0) {")
-		cg.writeLine("        sk_promise_common_destroy(&p->common);")
-		cg.writeLine("        free(p);")
-		cg.writeLine("    }")
-		cg.writeLine("}")
-		cg.writeLine("")
+	if utils.IsArrayType(t) {
+		return "arr"
 	}
-	cg.writeLine("")
+	switch t {
+	case "int":
+		return "int"
+	case "string":
+		return "string"
+	case "float":
+		return "float"
+	case "double":
+		return "double"
+	case "bool":
+		return "bool"
+	case "dict":
+		return "dict"
+	case "any":
+		return "any"
+	case "void":
+		return "int" // для async void используется sk_int как сигнал
+	case "char":
+		return "int" // char не бывает notready
+	}
+	return "int"
 }

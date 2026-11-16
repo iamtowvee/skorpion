@@ -580,7 +580,7 @@ func (o *Optimizer) getConstantValue(node front.Node) string {
 
 func (o *Optimizer) hasNoSideEffects(node front.Node) bool {
 	switch n := node.(type) {
-	case *front.Number, *front.String, *front.Ident, *front.CharLiteral:
+	case *front.Number, *front.String, *front.Ident, *front.CharLiteral, *front.NotReady:
 		return true
 	case *front.BinaryExpr:
 		return o.hasNoSideEffects(n.Left) && o.hasNoSideEffects(n.Right)
@@ -590,9 +590,6 @@ func (o *Optimizer) hasNoSideEffects(node front.Node) bool {
 		return false
 	case *front.AwaitExpr:
 		// await — блокирующая операция, побочный эффект (ожидание)
-		return false
-	case *front.PromiseSet:
-		// Promise[...] — запись в promise, побочный эффект
 		return false
 	case *front.CallExpr:
 		return false
