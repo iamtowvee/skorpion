@@ -106,15 +106,17 @@ func (i *Import) GetType() NodeType { return NODE_IMPORT }
 
 type Function struct {
 	Position
-	NamePos     Position
-	Name        string
-	ReturnType  string
-	ReturnUnion []string
-	Params      []*Param
-	Body        *Block
-	IsExport    bool
-	IsAsync     bool
-	File        string
+	NamePos       Position
+	Name          string
+	ReturnType    string
+	ReturnUnion   []string
+	Params        []*Param
+	Body          *Block
+	IsExport      bool
+	IsAsync       bool
+	File          string
+	Deprecated    bool
+	DeprecatedTip string
 }
 
 type AwaitExpr struct {
@@ -147,8 +149,8 @@ func (n *NotReady) GetTypeString() string { return "void" }
 type Param struct {
 	Position
 	Name         string
-	Type         string // declared
-	CurrentType  string // для union — известный тип
+	Type         string
+	CurrentType  string
 	DefaultValue Node
 	IsVariadic   bool
 }

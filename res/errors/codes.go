@@ -657,6 +657,7 @@ var ErrorCodes = map[string]ErrorCode{
 	"2003": {Code: "2003", Message: "Empty function body", Description: "The function has an empty body.", Tip: "Add a comment or remove the function."},
 	"2004": {Code: "2004", Message: "Could not check unused parameters", Description: "Function body contains an includeC block with raw C code; parameters used only inside that block cannot be detected.", Tip: "If the parameters are used inside includeC, ignore this warning. Otherwise remove or use them."},
 	"2005": {Code: "2005", Message: "'async' is useless", Description: "The async function has no dynamic operations (no 'await', no async calls, no 'throw', no 'try', no 'includeC').", Tip: "Remove 'async', or add dynamic operations to justify it."},
+	"2006": {Code: "2006", Message: "Function is deprecated", Description: "The called function is marked as deprecated. It may be removed in future versions.", Tip: "Check the API documentation for a replacement."},
 
 	// ============================================================================
 	// 2500-2599: Backend / Codegen

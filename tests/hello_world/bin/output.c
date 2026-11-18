@@ -1099,7 +1099,7 @@ L3:
     t6->__type = "Error.MyError";
     t7 = sk_string_new("boom in async");
     t6->msg = t7;
-    sk_throw(t6, "imp.sk", 8, 5);
+    sk_throw(t6, "imp.sk", 9, 5);
     return i;
 }
 
@@ -1131,7 +1131,7 @@ int main(int argc, char** argv) {
 
     t8 = sk_string_new("Запускаем падающий async...");
     t9 = any_string(t8);
-    sk_call_push("imp.sk", 13, 5);
+    sk_call_push("imp.sk", 14, 5);
     __sk__sendln(t9);
     sk_call_pop();
     r = SK_NOTREADY_int;
@@ -1139,13 +1139,13 @@ int main(int argc, char** argv) {
     __sk__async_start_failFunc(&r);
     t10 = sk_string_new("Ждем...");
     t11 = any_string(t10);
-    sk_call_push("imp.sk", 15, 5);
+    sk_call_push("imp.sk", 16, 5);
     __sk__sendln(t11);
     sk_call_pop();
     sk_wait_int(&r);
     t12 = sk_string_new("Этого не должно быть видно!");
     t13 = any_string(t12);
-    sk_call_push("imp.sk", 17, 5);
+    sk_call_push("imp.sk", 18, 5);
     __sk__sendln(t13);
     sk_call_pop();
     return 0;

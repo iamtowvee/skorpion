@@ -791,7 +791,7 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 		}
 
 		if decl.Expr != nil {
-			exprType := sa.getNodeType(decl.Expr)
+			exprType := sa.analyzeExpressionAndGetType(decl.Expr)
 			if exprType == "void" {
 				sa.addError("1557",
 					"Cannot assign null to union", decl.GetLine(), decl.GetColumn(), sa.CurrentFile)
@@ -905,7 +905,7 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 	}
 
 	if decl.Expr != nil {
-		exprType := sa.getNodeType(decl.Expr)
+		exprType := sa.analyzeExpressionAndGetType(decl.Expr)
 
 		if exprType == "void" {
 			if decl.Type == "void" {
@@ -934,6 +934,14 @@ func (sa *SemanticAnalyzer) analyzeVarDecl(decl *front.VarDecl) front.Node {
 	sym := sa.CurrentScope.Define(decl.Name, SYM_VARIABLE, decl.Type, false)
 	sym.IsConst = decl.IsConst
 	return decl
+}
+
+func (sa *SemanticAnalyzer) analyzeExpressionAndGetType(expr front.Node) string {
+	if expr == nil {
+		return ""
+	}
+	sa.analyzeNode(expr) // проходим по всему дереву, собираем ошибки/варнинги
+	return sa.getNodeType(expr)
 }
 
 func (sa *SemanticAnalyzer) analyzeAssign(assign *front.Assign) front.Node {
@@ -1036,7 +1044,7 @@ func (sa *SemanticAnalyzer) analyzeAssign(assign *front.Assign) front.Node {
 		return assign
 	}
 
-	exprType := sa.getNodeType(assign.Expr)
+	exprType := sa.analyzeExpressionAndGetType(assign.Expr)
 
 	if utils.IsUnionType(sym.Type) {
 		if exprType == "void" {
@@ -1075,7 +1083,7 @@ func (sa *SemanticAnalyzer) analyzeAssign(assign *front.Assign) front.Node {
 }
 
 func (sa *SemanticAnalyzer) checkCompoundAssignOp(assign *front.Assign, symType string, expr front.Node) {
-	exprType := sa.getNodeType(expr)
+	exprType := sa.analyzeExpressionAndGetType(expr)
 	op := strings.TrimSuffix(assign.Op, "=")
 
 	if symType == "any" {
@@ -1359,7 +1367,7 @@ func (sa *SemanticAnalyzer) analyzeReturn(ret *front.ReturnStmt) front.Node {
 				ret.GetLine(), ret.GetColumn(), sa.CurrentFile)
 			return ret
 		}
-		exprType := sa.getNodeType(ret.Expr)
+		exprType := sa.analyzeExpressionAndGetType(ret.Expr)
 		if exprType == "void" {
 			return ret
 		}
@@ -1373,7 +1381,7 @@ func (sa *SemanticAnalyzer) analyzeReturn(ret *front.ReturnStmt) front.Node {
 	}
 
 	if ret.Expr != nil {
-		exprType := sa.getNodeType(ret.Expr)
+		exprType := sa.analyzeExpressionAndGetType(ret.Expr)
 		if exprType == "void" {
 			return ret
 		}
@@ -1563,8 +1571,35 @@ func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
 		return call
 	}
 
+	debug.Debug("DEBUG: Found func %p, dep=%v, tip=%q\n", targetFunc, targetFunc.Deprecated, targetFunc.DeprecatedTip)
+	debug.Debug("DEBUG: Deprecated=%v File=%s\n", targetFunc.Deprecated, targetFunc.File)
+	if targetFunc.Deprecated && sa.isUserFile(targetFunc.File) {
+		tip := targetFunc.DeprecatedTip
+		if tip == "" {
+			tip = "Check the API, if you can. No advice has been assigned yet."
+		}
+		debug.Debug("Перед Creating warning, tip=%q\n", tip)
+		errors.NewWarningWithTip("2006",
+			fmt.Sprintf("Function '%s' is deprecated", simpleName),
+			call.GetLine(), call.GetColumn(), sa.CurrentFile, tip)
+		debug.Debug("После Warning created with tip=%q\n", tip)
+	}
+
 	sa.analyzeCallArgs(simpleName, args, targetFunc, call.GetLine(), call.GetColumn())
 	return call
+}
+
+func (sa *SemanticAnalyzer) isUserFile(filePath string) bool {
+	if filePath == "" {
+		return false
+	}
+	if strings.Contains(filePath, "lib:") {
+		return false
+	}
+	if strings.Contains(filePath, "std/") || strings.Contains(filePath, "/std/") {
+		return false
+	}
+	return true
 }
 
 func (sa *SemanticAnalyzer) analyzeCallRange(call *front.CallRangeExpr) front.Node {
@@ -2466,7 +2501,7 @@ func (sa *SemanticAnalyzer) analyzeThrow(throw *front.ThrowStmt) front.Node {
 			throw.GetLine(), throw.GetColumn(), sa.CurrentFile)
 		return throw
 	}
-	exprType := sa.getNodeType(throw.Expr)
+	exprType := sa.analyzeExpressionAndGetType(throw.Expr)
 	if _, ok := sa.ErrorTypes[exprType]; !ok {
 		sa.addError("1548",
 			fmt.Sprintf("Cannot throw non-error type '%s'", exprType),
@@ -2543,7 +2578,7 @@ func (sa *SemanticAnalyzer) resetUnionCurrentTypes() {
 
 func (sa *SemanticAnalyzer) analyzeFormatExpr(fe *front.FormatExpr) front.Node {
 	sa.analyzeNode(fe.Expr)
-	exprType := sa.getNodeType(fe.Expr)
+	exprType := sa.analyzeExpressionAndGetType(fe.Expr)
 	if !sa.isNumericType(exprType) && exprType != "" {
 		sa.addError("0626",
 			fmt.Sprintf("Format operator '^' can only be applied to numeric types, got '%s'", exprType),

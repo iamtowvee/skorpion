@@ -73,15 +73,15 @@ func resolveSource(path string) []string {
 // printTip — блок TIP.
 // ============================================================================
 
-func printTip(codeInfo ErrorCode, width int) {
-	if codeInfo.Tip == "" {
+func printTip(tip string, width int) {
+	if tip == "" {
 		return
 	}
 	tipArrowPrefix := strings.Repeat(" ", width+1) + ">>> TIP"
 	fmt.Printf("%s\n", cli.Colors.Colorize(cli.BRIGHT_YELLOW, tipArrowPrefix))
 
 	pipePrefix := strings.Repeat(" ", width+2) + "|"
-	fmt.Printf("%s %s\n", cli.Colors.Dim(pipePrefix), codeInfo.Tip)
+	fmt.Printf("%s %s\n", cli.Colors.Dim(pipePrefix), tip)
 	fmt.Printf("%s\n", cli.Colors.Dim(pipePrefix))
 }
 
@@ -179,7 +179,11 @@ func printDiag(d SkorpionError, sourceLines []string, isWarn bool) {
 		fmt.Printf("%s\n", cli.Colors.Dim(pipePrefix))
 	}
 
-	printTip(codeInfo, width)
+	tipToPrint := codeInfo.Tip
+	if d.CustomTip != "" {
+		tipToPrint = d.CustomTip
+	}
+	printTip(tipToPrint, width)
 }
 
 func PrintError(err SkorpionError, sourceLines []string) {

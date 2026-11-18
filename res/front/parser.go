@@ -2,9 +2,11 @@ package front
 
 import (
 	"fmt"
+	"skrp/res/debug"
 	"skrp/res/errors"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 type Parser struct {
@@ -322,6 +324,38 @@ func (p *Parser) parseFunction() *Function {
 		return nil
 	}
 
+	deprecated := false
+	deprecatedTip := ""
+	comment := strings.TrimSpace(p.lexer.LastComment)
+	if strings.HasPrefix(comment, "//Deprecated") {
+		deprecated = true
+		rest := strings.TrimPrefix(comment, "//Deprecated")
+		rest = strings.TrimSpace(rest) // убираем пробелы
+
+		if strings.HasPrefix(rest, "tip:") {
+			// Отрезаем "tip:"
+			tipPart := strings.TrimPrefix(rest, "tip:")
+			tipPart = strings.TrimSpace(tipPart)
+			// Убираем кавычки, если они есть
+			tipPart = strings.Trim(tipPart, "\"")
+			deprecatedTip = tipPart
+
+			// Валидация: 1 символ <= 2 байтов (UTF-8)
+			valid := true
+			for _, r := range deprecatedTip {
+				if utf8.RuneLen(r) > 2 {
+					valid = false
+					break
+				}
+			}
+			if !valid {
+				deprecatedTip = ""
+			}
+		}
+	}
+	debug.Debug("Final tip = %q\n", deprecatedTip)
+	p.lexer.LastComment = ""
+
 	pos := p.pos()
 
 	isAsync := false
@@ -484,16 +518,29 @@ func (p *Parser) parseFunction() *Function {
 		return nil
 	}
 
+	debug.Debug("DEBUG: Created func %p, dep=%v, tip=%q\n", &Function{Position: pos,
+		NamePos:       namePos,
+		Name:          name,
+		ReturnType:    retType,
+		Params:        params,
+		Body:          body,
+		IsExport:      isExport,
+		IsAsync:       isAsync,
+		File:          p.FileName,
+		Deprecated:    deprecated,
+		DeprecatedTip: deprecatedTip}, deprecated, deprecatedTip)
 	return &Function{
-		Position:   pos,
-		NamePos:    namePos,
-		Name:       name,
-		ReturnType: retType,
-		Params:     params,
-		Body:       body,
-		IsExport:   isExport,
-		IsAsync:    isAsync,
-		File:       p.FileName,
+		Position:      pos,
+		NamePos:       namePos,
+		Name:          name,
+		ReturnType:    retType,
+		Params:        params,
+		Body:          body,
+		IsExport:      isExport,
+		IsAsync:       isAsync,
+		File:          p.FileName,
+		Deprecated:    deprecated,
+		DeprecatedTip: deprecatedTip,
 	}
 }
 

@@ -37,6 +37,7 @@ type SkorpionError struct {
 	File      string
 	Fatal     bool
 	Warning   bool
+	CustomTip string
 }
 
 func (e *SkorpionError) GetCodeInfo() ErrorCode {
@@ -128,6 +129,22 @@ func NewWarning(code, message string, line, col int, file string) {
 		Column:  col,
 		File:    file,
 		Warning: true,
+	}
+	warnings = append(warnings, e)
+	all = append(all, e)
+}
+
+func NewWarningWithTip(code, message string, line, col int, file string, tip string) {
+	mu.Lock()
+	defer mu.Unlock()
+	e := SkorpionError{
+		Code:      code,
+		Message:   message,
+		Line:      line,
+		Column:    col,
+		File:      file,
+		Warning:   true,
+		CustomTip: tip,
 	}
 	warnings = append(warnings, e)
 	all = append(all, e)
@@ -238,9 +255,14 @@ func WriteAllTo(w io.Writer) {
 			fmt.Fprintf(w, "  >>> %s\n", file)
 		}
 
-		if info.Tip != "" {
+		tipToPrint := info.Tip
+		if e.CustomTip != "" {
+			tipToPrint = e.CustomTip
+		}
+
+		if tipToPrint != "" {
 			fmt.Fprintf(w, "   >>> TIP\n")
-			for _, line := range strings.Split(info.Tip, "\n") {
+			for _, line := range strings.Split(tipToPrint, "\n") {
 				fmt.Fprintf(w, "    | %s\n", line)
 			}
 		}

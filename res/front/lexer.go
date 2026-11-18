@@ -74,11 +74,12 @@ type Token struct {
 }
 
 type Lexer struct {
-	input   string
-	pos     int
-	line    int
-	col     int
-	peekPos int
+	input       string
+	pos         int
+	line        int
+	col         int
+	peekPos     int
+	LastComment string
 }
 
 func NewLexer(input string) *Lexer {
@@ -100,11 +101,14 @@ func (l *Lexer) NextToken() Token {
 	ch := l.input[l.pos]
 
 	if ch == '/' && l.peek() == '*' {
+		l.LastComment = ""
 		return l.readMultilineComment()
 	}
 
 	if ch == '/' && l.peek() == '/' {
+		start := l.pos
 		l.readSingleLineComment()
+		l.LastComment = strings.TrimSpace(l.input[start:l.pos])
 		return l.NextToken()
 	}
 
@@ -770,6 +774,7 @@ func (l *Lexer) readTildes() Token {
 }
 
 func (l *Lexer) skipWhitespace() {
+	newlines := 0
 	for l.pos < len(l.input) {
 		ch := l.input[l.pos]
 		if ch == ' ' || ch == '\t' || ch == '\r' {
@@ -779,9 +784,13 @@ func (l *Lexer) skipWhitespace() {
 			l.pos++
 			l.line++
 			l.col = 1
+			newlines++
 		} else {
 			break
 		}
+	}
+	if newlines >= 2 {
+		l.LastComment = ""
 	}
 }
 

@@ -2,6 +2,7 @@ use #std/io
 
 new MyError{msg: string} inherit Error
 
+//Deprecated tip:"hi"
 async int failFunc() {
     int i = 0
     while (i < 5000000) { i = i + 1 } // чуть-чуть подождем

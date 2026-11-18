@@ -24,6 +24,7 @@ async dict f() {
     return {age: 25}
 }
 
+//Deprecated tip:"Use io.sendln() for this"
 async void something(string msg) {
     println(msg)
 }
