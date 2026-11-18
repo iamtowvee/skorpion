@@ -3,7 +3,7 @@ use #std/io
 new MyError{msg: string} inherit Error
 
 //Deprecated tip:"hi"
-async int failFunc() {
+async int *failFunc() { // * перед именем функции, значит что функция локальная (ее невозможно вызвать извне напрямую)
     int i = 0
     while (i < 5000000) { i = i + 1 } // чуть-чуть подождем
     throw MyError{msg: "boom in async"}

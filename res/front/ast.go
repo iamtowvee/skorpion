@@ -248,8 +248,9 @@ func (a *ArrayAdd) GetType() NodeType { return NODE_ARRAY_ADD }
 
 type DictElement struct {
 	Position
-	Key   string
-	Value Node
+	Key         string
+	IsStringKey bool
+	Value       Node
 }
 
 func (d *DictElement) GetType() NodeType { return "DictElement" }

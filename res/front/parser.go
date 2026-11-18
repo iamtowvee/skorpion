@@ -189,10 +189,31 @@ func (p *Parser) Parse() *Program {
 
 		isAsyncStart := p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "async"
 		if p.isType(p.peek) || isAsyncStart {
+			// Сохраняем состояние лексера и парсера для возможного отката
+			lexPos, lexLine, lexCol, lexComment := p.lexer.Snapshot()
+			savedCurrent := p.current
+			savedPeek := p.peek
+			savedHasErrors := p.hasErrors
+
 			fn := p.parseFunction()
-			if fn != nil {
+			if fn != nil && !p.hasErrors {
 				prog.Functions = append(prog.Functions, fn)
 				funcCount++
+			} else {
+				// Откат: это не функция, пробуем как глобальную переменную
+				p.lexer.Restore(lexPos, lexLine, lexCol, lexComment)
+				p.current = savedCurrent
+				p.peek = savedPeek
+				p.hasErrors = savedHasErrors
+				errors.ClearFatal() // Сбрасываем фатальную ошибку от parseFunction
+
+				vd := p.parseGlobalVarDecl()
+				if vd != nil {
+					prog.GlobalVars = append(prog.GlobalVars, vd)
+				} else {
+					// Если и это не сработало, просто пропускаем токен
+					p.advance()
+				}
 			}
 		} else {
 			p.advance()
@@ -200,6 +221,73 @@ func (p *Parser) Parse() *Program {
 	}
 
 	return prog
+}
+
+func (p *Parser) parseGlobalVarDecl() *VarDecl {
+	pos := p.pos()
+
+	if !p.isType(p.peek) {
+		return nil
+	}
+
+	varType := p.parseType()
+	if varType == "" {
+		return nil
+	}
+
+	isExport := true
+	if p.peek.Type == TOKEN_STAR {
+		isExport = false
+		p.advance()
+	}
+
+	if p.peek.Type != TOKEN_IDENT {
+		p.hasErrors = true
+		errors.NewFatalError("0504",
+			fmt.Sprintf("Expected variable name, got '%s'", p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
+	}
+	name := p.peek.Literal
+	p.advance()
+
+	if p.peek.Type != TOKEN_EQUALS {
+		p.hasErrors = true
+		errors.NewFatalError("0557",
+			fmt.Sprintf("Expected '=' after global variable name '%s', got '%s'", name, p.peek.Literal),
+			p.peek.Line, p.peek.Column, p.FileName)
+		return nil
+	}
+	p.advance()
+
+	expr := p.parseExpression()
+	if expr == nil {
+		return nil
+	}
+
+	if p.peek.Type == TOKEN_SEMICOLON {
+		p.advance()
+	}
+
+	isArray := false
+	elemType := ""
+	if strings.HasPrefix(varType, "arr[") {
+		isArray = true
+		elemType = varType[4 : len(varType)-1]
+	} else if varType == "arr" {
+		isArray = true
+		elemType = "any"
+	}
+
+	return &VarDecl{
+		Position: pos,
+		Name:     name,
+		Type:     varType,
+		ElemType: elemType,
+		IsArray:  isArray,
+		IsExport: isExport,
+		Expr:     expr,
+	}
 }
 
 func (p *Parser) parseImport() *Import {
@@ -2068,16 +2156,24 @@ func (p *Parser) parsePrimary() Node {
 		elements := []*DictElement{}
 		if p.peek.Type != TOKEN_RBRACE {
 			for {
-				if p.peek.Type != TOKEN_IDENT {
+				var keyName string
+				isStringKey := false
+				keyPos := p.pos()
+
+				if p.peek.Type == TOKEN_IDENT {
+					keyName = p.peek.Literal
+					p.advance()
+				} else if p.peek.Type == TOKEN_STRING {
+					keyName = p.peek.Literal
+					isStringKey = true
+					p.advance()
+				} else {
 					p.hasErrors = true
 					errors.NewFatalError("0650",
 						fmt.Sprintf("Expected key in dict literal, got '%s'", p.peek.Literal),
 						p.peek.Line, p.peek.Column, p.FileName)
 					return nil
 				}
-				keyName := p.peek.Literal
-				keyPos := p.pos()
-				p.advance()
 
 				if p.peek.Type != TOKEN_COLON {
 					p.hasErrors = true
@@ -2094,9 +2190,10 @@ func (p *Parser) parsePrimary() Node {
 				}
 
 				elements = append(elements, &DictElement{
-					Position: keyPos,
-					Key:      keyName,
-					Value:    value,
+					Position:    keyPos,
+					Key:         keyName,
+					IsStringKey: isStringKey,
+					Value:       value,
 				})
 
 				if p.peek.Type == TOKEN_COMMA {

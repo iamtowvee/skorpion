@@ -92,6 +92,17 @@ func NewLexer(input string) *Lexer {
 	}
 }
 
+func (l *Lexer) Snapshot() (int, int, int, string) {
+	return l.pos, l.line, l.col, l.LastComment
+}
+
+func (l *Lexer) Restore(pos, line, col int, lastComment string) {
+	l.pos = pos
+	l.line = line
+	l.col = col
+	l.LastComment = lastComment
+}
+
 func (l *Lexer) NextToken() Token {
 	l.skipWhitespace()
 	if l.pos >= len(l.input) {

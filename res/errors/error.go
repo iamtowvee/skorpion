@@ -229,6 +229,19 @@ func HasFatal() bool {
 	return hasFatal
 }
 
+func ClearFatal() {
+	mu.Lock()
+	defer mu.Unlock()
+	hasFatal = false
+	// Удаляем последнюю фатальную ошибку из списка (откат)
+	if len(errors) > 0 && errors[len(errors)-1].Fatal {
+		errors = errors[:len(errors)-1]
+	}
+	if len(all) > 0 && all[len(all)-1].Fatal {
+		all = all[:len(all)-1]
+	}
+}
+
 // WriteAllTo пишет все накопленные сообщения в w (без цветов,
 // без cli-зависимостей). Используется логом для секции ERRORS.
 func WriteAllTo(w io.Writer) {
