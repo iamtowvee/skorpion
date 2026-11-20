@@ -8,9 +8,11 @@ import (
 )
 
 type CodeGenerator struct {
-	IR       *IRProgram
-	CSource  strings.Builder
-	Includes []string
+	IR          *IRProgram
+	CSource     strings.Builder
+	Includes    []string
+	InitRuntime strings.Builder
+	initCounter int
 }
 
 func NewCodeGenerator(ir *IRProgram) *CodeGenerator {
@@ -54,10 +56,20 @@ func (cg *CodeGenerator) Generate() string {
 
 	cg.writePrototypes()
 	cg.writeGlobals()
+	if cg.InitRuntime.Len() > 0 {
+		cg.writeLine("void __sk__init_globals(void);")
+	}
 	cg.generateAsyncWrappers()
 
 	for _, fn := range cg.IR.Functions {
 		cg.generateFunction(&fn)
+	}
+
+	if cg.InitRuntime.Len() > 0 {
+		cg.writeLine("void __sk__init_globals(void) {")
+		cg.writeLine(cg.InitRuntime.String())
+		cg.writeLine("}")
+		cg.writeLine("")
 	}
 
 	return cg.CSource.String()
@@ -1208,13 +1220,117 @@ func (cg *CodeGenerator) writeGlobals() {
 	}
 	cg.writeLine("// Global variables")
 	for _, g := range cg.IR.Globals {
-		prelude, value := cg.renderGlobalInit(g.Name, g.Type, g.Value)
-		for _, line := range prelude {
-			cg.writeLine(line)
+		if g.NeedsRuntimeInit {
+			// Объявляем без инициализатора
+			cg.writeLine(fmt.Sprintf("%s %s;", cg.typeToC(g.Type), g.Name))
+			// Генерируем runtime-инициализацию
+			cg.renderGlobalRuntimeInit(g.Name, g.Type, g.Value)
+		} else {
+			prelude, value := cg.renderGlobalInit(g.Name, g.Type, g.Value)
+			for _, line := range prelude {
+				cg.writeLine(line)
+			}
+			cg.writeLine(fmt.Sprintf("%s %s = %s;", cg.typeToC(g.Type), g.Name, value))
 		}
-		cg.writeLine(fmt.Sprintf("%s %s = %s;", cg.typeToC(g.Type), g.Name, value))
 	}
 	cg.writeLine("")
+}
+
+// renderGlobalRuntimeInit генерирует код инициализации глобальной переменной в runtime.
+// Он вызывает renderAnyExpr для значений, передавая временный префикс.
+func (cg *CodeGenerator) renderGlobalRuntimeInit(name, skType string, init IRGlobalInit) {
+	indent := "    "
+
+	switch init.Kind {
+	case GlobalDict:
+		cg.InitRuntime.WriteString(fmt.Sprintf("%s%s = sk_dict_ref_new(sk_dict_new());\n", indent, name))
+		for _, entry := range init.Entries {
+			keyStr := fmt.Sprintf("%q", entry.Key)
+			valExpr := cg.renderAnyExpr(entry.Value, indent)
+			cg.InitRuntime.WriteString(fmt.Sprintf("%ssk_dict_set(%s.value, sk_string_new(%s), %s);\n", indent, name, keyStr, valExpr))
+		}
+	case GlobalArray:
+		elemType := init.ElemType
+		if elemType == "" {
+			elemType = "any"
+		}
+		cSize, cCode := cg.arrayElemSizeAndCode(elemType)
+		cg.InitRuntime.WriteString(fmt.Sprintf("%s%s = sk_arr_new(sk_array_new(%s, %d));\n", indent, name, cSize, cCode))
+		for _, el := range init.Elements {
+			valExpr := cg.renderAnyExpr(el, indent)
+			cg.InitRuntime.WriteString(fmt.Sprintf("%ssk_array_push_any(%s.value, %s);\n", indent, name, valExpr))
+		}
+	case GlobalAny:
+		if init.ElemType == "dict" && len(init.Elements) > 0 {
+			tmpDict := cg.newInitTmp()
+			cg.InitRuntime.WriteString(fmt.Sprintf("%ssk_dict_ref %s;\n", indent, tmpDict))
+			cg.renderGlobalRuntimeInit(tmpDict, "dict", init.Elements[0])
+			cg.InitRuntime.WriteString(fmt.Sprintf("%s%s = any_dict(%s);\n", indent, name, tmpDict))
+		} else if init.ElemType == "arr" && len(init.Elements) > 0 {
+			tmpArr := cg.newInitTmp()
+			cg.InitRuntime.WriteString(fmt.Sprintf("%ssk_arr %s;\n", indent, tmpArr))
+			cg.renderGlobalRuntimeInit(tmpArr, "arr", init.Elements[0])
+			cg.InitRuntime.WriteString(fmt.Sprintf("%s%s = any_arr(%s);\n", indent, name, tmpArr))
+		} else {
+			// скаляр внутри any, который требует runtime init (например, если кто-то явно создал any)
+			cg.InitRuntime.WriteString(fmt.Sprintf("%s%s = %s;\n", indent, name, cg.renderAnyExpr(init, indent)))
+		}
+	}
+}
+
+// renderAnyExpr возвращает C-выражение типа sk_any для данного IRGlobalInit.
+// Для вложенных структур создает временные переменные в InitRuntime.
+func (cg *CodeGenerator) renderAnyExpr(init IRGlobalInit, indent string) string {
+	switch init.Kind {
+	case GlobalInt:
+		return fmt.Sprintf("any_int(sk_int_new(%d))", init.IntVal)
+	case GlobalFloat:
+		return fmt.Sprintf("any_float(sk_float_new(%sf))", init.FloatVal)
+	case GlobalDouble:
+		return fmt.Sprintf("any_double(sk_double_new(%s))", init.FloatVal)
+	case GlobalString:
+		return fmt.Sprintf("any_string(sk_string_new(%q))", init.StrVal)
+	case GlobalChar:
+		return fmt.Sprintf("any_char(%d)", init.CharVal)
+	case GlobalBool:
+		v := 0
+		if init.BoolVal {
+			v = 1
+		}
+		return fmt.Sprintf("any_bool(sk_bool_new(%d))", v)
+	case GlobalNull:
+		return "any_null()"
+	case GlobalDict:
+		// Создаем временную переменную sk_dict_ref
+		tmpName := cg.newInitTmp()
+		cg.InitRuntime.WriteString(fmt.Sprintf("%ssk_dict_ref %s;\n", indent, tmpName))
+		cg.renderGlobalRuntimeInit(tmpName, "dict", init)
+		return fmt.Sprintf("any_dict(%s)", tmpName)
+	case GlobalArray:
+		tmpName := cg.newInitTmp()
+		cg.InitRuntime.WriteString(fmt.Sprintf("%ssk_arr %s;\n", indent, tmpName))
+		cg.renderGlobalRuntimeInit(tmpName, "arr", init)
+		return fmt.Sprintf("any_arr(%s)", tmpName)
+	case GlobalAny:
+		if init.ElemType == "dict" && len(init.Elements) > 0 {
+			tmpName := cg.newInitTmp()
+			cg.InitRuntime.WriteString(fmt.Sprintf("%ssk_dict_ref %s;\n", indent, tmpName))
+			cg.renderGlobalRuntimeInit(tmpName, "dict", init.Elements[0])
+			return fmt.Sprintf("any_dict(%s)", tmpName)
+		}
+		if init.ElemType == "arr" && len(init.Elements) > 0 {
+			tmpName := cg.newInitTmp()
+			cg.InitRuntime.WriteString(fmt.Sprintf("%ssk_arr %s;\n", indent, tmpName))
+			cg.renderGlobalRuntimeInit(tmpName, "arr", init.Elements[0])
+			return fmt.Sprintf("any_arr(%s)", tmpName)
+		}
+	}
+	return "any_null()"
+}
+
+func (cg *CodeGenerator) newInitTmp() string {
+	cg.initCounter++
+	return fmt.Sprintf("__sk__gtmp_%d", cg.initCounter)
 }
 
 // renderGlobalInit превращает типизированное дерево в C-prelude + инициализатор.
@@ -1436,6 +1552,9 @@ func (cg *CodeGenerator) generateFunction(fn *IRFunction) {
 		cg.writeLine("    __sk__argv = argv;")
 		cg.writeLine("    (void)argc;")
 		cg.writeLine("    (void)argv;")
+		if cg.InitRuntime.Len() > 0 {
+			cg.writeLine("    __sk__init_globals();")
+		}
 		cg.writeLine("")
 		cg.writeLine("    #ifdef _WIN32")
 		cg.writeLine("        SetConsoleOutputCP(CP_UTF8);")
@@ -2217,8 +2336,6 @@ func (cg *CodeGenerator) typeToC(typ string) string {
 		return "sk_any"
 	case "null":
 		return "void*"
-	case "promise":
-		return "void*" // placeholder
 	case "try_frame":
 		return "SkTryFrame"
 	case "error_ptr":

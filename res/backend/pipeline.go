@@ -121,11 +121,32 @@ func (p *Pipeline) processGlobalVar(g *front.VarDecl) {
 	}
 
 	p.IR.Globals = append(p.IR.Globals, IRGlobal{
-		Name:    g.Name,
-		Type:    varType,
-		Value:   init,
-		IsConst: g.IsConst,
+		Name:             g.Name,
+		Type:             varType,
+		Value:            init,
+		IsConst:          g.IsConst,
+		NeedsRuntimeInit: isComplexGlobalInit(init),
 	})
+}
+
+func isComplexGlobalInit(init IRGlobalInit) bool {
+	if init.Kind == GlobalDict || init.Kind == GlobalArray {
+		for _, el := range init.Elements {
+			if isComplexGlobalInit(el) {
+				return true
+			}
+		}
+		for _, el := range init.Entries {
+			if isComplexGlobalInit(el.Value) {
+				return true
+			}
+		}
+		return true // Любой dict/arr — уже сложный, т.к. C не умеет static init для sk_*
+	}
+	if init.Kind == GlobalAny && (init.ElemType == "dict" || init.ElemType == "arr") {
+		return true
+	}
+	return false
 }
 
 func (p *Pipeline) buildGlobalInit(name, varType, elemType string, expr front.Node) (IRGlobalInit, string, string, int, int) {

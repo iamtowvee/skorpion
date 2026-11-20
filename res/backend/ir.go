@@ -210,10 +210,11 @@ type IRLocal struct {
 // IRGlobalInit — типизированное дерево, из которого backend рендерит
 // prelude (static-объекты) и инициализатор.
 type IRGlobal struct {
-	Name    string
-	Type    string
-	Value   IRGlobalInit
-	IsConst bool
+	Name             string
+	Type             string
+	Value            IRGlobalInit
+	IsConst          bool
+	NeedsRuntimeInit bool
 }
 
 // IRGlobalInit — инициализатор глобальной переменной.
