@@ -1034,6 +1034,10 @@ void __sk__sendln(sk_any msg);
 void __sk__sendf(sk_any msg);
 sk_string __sk__input(sk_string prefix);
 
+// Global variables
+static const char __sk__gstr_x[] = "hi";
+sk_string x = { (char*)__sk__gstr_x, 0 };
+
 // ==== Async wrappers ====
 
 typedef struct __sk__async_ctx_failFunc {
@@ -1099,7 +1103,7 @@ L3:
     t6->__type = "Error.MyError";
     t7 = sk_string_new("boom in async");
     t6->msg = t7;
-    sk_throw(t6, "imp.sk", 9, 5);
+    sk_throw(t6, "imp.sk", 10, 5);
     return i;
 }
 
@@ -1122,31 +1126,36 @@ int main(int argc, char** argv) {
     sk_arr args = sk_arr_new(args__arr);
 
     sk_string t8;
-    sk_any t9;
-    sk_int r;
+    sk_string t9;
     sk_string t10;
     sk_any t11;
+    sk_int r;
     sk_string t12;
     sk_any t13;
+    sk_string t14;
+    sk_any t15;
 
-    t8 = sk_string_new("Запускаем падающий async...");
-    t9 = any_string(t8);
-    sk_call_push("imp.sk", 14, 5);
-    __sk__sendln(t9);
-    sk_call_pop();
-    r = SK_NOTREADY_int;
-    r = SK_NOTREADY_int;
-    __sk__async_start_failFunc(&r);
-    t10 = sk_string_new("Ждем...");
+    t8 = sk_string_new("g");
+    x = t8;
+    t9 = sk_string_new("Запускаем падающий async...");
+    t10 = sk_string_concat(t9, x);
     t11 = any_string(t10);
     sk_call_push("imp.sk", 16, 5);
     __sk__sendln(t11);
     sk_call_pop();
-    sk_wait_int(&r);
-    t12 = sk_string_new("Этого не должно быть видно!");
+    r = SK_NOTREADY_int;
+    r = SK_NOTREADY_int;
+    __sk__async_start_failFunc(&r);
+    t12 = sk_string_new("Ждем...");
     t13 = any_string(t12);
     sk_call_push("imp.sk", 18, 5);
     __sk__sendln(t13);
+    sk_call_pop();
+    sk_wait_int(&r);
+    t14 = sk_string_new("Этого не должно быть видно!");
+    t15 = any_string(t14);
+    sk_call_push("imp.sk", 20, 5);
+    __sk__sendln(t15);
     sk_call_pop();
     return 0;
 }
@@ -1162,8 +1171,8 @@ void __sk__std_io_send(sk_string line) {
 }
 
 sk_string __sk__std_io_input(sk_string prompt) {
-    sk_string t14;
-    sk_string t15;
+    sk_string t16;
+    sk_string t17;
 
     if (!prompt.__is_null) {
                 printf("%s", prompt.value);
@@ -1175,42 +1184,42 @@ sk_string __sk__std_io_input(sk_string prompt) {
                 buffer[len-1] = '\0';
             }
             return sk_string_new(buffer);
-    t14 = sk_string_new("");
-    prompt = t14;
-    t15 = sk_string_new("");
-    return t15;
+    t16 = sk_string_new("");
+    prompt = t16;
+    t17 = sk_string_new("");
+    return t17;
 }
 
 void __sk__sendln(sk_any msg) {
-    sk_string t16;
-    sk_string t17;
     sk_string t18;
+    sk_string t19;
+    sk_string t20;
 
-    t16 = any_to_string(msg);
-    t17 = sk_string_new("\n");
-    t18 = sk_string_concat(t16, t17);
+    t18 = any_to_string(msg);
+    t19 = sk_string_new("\n");
+    t20 = sk_string_concat(t18, t19);
     sk_call_push("<builtin:std/io>", 37, 5);
-    __sk__std_io_send(t18);
+    __sk__std_io_send(t20);
     sk_call_pop();
     return;
 }
 
 void __sk__sendf(sk_any msg) {
-    sk_string t19;
+    sk_string t21;
 
-    t19 = any_to_string(msg);
+    t21 = any_to_string(msg);
     sk_call_push("<builtin:std/io>", 41, 5);
-    __sk__std_io_send(t19);
+    __sk__std_io_send(t21);
     sk_call_pop();
     return;
 }
 
 sk_string __sk__input(sk_string prefix) {
-    sk_string t20;
+    sk_string t22;
 
     sk_call_push("<builtin:std/io>", 45, 12);
-    t20 = __sk__std_io_input(prefix);
+    t22 = __sk__std_io_input(prefix);
     sk_call_pop();
-    return t20;
+    return t22;
 }
 

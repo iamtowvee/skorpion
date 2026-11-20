@@ -1,6 +1,7 @@
 use #std/io
 
 new MyError{msg: string} inherit Error
+string x = "hi"
 
 //Deprecated tip:"hi"
 async int *failFunc() { // * перед именем функции, значит что функция локальная (ее невозможно вызвать извне напрямую)
@@ -11,7 +12,8 @@ async int *failFunc() { // * перед именем функции, значи�
 }
 
 void main(arr args) {
-    sendln("Запускаем падающий async...")
+    x = "g"
+    sendln("Запускаем падающий async..." + x)
     int r = failFunc()
     sendln("Ждем...")
     int v = await r

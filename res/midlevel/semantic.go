@@ -227,8 +227,12 @@ func (sa *SemanticAnalyzer) registerGlobalVars() {
 			continue
 		}
 
-		sym := sa.GlobalScope.Define(g.Name, SYM_CONST, declType, g.IsExport)
-		sym.IsConst = true
+		kind := SYM_VARIABLE
+		if g.IsConst {
+			kind = SYM_CONST
+		}
+		sym := sa.GlobalScope.Define(g.Name, kind, declType, g.IsExport)
+		sym.IsConst = g.IsConst
 	}
 }
 
