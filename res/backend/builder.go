@@ -20,10 +20,13 @@ type BuildConfig struct {
 	ProfileManager interface {
 		GetCompilerForOS(osName string) string
 	}
-	Targets    []string
-	OutputName string
-	OutputDir  string
-	IsTest     bool
+	Targets        []string
+	OutputName     string
+	OutputDir      string
+	IsTest         bool
+	LinuxCCFlags   []string
+	WindowsCCFlags []string
+	DarwinCCFlags  []string
 }
 
 func NewBuilder(config *BuildConfig) *Builder {
@@ -81,10 +84,13 @@ func (b *Builder) buildForTarget(targetOS string, cFile string) bool {
 	switch normOS {
 	case "windows":
 		flags = append(flags, "-DSK_OS_WINDOWS=1", "-lws2_32")
+		flags = append(flags, b.Config.WindowsCCFlags...)
 	case "linux":
 		flags = append(flags, "-DSK_OS_LINUX=1", "-lm", "-lpthread")
+		flags = append(flags, b.Config.LinuxCCFlags...)
 	case "darwin":
 		flags = append(flags, "-DSK_OS_DARWIN=1", "-lm", "-lpthread")
+		flags = append(flags, b.Config.DarwinCCFlags...)
 	}
 
 	outFile := filepath.Join(b.Config.OutputDir, b.Config.OutputName)

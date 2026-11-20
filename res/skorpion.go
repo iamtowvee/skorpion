@@ -976,6 +976,11 @@ func buildProject() {
 		return
 	}
 
+	debug.Debug("DEBUG: mainProg.Imports count = %d\n", len(mainProg.Imports))
+	for _, imp := range mainProg.Imports {
+		debug.Debug("DEBUG: Import Path=%s Alias=%s\n", imp.Path, imp.Alias)
+	}
+
 	if showTokens {
 		fmt.Println(cli.Colors.Bold(cli.Colors.Yellow("\n=== Tokens ===")))
 		lexer := front.NewLexer(string(content))
@@ -1067,6 +1072,9 @@ func buildProject() {
 		OutputName:     cfg.BuildOutName,
 		OutputDir:      cfg.BuildOutPath,
 		IsTest:         false,
+		LinuxCCFlags:   cfg.LinuxCCFlags,
+		WindowsCCFlags: cfg.WindowsCCFlags,
+		DarwinCCFlags:  cfg.DarwinCCFlags,
 	}
 
 	if buildConfig.OutputName == "" {

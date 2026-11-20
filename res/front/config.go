@@ -22,11 +22,12 @@ type Config struct {
 	Env          []string
 	Execute      []string
 
-	// Vars — все значения: ключ без @.
-	// Значение: string ИЛИ []string.
+	LinuxCCFlags   []string
+	WindowsCCFlags []string
+	DarwinCCFlags  []string
+
 	Vars map[string]interface{}
 
-	// VarOrder — порядок объявления.
 	VarOrder []string
 }
 
@@ -35,6 +36,7 @@ var presetNames = map[string]bool{
 	"main": true, "buildOutName": true, "buildOutPath": true,
 	"testOutName": true, "testOutPath": true, "libs": true,
 	"dependencies": true, "env": true, "execute": true,
+	"linuxCCFlags": true, "windowsCCFlags": true, "darwinCCFlags": true,
 }
 
 func isValidKeyName(s string) bool {
@@ -272,6 +274,15 @@ func (c *Config) syncPresetFields() {
 	}
 	if v, ok := c.Vars["execute"].(string); ok {
 		c.Execute = strings.Fields(v)
+	}
+	if v, ok := c.Vars["linuxCCFlags"].([]string); ok {
+		c.LinuxCCFlags = v
+	}
+	if v, ok := c.Vars["windowsCCFlags"].([]string); ok {
+		c.WindowsCCFlags = v
+	}
+	if v, ok := c.Vars["darwinCCFlags"].([]string); ok {
+		c.DarwinCCFlags = v
 	}
 }
 

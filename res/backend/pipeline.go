@@ -3,6 +3,7 @@ package backend
 import (
 	"fmt"
 	"os"
+	"skrp/res/debug"
 	"skrp/res/errors"
 	"skrp/res/front"
 	"skrp/res/log"
@@ -2528,14 +2529,11 @@ func (p *Pipeline) processCall(call *front.CallExpr, irFn *IRFunction) {
 }
 
 func (p *Pipeline) processCallExpr(call *front.CallExpr, irFn *IRFunction) IRValue {
+	debug.Debug("DEBUG: call.Receiver=%q, imports=%d\n", call.Receiver, len(p.Program.Imports))
 	isModuleCall := false
 	if call.Receiver != "" {
-		for _, imp := range p.Program.Imports {
-			moduleName := front.GetModuleName(imp.Path)
-			if moduleName == call.Receiver || imp.Alias == call.Receiver {
-				isModuleCall = true
-				break
-			}
+		if _, isVar := irFn.VarTypes[call.Receiver]; !isVar {
+			isModuleCall = true
 		}
 	}
 

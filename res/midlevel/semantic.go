@@ -1513,12 +1513,8 @@ func (sa *SemanticAnalyzer) analyzeCall(call *front.CallExpr) front.Node {
 	args := call.Args
 	isModuleCall := false
 	if call.Receiver != "" {
-		for _, imp := range sa.Program.Imports {
-			moduleName := front.GetModuleName(imp.Path)
-			if moduleName == call.Receiver || imp.Alias == call.Receiver {
-				isModuleCall = true
-				break
-			}
+		if sa.CurrentScope.Resolve(call.Receiver) == nil {
+			isModuleCall = true
 		}
 	}
 	if !isModuleCall {
