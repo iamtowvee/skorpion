@@ -16,6 +16,7 @@ type Config struct {
 	BuildOutName string
 	BuildOutPath string
 	TestOutName  string
+	Shifting     string
 	TestOutPath  string
 	LibsDir      string
 	Dependencies []string
@@ -31,12 +32,67 @@ type Config struct {
 	VarOrder []string
 }
 
-var presetNames = map[string]bool{
-	"name": true, "version": true, "authors": true, "target": true,
-	"main": true, "buildOutName": true, "buildOutPath": true,
-	"testOutName": true, "testOutPath": true, "libs": true,
-	"dependencies": true, "env": true, "execute": true,
-	"linuxCCFlags": true, "windowsCCFlags": true, "darwinCCFlags": true,
+type presetKind int
+
+const (
+	presetString presetKind = iota
+	presetArray
+	presetStringOrArray
+)
+
+var presetKinds = map[string]presetKind{
+	"name":         presetString,
+	"version":      presetString,
+	"main":         presetString,
+	"buildOutName": presetString,
+	"buildOutPath": presetString,
+	"testOutName":  presetString,
+	"testOutPath":  presetString,
+	"libs":         presetString,
+	"shifting":     presetString,
+
+	"authors":        presetArray,
+	"target":         presetArray,
+	"dependencies":   presetArray,
+	"linuxCCFlags":   presetArray,
+	"windowsCCFlags": presetArray,
+	"darwinCCFlags":  presetArray,
+
+	"env":     presetStringOrArray,
+	"execute": presetStringOrArray,
+}
+
+var presetNames = func() map[string]bool {
+	m := make(map[string]bool, len(presetKinds))
+	for k := range presetKinds {
+		m[k] = true
+	}
+	return m
+}()
+
+func (c *Config) validatePresetTypes() error {
+	for _, key := range c.VarOrder {
+		kind, ok := presetKinds[key]
+		if !ok {
+			continue
+		}
+		switch v := c.Vars[key].(type) {
+		case string:
+			if kind == presetArray {
+				return fmt.Errorf("config key '%s' must be an array: %s[(\"...\")]", key, key)
+			}
+			if key == "shifting" && strings.TrimSpace(v) == "" {
+				return fmt.Errorf("config key 'shifting' must name a .skd file")
+			}
+		case []string:
+			if kind == presetString {
+				return fmt.Errorf("config key '%s' must be a single string: %s[\"...\"]", key, key)
+			}
+		default:
+			return fmt.Errorf("config key '%s' has unsupported value type", key)
+		}
+	}
+	return nil
 }
 
 func isValidKeyName(s string) bool {
@@ -229,60 +285,80 @@ func splitArrayElements(s string) []string {
 }
 
 func (c *Config) syncPresetFields() {
-	if v, ok := c.Vars["name"].(string); ok {
+	str := func(key string) (string, bool) {
+		v, ok := c.Vars[key].(string)
+		return v, ok
+	}
+	arr := func(key string) ([]string, bool) {
+		switch v := c.Vars[key].(type) {
+		case []string:
+			return v, true
+		case string:
+			out := make([]string, 0)
+			for _, p := range strings.Split(v, ",") {
+				if p = strings.TrimSpace(p); p != "" {
+					out = append(out, p)
+				}
+			}
+			return out, true
+		}
+		return nil, false
+	}
+
+	if v, ok := str("name"); ok {
 		c.Name = v
 	}
-	if v, ok := c.Vars["version"].(string); ok {
+	if v, ok := str("version"); ok {
 		c.Version = v
 	}
-	if v, ok := c.Vars["main"].(string); ok {
+	if v, ok := str("main"); ok {
 		c.Main = v
 	}
-	if v, ok := c.Vars["buildOutName"].(string); ok {
+	if v, ok := str("buildOutName"); ok {
 		c.BuildOutName = v
 	}
-	if v, ok := c.Vars["buildOutPath"].(string); ok {
+	if v, ok := str("buildOutPath"); ok {
 		c.BuildOutPath = v
 	}
-	if v, ok := c.Vars["testOutName"].(string); ok {
+	if v, ok := str("testOutName"); ok {
 		c.TestOutName = v
 	}
-	if v, ok := c.Vars["testOutPath"].(string); ok {
+	if v, ok := str("testOutPath"); ok {
 		c.TestOutPath = v
 	}
-	if v, ok := c.Vars["libs"].(string); ok {
+	if v, ok := str("libs"); ok {
 		c.LibsDir = v
 	}
-
-	if v, ok := c.Vars["authors"].([]string); ok {
+	if v, ok := str("shifting"); ok {
+		c.Shifting = strings.TrimSpace(v)
+	}
+	if v, ok := arr("authors"); ok {
 		c.Authors = v
 	}
-	if v, ok := c.Vars["target"].([]string); ok {
+	if v, ok := arr("target"); ok {
 		c.Target = v
 	}
-	if v, ok := c.Vars["dependencies"].([]string); ok {
+	if v, ok := arr("dependencies"); ok {
 		c.Dependencies = v
 	}
-
-	if v, ok := c.Vars["env"].(string); ok {
-		for _, p := range strings.Split(v, ",") {
-			p = strings.TrimSpace(p)
-			if p != "" {
-				c.Env = append(c.Env, p)
-			}
-		}
+	if v, ok := arr("env"); ok {
+		c.Env = v
 	}
-	if v, ok := c.Vars["execute"].(string); ok {
-		c.Execute = strings.Fields(v)
-	}
-	if v, ok := c.Vars["linuxCCFlags"].([]string); ok {
+	if v, ok := arr("linuxCCFlags"); ok {
 		c.LinuxCCFlags = v
 	}
-	if v, ok := c.Vars["windowsCCFlags"].([]string); ok {
+	if v, ok := arr("windowsCCFlags"); ok {
 		c.WindowsCCFlags = v
 	}
-	if v, ok := c.Vars["darwinCCFlags"].([]string); ok {
+	if v, ok := arr("darwinCCFlags"); ok {
 		c.DarwinCCFlags = v
+	}
+
+	switch v := c.Vars["execute"].(type) {
+	case []string:
+		c.Execute = v
+	case string:
+		c.Execute = strings.Fields(v)
 	}
 }
 
@@ -303,20 +379,21 @@ func ParseConfig(path string) *Config {
 	}
 
 	lines := strings.Split(string(data), "\n")
-
 	for i, rawLine := range lines {
 		lineNum := i + 1
 		line := strings.TrimSpace(rawLine)
 		if line == "" || strings.HasPrefix(line, "#!") {
 			continue
 		}
-
 		if err := cfg.parseLine(line, lineNum, path); err != nil {
-			errors.NewFatalError("0653",
-				fmt.Sprintf("Config error: %v", err),
-				lineNum, 0, path)
+			errors.NewFatalError("0653", fmt.Sprintf("Config error: %v", err), lineNum, 0, path)
 			return cfg
 		}
+	}
+
+	if err := cfg.validatePresetTypes(); err != nil {
+		errors.NewFatalError("0653", fmt.Sprintf("Config error: %v", err), 0, 0, path)
+		return cfg
 	}
 
 	cfg.syncPresetFields()

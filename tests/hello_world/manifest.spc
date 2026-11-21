@@ -1,6 +1,6 @@
 name["MyProject"]
 version["1.0.0"]
-main["./imp.sk"]
+main["./main.sk"]
 authors[("iamtowvee")]
 
 channel["stable"]

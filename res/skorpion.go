@@ -42,6 +42,7 @@ import (
 	"skrp/res/front"
 	"skrp/res/log"
 	"skrp/res/midlevel"
+	"skrp/res/skpkg"
 	"sort"
 	"strconv"
 	"strings"
@@ -331,6 +332,14 @@ func InitLang(args []string, v string) {
 		}
 	case "clear-local":
 		if !handleClearLocal(projectPath) {
+			commandFailed = true
+		}
+	case "pack":
+		if !handlePack(projectPath, args[1:]) {
+			commandFailed = true
+		}
+	case "put":
+		if !handlePut(projectPath, args[1:]) {
 			commandFailed = true
 		}
 
@@ -949,6 +958,12 @@ func buildProject() {
 		mainFile = "main.sk"
 	}
 	mainFile = filepath.Join(projectPath, mainFile)
+
+	// Читаем ccflags.json из всех установленных библиотек.
+	extraLinux, extraWindows, extraDarwin := collectLibraryCCFlags(projectPath, cfg)
+	cfg.LinuxCCFlags = appendUnique(cfg.LinuxCCFlags, extraLinux...)
+	cfg.WindowsCCFlags = appendUnique(cfg.WindowsCCFlags, extraWindows...)
+	cfg.DarwinCCFlags = appendUnique(cfg.DarwinCCFlags, extraDarwin...)
 
 	content, err := os.ReadFile(mainFile)
 	if err != nil {
@@ -2184,6 +2199,18 @@ func printHelp() {
 	fmt.Println("  test                  Run tests")
 	fmt.Println("  build-lib             Build library (.sklib) from current directory")
 	fmt.Println()
+	fmt.Println(cli.Colors.Bold("PACKAGING:"))
+	fmt.Println("  pack                           Build a .skpkg from the built .sklib + shifting files")
+	fmt.Println("  pack --out=DIR                 Write the .skpkg to DIR (default: buildOutPath)")
+	fmt.Println(`  put -lib="file.skpkg"          Install a package into this project`)
+	fmt.Println("  put --force                    Overwrite existing files without asking")
+	fmt.Println("  put --allow-foreign            Allow non-standard files without asking")
+	fmt.Println("  --dry-run                      Show what pack/put would do")
+	fmt.Println()
+	fmt.Println(cli.Colors.Dim("  manifest.spc: shifting[\"depends.skd\"]"))
+	fmt.Println(cli.Colors.Dim(`  depends.skd:  "deps/some.h" -> "%buildOutPath/";`))
+	fmt.Println(cli.Colors.Dim("  variables:    %name %version %buildOutPath %testOutPath %libs"))
+	fmt.Println()
 	fmt.Println(cli.Colors.Bold("WINDOWS PROFILE MANAGEMENT:"))
 	fmt.Println("  add-win-profile NAME : PATH    Add new Windows compiler profile")
 	fmt.Println("  edit-win-profile NAME : PATH   Edit existing Windows compiler profile")
@@ -2251,4 +2278,216 @@ func printVersion() {
 	fmt.Println(cli.Colors.Bold("Skorpion Compiler v" + currentSkorpionVersion))
 	fmt.Println(cli.Colors.Dim("Copyrights. (c) 2026 iamtowvee"))
 	fmt.Println(cli.Colors.Dim("Distributed under MIT License"))
+}
+
+// appendUnique добавляет элементы, пропуская дубликаты.
+func appendUnique(base []string, extra ...string) []string {
+	seen := make(map[string]bool, len(base))
+	for _, s := range base {
+		seen[s] = true
+	}
+	for _, s := range extra {
+		if !seen[s] {
+			base = append(base, s)
+			seen[s] = true
+		}
+	}
+	return base
+}
+
+// collectLibraryCCFlags читает ccflags.json из всех установленных библиотек.
+func collectLibraryCCFlags(projectPath string, cfg *front.Config) (linux, windows, darwin []string) {
+	libsRoot := cfg.LibsDir
+	if strings.TrimSpace(libsRoot) == "" {
+		libsRoot = "libs/"
+	}
+	if !filepath.IsAbs(libsRoot) {
+		libsRoot = filepath.Join(projectPath, libsRoot)
+	}
+
+	entries, err := os.ReadDir(libsRoot)
+	if err != nil {
+		return nil, nil, nil
+	}
+
+	for _, authorDir := range entries {
+		if !authorDir.IsDir() {
+			continue
+		}
+		authorPath := filepath.Join(libsRoot, authorDir.Name())
+		nameEntries, err := os.ReadDir(authorPath)
+		if err != nil {
+			continue
+		}
+		for _, nameDir := range nameEntries {
+			if !nameDir.IsDir() {
+				continue
+			}
+			ccflagsPath := filepath.Join(authorPath, nameDir.Name(), skpkg.CCFlagsFileName)
+			c, err := skpkg.ReadCCFlags(ccflagsPath)
+			if err != nil {
+				continue
+			}
+			linux = appendUnique(linux, c.Linux...)
+			windows = appendUnique(windows, c.Windows...)
+			darwin = appendUnique(darwin, c.Darwin...)
+		}
+	}
+	return linux, windows, darwin
+}
+
+// ============================================================
+// pack / put
+// ============================================================
+
+// skpkgConfirm — мост между skpkg и интерактивным confirm().
+// Перезапись подтверждается глобальным --yes, нестандартные файлы — нет:
+// молчаливая установка exe/dll в CI недопустима.
+func skpkgConfirm(kind skpkg.ConfirmKind, question string, details []string, defaultYes bool) bool {
+	for _, d := range details {
+		switch {
+		case kind == skpkg.ConfirmForeignFiles && isDangerFile(d):
+			fmt.Printf("  %s %s\n", cli.Colors.Error("DANGER"), d)
+		case kind == skpkg.ConfirmForeignFiles:
+			fmt.Printf("  %s %s\n", cli.Colors.Warning("WARN"), d)
+		default:
+			fmt.Printf("  %s %s\n", cli.Colors.Warning("!"), d)
+		}
+	}
+	if kind == skpkg.ConfirmOverwrite && assumeYes {
+		return true
+	}
+	return confirm(question, defaultYes)
+}
+
+// isDangerFile — true, если расширение не из списков WARN/STANDARD.
+func isDangerFile(name string) bool {
+	return skpkg.ClassifyExtension(name) == skpkg.ExtDanger
+}
+
+func handlePack(projectPath string, args []string) bool {
+	outDir := ""
+	for _, a := range args {
+		if strings.HasPrefix(a, "--out=") {
+			outDir = strings.TrimPrefix(a, "--out=")
+			continue
+		}
+		fmt.Println(cli.Colors.Error("Unknown option for 'pack': " + a))
+		fmt.Println(cli.Colors.Warning("Usage: skorpion pack [--out=DIR] [--dry-run]"))
+		return false
+	}
+
+	result, err := skpkg.Pack(skpkg.PackOptions{
+		ProjectDir: projectPath,
+		OutputDir:  outDir,
+		DryRun:     dryRun,
+		Log:        func(s string) { fmt.Println(cli.Colors.Info(s)) },
+	})
+	if err != nil {
+		fmt.Println(cli.Colors.Error("Error:"), err)
+		return false
+	}
+
+	for _, f := range result.Foreign {
+		fmt.Println(cli.Colors.Warning("Non-standard file in package (WARN): " + f))
+	}
+	for _, f := range result.Dangerous {
+		fmt.Println(cli.Colors.Error("Non-standard file in package (DANGER): " + f))
+	}
+
+	if dryRun {
+		fmt.Printf(cli.Colors.Info("Would create: %s (%d extra file(s), %s)\n"),
+			result.PackagePath, result.Files, humanSize(result.Bytes))
+		fmt.Println(cli.Colors.Warning("Dry run — nothing was written."))
+		return true
+	}
+
+	fmt.Printf(cli.Colors.Success("Package created: %s\n"), result.PackagePath)
+	fmt.Printf(cli.Colors.Info("Library: %s | extra files: %d | %s\n"),
+		result.LibraryPath, result.Files, humanSize(result.Bytes))
+	return true
+}
+
+func handlePut(projectPath string, args []string) bool {
+	const usage = `Usage: skorpion put -lib="file.skpkg" [--force] [--allow-foreign] [--dry-run] [--yes]`
+
+	pkg := ""
+	force := false
+	allowForeign := false
+
+	for _, a := range args {
+		switch {
+		case strings.HasPrefix(a, "-lib="):
+			pkg = strings.TrimPrefix(a, "-lib=")
+		case strings.HasPrefix(a, "--lib="):
+			pkg = strings.TrimPrefix(a, "--lib=")
+		case a == "--force":
+			force = true
+		case a == "--allow-foreign":
+			allowForeign = true
+		case strings.HasPrefix(a, "-"):
+			fmt.Println(cli.Colors.Error("Unknown option for 'put': " + a))
+			fmt.Println(cli.Colors.Warning(usage))
+			return false
+		default:
+			if pkg != "" {
+				fmt.Println(cli.Colors.Error("Only one package can be installed at a time"))
+				fmt.Println(cli.Colors.Warning(usage))
+				return false
+			}
+			pkg = a
+		}
+	}
+	pkg = strings.Trim(strings.TrimSpace(pkg), `"'`)
+
+	result, err := skpkg.Install(skpkg.InstallOptions{
+		ProjectDir:   projectPath,
+		PackagePath:  pkg,
+		AllowForeign: allowForeign,
+		Force:        force,
+		DryRun:       dryRun,
+		Confirm:      skpkgConfirm,
+		Log:          func(s string) { fmt.Println(cli.Colors.Info(s)) },
+	})
+	if err != nil {
+		if err == skpkg.ErrDeclined {
+			fmt.Println(cli.Colors.Info("Cancelled."))
+			return true
+		}
+		fmt.Println(cli.Colors.Error("Error:"), err)
+		return false
+	}
+
+	if dryRun {
+		fmt.Println(cli.Colors.Bold("Would install:"))
+		for _, p := range result.Installed {
+			fmt.Printf("  %s %s\n", cli.Colors.Green("+"), p)
+		}
+		for _, p := range result.Skipped {
+			fmt.Printf("  %s %s (identical, skipped)\n", cli.Colors.Dim("="), p)
+		}
+		fmt.Println(cli.Colors.Warning("Dry run — nothing was written."))
+		return true
+	}
+
+	for _, p := range result.Installed {
+		fmt.Printf("  %s %s\n", cli.Colors.Green("+"), p)
+	}
+	for _, p := range result.Skipped {
+		fmt.Printf("  %s %s (identical, skipped)\n", cli.Colors.Dim("="), p)
+	}
+
+	fmt.Printf(cli.Colors.Success("Installed %s/%s@%s\n"),
+		result.Author, result.Name, result.Version)
+	fmt.Printf(cli.Colors.Info("Library: %s\n"), result.LibraryPath)
+	if result.CCFlagsPath != "" {
+		fmt.Printf(cli.Colors.Info("Compiler flags: %s\n"), result.CCFlagsPath)
+	}
+	fmt.Printf(cli.Colors.Info("Import it with: use lib:%s/%s@%s\n"),
+		result.Author, result.Name, result.Version)
+
+	for _, dep := range result.Dependencies {
+		fmt.Println(cli.Colors.Warning("Dependency not installed automatically: " + dep))
+	}
+	return true
 }
