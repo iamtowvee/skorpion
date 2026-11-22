@@ -1272,7 +1272,6 @@ func (cg *CodeGenerator) renderGlobalRuntimeInit(name, skType string, init IRGlo
 			cg.renderGlobalRuntimeInit(tmpArr, "arr", init.Elements[0])
 			cg.InitRuntime.WriteString(fmt.Sprintf("%s%s = any_arr(%s);\n", indent, name, tmpArr))
 		} else {
-			// скаляр внутри any, который требует runtime init (например, если кто-то явно создал any)
 			cg.InitRuntime.WriteString(fmt.Sprintf("%s%s = %s;\n", indent, name, cg.renderAnyExpr(init, indent)))
 		}
 	}
@@ -1281,6 +1280,45 @@ func (cg *CodeGenerator) renderGlobalRuntimeInit(name, skType string, init IRGlo
 // renderAnyExpr возвращает C-выражение типа sk_any для данного IRGlobalInit.
 // Для вложенных структур создает временные переменные в InitRuntime.
 func (cg *CodeGenerator) renderAnyExpr(init IRGlobalInit, indent string) string {
+	// Если Kind == GlobalAny — смотрим на ElemType
+	if init.Kind == GlobalAny {
+		switch init.ElemType {
+		case "int", "":
+			return fmt.Sprintf("any_int(sk_int_new(%d))", init.IntVal)
+		case "float":
+			return fmt.Sprintf("any_float(sk_float_new(%sf))", init.FloatVal)
+		case "double":
+			return fmt.Sprintf("any_double(sk_double_new(%s))", init.FloatVal)
+		case "string":
+			return fmt.Sprintf("any_string(sk_string_new(%q))", init.StrVal)
+		case "char":
+			return fmt.Sprintf("any_char(%d)", init.CharVal)
+		case "bool":
+			v := 0
+			if init.BoolVal {
+				v = 1
+			}
+			return fmt.Sprintf("any_bool(sk_bool_new(%d))", v)
+		case "arr":
+			if len(init.Elements) > 0 {
+				tmpName := cg.newInitTmp()
+				cg.InitRuntime.WriteString(fmt.Sprintf("%ssk_arr %s;\n", indent, tmpName))
+				cg.renderGlobalRuntimeInit(tmpName, "arr", init.Elements[0])
+				return fmt.Sprintf("any_arr(%s)", tmpName)
+			}
+			return "any_null()"
+		case "dict":
+			if len(init.Elements) > 0 {
+				tmpName := cg.newInitTmp()
+				cg.InitRuntime.WriteString(fmt.Sprintf("%ssk_dict_ref %s;\n", indent, tmpName))
+				cg.renderGlobalRuntimeInit(tmpName, "dict", init.Elements[0])
+				return fmt.Sprintf("any_dict(%s)", tmpName)
+			}
+			return "any_null()"
+		}
+		return "any_null()"
+	}
+
 	switch init.Kind {
 	case GlobalInt:
 		return fmt.Sprintf("any_int(sk_int_new(%d))", init.IntVal)
@@ -1301,7 +1339,6 @@ func (cg *CodeGenerator) renderAnyExpr(init IRGlobalInit, indent string) string 
 	case GlobalNull:
 		return "any_null()"
 	case GlobalDict:
-		// Создаем временную переменную sk_dict_ref
 		tmpName := cg.newInitTmp()
 		cg.InitRuntime.WriteString(fmt.Sprintf("%ssk_dict_ref %s;\n", indent, tmpName))
 		cg.renderGlobalRuntimeInit(tmpName, "dict", init)
@@ -1311,19 +1348,6 @@ func (cg *CodeGenerator) renderAnyExpr(init IRGlobalInit, indent string) string 
 		cg.InitRuntime.WriteString(fmt.Sprintf("%ssk_arr %s;\n", indent, tmpName))
 		cg.renderGlobalRuntimeInit(tmpName, "arr", init)
 		return fmt.Sprintf("any_arr(%s)", tmpName)
-	case GlobalAny:
-		if init.ElemType == "dict" && len(init.Elements) > 0 {
-			tmpName := cg.newInitTmp()
-			cg.InitRuntime.WriteString(fmt.Sprintf("%ssk_dict_ref %s;\n", indent, tmpName))
-			cg.renderGlobalRuntimeInit(tmpName, "dict", init.Elements[0])
-			return fmt.Sprintf("any_dict(%s)", tmpName)
-		}
-		if init.ElemType == "arr" && len(init.Elements) > 0 {
-			tmpName := cg.newInitTmp()
-			cg.InitRuntime.WriteString(fmt.Sprintf("%ssk_arr %s;\n", indent, tmpName))
-			cg.renderGlobalRuntimeInit(tmpName, "arr", init.Elements[0])
-			return fmt.Sprintf("any_arr(%s)", tmpName)
-		}
 	}
 	return "any_null()"
 }

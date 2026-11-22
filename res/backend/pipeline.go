@@ -343,7 +343,7 @@ func (p *Pipeline) buildGlobalAny(name string, expr front.Node) (IRGlobalInit, s
 		switch t {
 		case "int":
 			v, _ := strconv.ParseInt(e.Value, 10, 64)
-			return IRGlobalInit{Kind: GlobalAny, IntVal: v}, "", "", 0, 0
+			return IRGlobalInit{Kind: GlobalAny, IntVal: v, ElemType: "int"}, "", "", 0, 0
 		case "float":
 			v := strings.TrimSuffix(strings.TrimSuffix(e.Value, "f"), "F")
 			return IRGlobalInit{Kind: GlobalAny, FloatVal: v, ElemType: "float"}, "", "", 0, 0
@@ -757,6 +757,11 @@ func (p *Pipeline) processContinue(irFn *IRFunction) {
 func (p *Pipeline) processFieldAccess(fa *front.FieldAccess, irFn *IRFunction) IRValue {
 	if irFn.VarTypes != nil {
 		if objType, ok := irFn.VarTypes[fa.Object]; ok && objType == "dict" {
+			return p.processDictAccess(fa.Object, fa.Field, irFn)
+		}
+	}
+	for _, g := range p.IR.Globals {
+		if g.Name == fa.Object && g.Type == "dict" {
 			return p.processDictAccess(fa.Object, fa.Field, irFn)
 		}
 	}
@@ -1329,6 +1334,14 @@ func (p *Pipeline) processVarDecl(decl *front.VarDecl, irFn *IRFunction) {
 			}
 
 			exprResult := p.processExpression(decl.Expr, irFn)
+			if exprResult.Type == "any" {
+				tmp := p.newTemp()
+				irFn.Locals = append(irFn.Locals, IRLocal{Type: "dict", Name: tmp})
+				irFn.Instructions = append(irFn.Instructions, IRInstruction{
+					Op: OpUnwrapAny, Result: tmp, Arg1: exprResult.Var, ReturnType: "dict",
+				})
+				exprResult = IRValue{Type: "dict", Var: tmp}
+			}
 			irFn.Instructions = append(irFn.Instructions, IRInstruction{
 				Op: OpAssign, Result: decl.Name, Arg1: exprResult.Var,
 			})
