@@ -1,1 +1,2 @@
-"hi.txt" -> "hello_man/";
+"hi.o" -> "hello_man/";
+"hi.dll" -> "hello_man/";

@@ -105,8 +105,6 @@ func (c *Color) Toggle()         { c.Enabled = !c.Enabled }
 func (c *Color) IsEnabled() bool { return c.Enabled }
 
 // ShouldUseColors — эвристика: используется ли цвет.
-//
-// Fix: раньше при ошибке os.Stdout.Stat() info был nil → паника.
 func ShouldUseColors() bool {
 	info, err := os.Stdout.Stat()
 	if err != nil {

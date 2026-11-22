@@ -1476,7 +1476,7 @@ func printZigWarning() {
 		return
 	}
 
-	printDebug(msg)
+	printInfo(msg)
 }
 
 func printSkorpionWarning() {
@@ -1501,6 +1501,12 @@ func printSkorpionWarning() {
 // printDebug — выводит строку в стиле [ DEBUG ] <msg>.
 func printDebug(msg string) {
 	prefix := cli.Colors.Colorize(cli.BRIGHT_BLACK+cli.BG_BLACK, " DEBUG ")
+	fmt.Printf("%s %s\n", prefix, msg)
+}
+
+// printInfo — выводит строку в стиле [ INFO ] <msg>.
+func printInfo(msg string) {
+	prefix := cli.Colors.Colorize(cli.BLUE+cli.BG_BLACK, " INFO ")
 	fmt.Printf("%s %s\n", prefix, msg)
 }
 
@@ -2347,9 +2353,9 @@ func skpkgConfirm(kind skpkg.ConfirmKind, question string, details []string, def
 	for _, d := range details {
 		switch {
 		case kind == skpkg.ConfirmForeignFiles && isDangerFile(d):
-			fmt.Printf("  %s %s\n", cli.Colors.Error("DANGER"), d)
+			fmt.Printf("  %s %s\n", cli.BRIGHT_RED+cli.BG_BLACK+" DANGER "+cli.RESET, d)
 		case kind == skpkg.ConfirmForeignFiles:
-			fmt.Printf("  %s %s\n", cli.Colors.Warning("WARN"), d)
+			fmt.Printf("  %s %s\n", cli.BG_BLACK+cli.YELLOW+" WARN "+cli.RESET, d)
 		default:
 			fmt.Printf("  %s %s\n", cli.Colors.Warning("!"), d)
 		}
@@ -2389,10 +2395,10 @@ func handlePack(projectPath string, args []string) bool {
 	}
 
 	for _, f := range result.Foreign {
-		fmt.Println(cli.Colors.Warning("Non-standard file in package (WARN): " + f))
+		fmt.Println(fmt.Sprintf("%s Non-standard file in package:%s "+f, cli.BG_BLACK+cli.YELLOW+" WARN "+cli.RESET+cli.YELLOW, cli.RESET))
 	}
 	for _, f := range result.Dangerous {
-		fmt.Println(cli.Colors.Error("Non-standard file in package (DANGER): " + f))
+		fmt.Println(fmt.Sprintf("%s Non-standard file in package:%s "+f, cli.BRIGHT_RED+cli.BG_BLACK+" DANGER "+cli.RESET+cli.BRIGHT_RED, cli.RESET))
 	}
 
 	if dryRun {

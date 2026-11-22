@@ -1479,24 +1479,6 @@ void __sk__foo(sk_int a, sk_arr some);
 void __sk__foos(sk_int a, sk_int b, sk_arr some);
 sk_dict_ref __sk__f(void);
 void __sk__something(sk_string msg);
-sk_arr __sk__read(sk_string path);
-sk_string __sk__readText(sk_string path);
-void __sk__write(sk_string path, sk_arr data, sk_bool append);
-void __sk__writeText(sk_string path, sk_string data, sk_bool append);
-sk_string __sk__readLine(sk_string path, sk_int lineNum);
-void __sk__writeLine(sk_string path, sk_int lineNum, sk_string text);
-void __sk__mkdir(sk_string base, sk_string newDir);
-void __sk__delete(sk_string path);
-sk_bool __sk__isReadable(sk_string path);
-sk_bool __sk__isWriteable(sk_string path);
-sk_bool __sk__exists(sk_string path);
-void __sk__copy(sk_string src, sk_string dest);
-void __sk__move(sk_string src, sk_string dest);
-void __sk__std_io_send(sk_string line);
-sk_string __sk__std_io_input(sk_string prompt);
-void __sk__sendln(sk_any msg);
-void __sk__sendf(sk_any msg);
-sk_string __sk__input(sk_string prefix);
 sk_string __sk__getEnv(sk_string env);
 sk_bool __sk__hasEnv(sk_string env);
 void __sk__setEnv(sk_string env, sk_string val);
@@ -1536,6 +1518,24 @@ sk_bool __sk__isValid(sk_string text);
 sk_bool __sk__isValidFile(sk_string path);
 void __sk__print(sk_any line);
 void __sk__println(sk_any msg);
+void __sk__std_io_send(sk_string line);
+sk_string __sk__std_io_input(sk_string prompt);
+void __sk__sendln(sk_any msg);
+void __sk__sendf(sk_any msg);
+sk_string __sk__input(sk_string prefix);
+sk_arr __sk__read(sk_string path);
+sk_string __sk__readText(sk_string path);
+void __sk__write(sk_string path, sk_arr data, sk_bool append);
+void __sk__writeText(sk_string path, sk_string data, sk_bool append);
+sk_string __sk__readLine(sk_string path, sk_int lineNum);
+void __sk__writeLine(sk_string path, sk_int lineNum, sk_string text);
+void __sk__mkdir(sk_string base, sk_string newDir);
+void __sk__delete(sk_string path);
+sk_bool __sk__isReadable(sk_string path);
+sk_bool __sk__isWriteable(sk_string path);
+sk_bool __sk__exists(sk_string path);
+void __sk__copy(sk_string src, sk_string dest);
+void __sk__move(sk_string src, sk_string dest);
 
 // Global variables
 sk_arr X;
@@ -1938,8 +1938,747 @@ L12:
     return 0;
 }
 
+sk_string __sk__getEnv(sk_string env) {
+    sk_string t83;
+
+    if (env.__is_null || env.value == NULL) return sk_string_new("");
+        const char* val = getenv(env.value);
+        return sk_string_new(val ? val : "");
+    t83 = sk_string_new("");
+    return t83;
+}
+
+sk_bool __sk__hasEnv(sk_string env) {
+    sk_bool t84;
+
+    if (env.__is_null || env.value == NULL) return sk_bool_new(0);
+        return sk_bool_new(getenv(env.value) != NULL);
+    t84 = sk_bool_new(0);
+    return t84;
+}
+
+void __sk__setEnv(sk_string env, sk_string val) {
+    if (env.__is_null || val.__is_null) return;
+        if (env.value == NULL || val.value == NULL) return;
+        #if defined(_WIN32)
+            _putenv_s(env.value, val.value);
+        #else
+            setenv(env.value, val.value, 1);
+        #endif
+    return;
+}
+
+void __sk__unsetEnv(sk_string env) {
+    if (env.__is_null || env.value == NULL) return;
+        #if defined(_WIN32)
+            _putenv_s(env.value, "");
+        #else
+            unsetenv(env.value);
+        #endif
+    return;
+}
+
+sk_arr __sk__getEnvAll(void) {
+    sk_arr t85;
+
+    sk_array* a = sk_array_new(sizeof(sk_string), 1);
+        #if defined(_WIN32)
+            LPCH envBlock = GetEnvironmentStringsA();
+            if (envBlock != NULL) {
+                char* p = envBlock;
+                while (*p != '\0') {
+                    sk_string s = sk_string_new(p);
+                    sk_array_push(a, &s);
+                    p += strlen(p) + 1;
+                }
+                FreeEnvironmentStringsA(envBlock);
+            }
+        #else
+            extern char** environ;
+            if (environ != NULL) {
+                for (char** p = environ; *p != NULL; p++) {
+                    sk_string s = sk_string_new(*p);
+                    sk_array_push(a, &s);
+                }
+            }
+        #endif
+        return sk_arr_new(a);
+    t85 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    return t85;
+}
+
+sk_string __sk__getExePath(void) {
+    sk_string t86;
+
+    #if defined(_WIN32)
+            char buf[MAX_PATH];
+            DWORD n = GetModuleFileNameA(NULL, buf, (DWORD)sizeof(buf));
+            if (n == 0 || n >= sizeof(buf)) return sk_string_new("");
+            return sk_string_new(buf);
+        #elif defined(__linux__)
+            char buf[4096];
+            ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+            if (n <= 0) return sk_string_new("");
+            buf[n] = '\0';
+            return sk_string_new(buf);
+        #elif defined(__APPLE__)
+            char buf[4096];
+            uint32_t size = (uint32_t)sizeof(buf);
+            if (_NSGetExecutablePath(buf, &size) != 0) return sk_string_new("");
+            return sk_string_new(buf);
+        #else
+            return sk_string_new("");
+        #endif
+    t86 = sk_string_new("");
+    return t86;
+}
+
+sk_string __sk__getCwd(void) {
+    sk_string t87;
+
+    char buf[4096];
+        if (getcwd(buf, sizeof(buf)) == NULL) return sk_string_new("");
+        return sk_string_new(buf);
+    t87 = sk_string_new("");
+    return t87;
+}
+
+void __sk__setCwd(sk_string path) {
+    if (path.__is_null || path.value == NULL) return;
+        #if defined(_WIN32)
+            _chdir(path.value);
+        #else
+            chdir(path.value);
+        #endif
+    return;
+}
+
+sk_string __sk__getHomeDir(void) {
+    sk_string t88;
+
+    #if defined(_WIN32)
+            const char* h = getenv("USERPROFILE");
+            if (h == NULL) h = getenv("HOMEPATH");
+            return sk_string_new(h ? h : "");
+        #else
+            const char* h = getenv("HOME");
+            return sk_string_new(h ? h : "");
+        #endif
+    t88 = sk_string_new("");
+    return t88;
+}
+
+sk_string __sk__getTempDir(void) {
+    sk_string t89;
+
+    #if defined(_WIN32)
+            char buf[MAX_PATH];
+            DWORD n = GetTempPathA((DWORD)sizeof(buf), buf);
+            if (n == 0) return sk_string_new("");
+            return sk_string_new(buf);
+        #else
+            const char* t = getenv("TMPDIR");
+            if (t == NULL || *t == '\0') t = "/tmp";
+            return sk_string_new(t);
+        #endif
+    t89 = sk_string_new("");
+    return t89;
+}
+
+sk_int __sk__getPid(void) {
+    sk_int t90;
+
+    #if defined(_WIN32)
+            return sk_int_new((int)GetCurrentProcessId());
+        #else
+            return sk_int_new((int)getpid());
+        #endif
+    t90 = sk_int_new(0);
+    return t90;
+}
+
+sk_int __sk__getPPid(void) {
+    sk_int t91;
+
+    #if defined(_WIN32)
+            // на Windows родительский PID не доступен напрямую через WinAPI
+            return sk_int_new(0);
+        #else
+            return sk_int_new((int)getppid());
+        #endif
+    t91 = sk_int_new(0);
+    return t91;
+}
+
+sk_arr __sk__getArgs(void) {
+    sk_arr t92;
+
+    sk_array* a = sk_array_new(sizeof(sk_string), 1);
+        for (int i = 0; i < __sk__argc; i++) {
+            sk_string s = sk_string_new(__sk__argv[i]);
+            sk_array_push(a, &s);
+        }
+        return sk_arr_new(a);
+    t92 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    return t92;
+}
+
+sk_string __sk__getArg(sk_int idx) {
+    sk_string t93;
+
+    if (idx.__is_null) return sk_string_new("");
+        int i = idx.value;
+        if (i < 0 || i >= __sk__argc) return sk_string_new("");
+        return sk_string_new(__sk__argv[i]);
+    t93 = sk_string_new("");
+    return t93;
+}
+
+sk_int __sk__getArgc(void) {
+    sk_int t94;
+
+    return sk_int_new(__sk__argc);
+    t94 = sk_int_new(0);
+    return t94;
+}
+
+void __sk__exit(sk_int code, sk_string msg) {
+    if (!msg.__is_null && msg.value != NULL && msg.value[0] != '\0') {
+          fprintf(stderr, "%s\n", msg.value);
+        }
+        if (code.__is_null) exit(0);
+        exit(code.value);
+    return;
+}
+
+void __sk__abort(sk_string msg) {
+    if (!msg.__is_null && msg.value != NULL && msg.value[0] != '\0') {
+          fprintf(stderr, "%s\n", msg.value);
+        }
+        abort();
+    return;
+}
+
+void __sk__kill(sk_int pid, sk_int sig) {
+    if (pid.__is_null || sig.__is_null) return;
+        #if defined(_WIN32)
+            HANDLE h = OpenProcess(PROCESS_TERMINATE, FALSE, (DWORD)pid.value);
+            if (h != NULL) {
+                TerminateProcess(h, (UINT)sig.value);
+                CloseHandle(h);
+            }
+        #else
+            kill((pid_t)pid.value, sig.value);
+        #endif
+    return;
+}
+
+sk_string __sk__getOSName(void) {
+    sk_string t95;
+
+    #if defined(_WIN32)
+            return sk_string_new("windows");
+        #elif defined(__APPLE__)
+            return sk_string_new("darwin");
+        #elif defined(__linux__)
+            return sk_string_new("linux");
+        #elif defined(__FreeBSD__)
+            return sk_string_new("freebsd");
+        #else
+            return sk_string_new("unknown");
+        #endif
+    t95 = sk_string_new("");
+    return t95;
+}
+
+sk_string __sk__getArchName(void) {
+    sk_string t96;
+
+    #if defined(_M_X64) || defined(__x86_64__)
+            return sk_string_new("x86_64");
+        #elif defined(_M_IX86) || defined(__i386__)
+            return sk_string_new("x86");
+        #elif defined(_M_ARM64) || defined(__aarch64__)
+            return sk_string_new("aarch64");
+        #elif defined(_M_ARM) || defined(__arm__)
+            return sk_string_new("arm");
+        #else
+            return sk_string_new("unknown");
+        #endif
+    t96 = sk_string_new("");
+    return t96;
+}
+
+sk_string __sk__getHostname(void) {
+    sk_string t97;
+
+    char buf[256];
+        if (gethostname(buf, sizeof(buf)) != 0) return sk_string_new("");
+        buf[sizeof(buf) - 1] = '\0';
+        return sk_string_new(buf);
+    t97 = sk_string_new("");
+    return t97;
+}
+
+sk_string __sk__getUsername(void) {
+    sk_string t98;
+
+    #if defined(_WIN32)
+            char buf[256];
+            DWORD n = (DWORD)sizeof(buf);
+            if (GetUserNameA(buf, &n) == 0) return sk_string_new("");
+            return sk_string_new(buf);
+        #else
+            const char* u = getenv("USER");
+            if (u == NULL) u = getenv("LOGNAME");
+            return sk_string_new(u ? u : "");
+        #endif
+    t98 = sk_string_new("");
+    return t98;
+}
+
+sk_int __sk__getCPUCount(void) {
+    sk_int t99;
+
+    #if defined(_WIN32)
+            SYSTEM_INFO si;
+            GetSystemInfo(&si);
+            return sk_int_new((int)si.dwNumberOfProcessors);
+        #else
+            long n = sysconf(_SC_NPROCESSORS_ONLN);
+            return sk_int_new(n > 0 ? (int)n : 1);
+        #endif
+    t99 = sk_int_new(1);
+    return t99;
+}
+
+sk_int __sk__getPageSize(void) {
+    sk_int t100;
+
+    #if defined(_WIN32)
+            SYSTEM_INFO si;
+            GetSystemInfo(&si);
+            return sk_int_new((int)si.dwPageSize);
+        #else
+            long n = sysconf(_SC_PAGESIZE);
+            return sk_int_new(n > 0 ? (int)n : 4096);
+        #endif
+    t100 = sk_int_new(4096);
+    return t100;
+}
+
+sk_int __sk__getTotalMemory(void) {
+    sk_int t101;
+
+    #if defined(_WIN32)
+            MEMORYSTATUSEX ms;
+            ms.dwLength = sizeof(ms);
+            if (!GlobalMemoryStatusEx(&ms)) return sk_int_new(0);
+            return sk_int_new((int)ms.ullTotalPhys);
+        #elif defined(__APPLE__)
+            long long pages = 0; long long page_size = 0;
+            size_t sz = sizeof(pages);
+            sysctlbyname("hw.memsize", &pages, &sz, NULL, 0);
+            page_size = 4096;
+            (void)page_size;
+            return sk_int_new((int)pages);
+        #else
+            long pages = sysconf(_SC_PHYS_PAGES);
+            long page_size = sysconf(_SC_PAGESIZE);
+            if (pages <= 0 || page_size <= 0) return sk_int_new(0);
+            return sk_int_new((int)(pages * page_size));
+        #endif
+    t101 = sk_int_new(0);
+    return t101;
+}
+
+void __sk__sleep(sk_int ms) {
+    if (ms.__is_null || ms.value <= 0) return;
+        #if defined(_WIN32)
+            Sleep((DWORD)ms.value);
+        #else
+            usleep((useconds_t)ms.value * 1000);
+        #endif
+    return;
+}
+
+sk_int __sk__monotonicMs(void) {
+    sk_int t102;
+
+    #if defined(_WIN32)
+            LARGE_INTEGER f, c;
+            QueryPerformanceFrequency(&f);
+            QueryPerformanceCounter(&c);
+            return sk_int_new((int)((c.QuadPart * 1000) / f.QuadPart));
+        #else
+            struct timespec ts;
+            clock_gettime(CLOCK_MONOTONIC, &ts);
+            return sk_int_new((int)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000));
+        #endif
+    t102 = sk_int_new(0);
+    return t102;
+}
+
+sk_int __sk__unixTime(void) {
+    sk_int t103;
+
+    return sk_int_new((int)time(NULL));
+    t103 = sk_int_new(0);
+    return t103;
+}
+
+sk_string __sk__unixTimeStr(sk_string fmt) {
+    sk_string t104;
+
+    time_t t = time(NULL);
+        struct tm tmv;
+        #if defined(_WIN32)
+            localtime_s(&tmv, &t);
+        #else
+            localtime_r(&t, &tmv);
+        #endif
+        const char* f = (fmt.__is_null || fmt.value == NULL) ? "%Y-%m-%d %H:%M:%S" : fmt.value;
+        char buf[256];
+        if (strftime(buf, sizeof(buf), f, &tmv) == 0) return sk_string_new("");
+        return sk_string_new(buf);
+    t104 = sk_string_new("");
+    return t104;
+}
+
+sk_int __sk__exec(sk_string cmd) {
+    sk_int t105;
+
+    if (cmd.__is_null || cmd.value == NULL) return sk_int_new(-1);
+        int rc = system(cmd.value);
+        #if defined(_WIN32)
+            return sk_int_new(rc);
+        #else
+            if (rc == -1) return sk_int_new(-1);
+            if (WIFEXITED(rc)) return sk_int_new(WEXITSTATUS(rc));
+            return sk_int_new(-1);
+        #endif
+    t105 = sk_int_new(-1);
+    return t105;
+}
+
+sk_dict_ref __sk__parse(sk_string text) {
+    sk_dict_ref t106;
+
+    if (text.__is_null) {
+            JsonParseError* err = malloc(sizeof(JsonParseError));
+            err->__type = "Error.JsonError.JsonParseError";
+            err->msg = sk_string_new("Cannot parse 'null'.");
+            sk_throw(err, "<builtin:std/json>", 340, 5);
+        }
+        sk_any res = __sk__json_parse(text.value);
+        if (res.type == 6 && strcmp(text.value, "null") != 0) {
+            JsonParser p;
+            p.src = text.value;
+            p.pos = 0;
+            p.len = (int)strlen(text.value);
+            __sk__json_skip_ws(&p);
+            if (p.pos + 4 <= p.len && strncmp(&p.src[p.pos], "null", 4) == 0) {
+                p.pos += 4;
+                __sk__json_skip_ws(&p);
+                if (p.pos != p.len) {
+                    JsonParseError* err = malloc(sizeof(JsonParseError));
+                    err->__type = "Error.JsonError.JsonParseError";
+                    err->msg = sk_string_new("Trailing garbage after JSON value.");
+                    sk_throw(err, "<builtin:std/json>", 350, 5);
+                }
+            } else {
+                JsonParseError* err = malloc(sizeof(JsonParseError));
+                err->__type = "Error.JsonError.JsonParseError";
+                err->msg = sk_string_new("Invalid JSON.");
+                sk_throw(err, "<builtin:std/json>", 355, 5);
+            }
+        }
+        if (res.type == 8) {
+            return any_to_dict(res);
+        }
+        sk_dict* d = sk_dict_new();
+        sk_dict_set(d, sk_string_new("value"), res);
+        return sk_dict_ref_new(d);
+    t106 = sk_dict_ref_new(sk_dict_new());
+    return t106;
+}
+
+sk_dict_ref __sk__parseFile(sk_string path) {
+    sk_dict_ref t107;
+
+    if (path.__is_null) {
+            JsonFileError* err = malloc(sizeof(JsonFileError));
+            err->__type = "Error.JsonError.JsonFileError";
+            err->msg = sk_string_new("Path cannot be null.");
+            sk_throw(err, "<builtin:std/json>", 380, 5);
+        }
+        FILE* f = fopen(path.value, "rb");
+        if (!f) {
+            JsonFileError* err = malloc(sizeof(JsonFileError));
+            err->__type = "Error.JsonError.JsonFileError";
+            err->msg = sk_string_new("Cannot open JSON file.");
+            sk_throw(err, "<builtin:std/json>", 386, 5);
+        }
+        fseek(f, 0, SEEK_END);
+        long size = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        if (size <= 0) {
+            fclose(f);
+            JsonFileError* err = malloc(sizeof(JsonFileError));
+            err->__type = "Error.JsonError.JsonFileError";
+            err->msg = sk_string_new("JSON file is empty.");
+            sk_throw(err, "<builtin:std/json>", 396, 5);
+        }
+        char* content = malloc(size + 1);
+        size_t n = fread(content, 1, size, f);
+        content[n] = '\0';
+        fclose(f);
+        sk_any res = __sk__json_parse(content);
+        if (res.type == 6 && strcmp(content, "null") != 0) {
+            JsonParser p;
+            p.src = content;
+            p.pos = 0;
+            p.len = (int)n;
+            __sk__json_skip_ws(&p);
+            if (p.pos + 4 <= p.len && strncmp(&p.src[p.pos], "null", 4) == 0) {
+                p.pos += 4;
+                __sk__json_skip_ws(&p);
+                if (p.pos != p.len) {
+                    free(content);
+                    JsonParseError* err = malloc(sizeof(JsonParseError));
+                    err->__type = "Error.JsonError.JsonParseError";
+                    err->msg = sk_string_new("Trailing garbage after JSON value in file.");
+                    sk_throw(err, "<builtin:std/json>", 412, 5);
+                }
+            } else {
+                free(content);
+                JsonParseError* err = malloc(sizeof(JsonParseError));
+                err->__type = "Error.JsonError.JsonParseError";
+                err->msg = sk_string_new("Invalid JSON in file.");
+                sk_throw(err, "<builtin:std/json>", 418, 5);
+            }
+        }
+        free(content);
+        if (res.type == 8) {
+            return any_to_dict(res);
+        }
+        sk_dict* d = sk_dict_new();
+        sk_dict_set(d, sk_string_new("value"), res);
+        return sk_dict_ref_new(d);
+    t107 = sk_dict_ref_new(sk_dict_new());
+    return t107;
+}
+
+sk_any __sk__parseAny(sk_string text) {
+    sk_any t108;
+
+    if (text.__is_null) {
+            JsonParseError* err = malloc(sizeof(JsonParseError));
+            err->__type = "Error.JsonError.JsonParseError";
+            err->msg = sk_string_new("Cannot parse 'null'.");
+            sk_throw(err, "<builtin:std/json>", 440, 5);
+        }
+        sk_any res = __sk__json_parse(text.value);
+        if (res.type == 6 && strcmp(text.value, "null") != 0) {
+            JsonParser p;
+            p.src = text.value;
+            p.pos = 0;
+            p.len = (int)strlen(text.value);
+            __sk__json_skip_ws(&p);
+            if (p.pos + 4 <= p.len && strncmp(&p.src[p.pos], "null", 4) == 0) {
+                p.pos += 4;
+                __sk__json_skip_ws(&p);
+                if (p.pos != p.len) {
+                    JsonParseError* err = malloc(sizeof(JsonParseError));
+                    err->__type = "Error.JsonError.JsonParseError";
+                    err->msg = sk_string_new("Trailing garbage after JSON value.");
+                    sk_throw(err, "<builtin:std/json>", 452, 5);
+                }
+            } else {
+                JsonParseError* err = malloc(sizeof(JsonParseError));
+                err->__type = "Error.JsonError.JsonParseError";
+                err->msg = sk_string_new("Invalid JSON.");
+                sk_throw(err, "<builtin:std/json>", 457, 5);
+            }
+        }
+        return res;
+    t108 = SK_NULL_any;
+    return t108;
+}
+
+sk_string __sk__toString(sk_dict_ref data) {
+    sk_string t109;
+
+    if (data.__is_null) {
+            JsonSerializeError* err = malloc(sizeof(JsonSerializeError));
+            err->__type = "Error.JsonError.JsonSerializeError";
+            err->msg = sk_string_new("Cannot serialize 'null' dict.");
+            sk_throw(err, "<builtin:std/json>", 480, 5);
+        }
+        JsonOut o;
+        __sk__json_out_init(&o);
+        sk_any any = any_dict(data);
+        __sk__json_write_any(&o, any);
+        return sk_string_new_take(o.buf);
+    t109 = sk_string_new("");
+    return t109;
+}
+
+sk_string __sk__toStringAny(sk_any data) {
+    sk_string t110;
+
+    JsonOut o;
+        __sk__json_out_init(&o);
+        __sk__json_write_any(&o, data);
+        return sk_string_new_take(o.buf);
+    t110 = sk_string_new("");
+    return t110;
+}
+
+sk_bool __sk__isValid(sk_string text) {
+    sk_bool t111;
+
+    if (text.__is_null || text.value == NULL) return sk_bool_new(0);
+        JsonParser p;
+        p.src = text.value;
+        p.pos = 0;
+        p.len = (int)strlen(text.value);
+        sk_any res = __sk__json_parse_value(&p);
+        __sk__json_skip_ws(&p);
+        if (p.pos != p.len) return sk_bool_new(0);
+        if (res.type == 6) {
+            JsonParser p2;
+            p2.src = text.value;
+            p2.pos = 0;
+            p2.len = (int)strlen(text.value);
+            __sk__json_skip_ws(&p2);
+            if (p2.pos + 4 <= p2.len && strncmp(&p2.src[p2.pos], "null", 4) == 0) {
+                return sk_bool_new(1);
+            }
+            return sk_bool_new(0);
+        }
+        return sk_bool_new(1);
+    t111 = sk_bool_new(0);
+    return t111;
+}
+
+sk_bool __sk__isValidFile(sk_string path) {
+    sk_bool t112;
+
+    if (path.__is_null || path.value == NULL) return sk_bool_new(0);
+        FILE* f = fopen(path.value, "rb");
+        if (!f) return sk_bool_new(0);
+        fseek(f, 0, SEEK_END);
+        long size = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        if (size <= 0) { fclose(f); return sk_bool_new(0); }
+        char* buf = malloc(size + 1);
+        size_t n = fread(buf, 1, size, f);
+        buf[n] = '\0';
+        fclose(f);
+        JsonParser p;
+        p.src = buf;
+        p.pos = 0;
+        p.len = (int)n;
+        sk_any res = __sk__json_parse_value(&p);
+        __sk__json_skip_ws(&p);
+        bool ok = 1;
+        if (p.pos != p.len) ok = 0;
+        if (res.type == 6) {
+            JsonParser p2;
+            p2.src = buf;
+            p2.pos = 0;
+            p2.len = (int)n;
+            __sk__json_skip_ws(&p2);
+            if (!(p2.pos + 4 <= p2.len && strncmp(&p2.src[p2.pos], "null", 4) == 0)) {
+                ok = 0;
+            }
+        }
+        free(buf);
+        return sk_bool_new(ok);
+    t112 = sk_bool_new(0);
+    return t112;
+}
+
+void __sk__print(sk_any line) {
+    sk_call_push("lib.sk", 6, 5);
+    __sk__sendln(line);
+    sk_call_pop();
+    return;
+}
+
+void __sk__println(sk_any msg) {
+    sk_call_push("lib.sk", 10, 5);
+    __sk__print(msg);
+    sk_call_pop();
+    return;
+}
+
+void __sk__std_io_send(sk_string line) {
+    if (line.__is_null) {
+                printf("null");
+            } else {
+                printf("%s", line.value);
+            }
+            fflush(stdout);
+    return;
+}
+
+sk_string __sk__std_io_input(sk_string prompt) {
+    sk_string t113;
+    sk_string t114;
+
+    if (!prompt.__is_null) {
+                printf("%s", prompt.value);
+            }
+            char buffer[256];
+            fgets(buffer, sizeof(buffer), stdin);
+            size_t len = strlen(buffer);
+            if (len > 0 && buffer[len-1] == '\n') {
+                buffer[len-1] = '\0';
+            }
+            return sk_string_new(buffer);
+    t113 = sk_string_new("");
+    prompt = t113;
+    t114 = sk_string_new("");
+    return t114;
+}
+
+void __sk__sendln(sk_any msg) {
+    sk_string t115;
+    sk_string t116;
+    sk_string t117;
+
+    t115 = any_to_string(msg);
+    t116 = sk_string_new("\n");
+    t117 = sk_string_concat(t115, t116);
+    sk_call_push("<builtin:std/io>", 37, 5);
+    __sk__std_io_send(t117);
+    sk_call_pop();
+    return;
+}
+
+void __sk__sendf(sk_any msg) {
+    sk_string t118;
+
+    t118 = any_to_string(msg);
+    sk_call_push("<builtin:std/io>", 41, 5);
+    __sk__std_io_send(t118);
+    sk_call_pop();
+    return;
+}
+
+sk_string __sk__input(sk_string prefix) {
+    sk_string t119;
+
+    sk_call_push("<builtin:std/io>", 45, 12);
+    t119 = __sk__std_io_input(prefix);
+    sk_call_pop();
+    return t119;
+}
+
 sk_arr __sk__read(sk_string path) {
-    sk_arr t83;
+    sk_arr t120;
 
     if (path.__is_null) {
             InvalidPathError* err = malloc(sizeof(InvalidPathError));
@@ -1973,12 +2712,12 @@ sk_arr __sk__read(sk_string path) {
             fclose(f);
         }
         return sk_arr_new(arr);
-    t83 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t83;
+    t120 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
+    return t120;
 }
 
 sk_string __sk__readText(sk_string path) {
-    sk_string t84;
+    sk_string t121;
 
     sk_arr bytes = __sk__read(path);
         if (bytes.__is_null || bytes.value == NULL || bytes.value->length == 0) {
@@ -1989,8 +2728,8 @@ sk_string __sk__readText(sk_string path) {
         memcpy(buf, bytes.value->data, len);
         buf[len] = '\0';
         return sk_string_new_take(buf);
-    t84 = sk_string_new("");
-    return t84;
+    t121 = sk_string_new("");
+    return t121;
 }
 
 void __sk__write(sk_string path, sk_arr data, sk_bool append) {
@@ -2038,7 +2777,7 @@ void __sk__writeText(sk_string path, sk_string data, sk_bool append) {
 }
 
 sk_string __sk__readLine(sk_string path, sk_int lineNum) {
-    sk_string t85;
+    sk_string t122;
 
     if (path.__is_null || lineNum.value < 1) {
             InvalidPathError* err = malloc(sizeof(InvalidPathError));
@@ -2091,8 +2830,8 @@ sk_string __sk__readLine(sk_string path, sk_int lineNum) {
             result[--result_len] = '\0';
         }
         return sk_string_new_take(result);
-    t85 = sk_string_new("");
-    return t85;
+    t122 = sk_string_new("");
+    return t122;
 }
 
 void __sk__writeLine(sk_string path, sk_int lineNum, sk_string text) {
@@ -2222,29 +2961,29 @@ void __sk__delete(sk_string path) {
 }
 
 sk_bool __sk__isReadable(sk_string path) {
-    sk_bool t86;
+    sk_bool t123;
 
     if (path.__is_null) return sk_bool_new(0);
         FILE* f = fopen(path.value, "rb");
         if (f) { fclose(f); return sk_bool_new(1); }
         return sk_bool_new(0);
-    t86 = sk_bool_new(0);
-    return t86;
+    t123 = sk_bool_new(0);
+    return t123;
 }
 
 sk_bool __sk__isWriteable(sk_string path) {
-    sk_bool t87;
+    sk_bool t124;
 
     if (path.__is_null) return sk_bool_new(0);
         FILE* f = fopen(path.value, "ab");
         if (f) { fclose(f); return sk_bool_new(1); }
         return sk_bool_new(0);
-    t87 = sk_bool_new(0);
-    return t87;
+    t124 = sk_bool_new(0);
+    return t124;
 }
 
 sk_bool __sk__exists(sk_string path) {
-    sk_bool t88;
+    sk_bool t125;
 
     if (path.__is_null || path.value == NULL || path.value[0] == '\0') {
             return sk_bool_new(0);
@@ -2256,8 +2995,8 @@ sk_bool __sk__exists(sk_string path) {
         }
         // ENOENT / ENOTDIR / EACCES — считаем, что не существует
         return sk_bool_new(0);
-    t88 = sk_bool_new(0);
-    return t88;
+    t125 = sk_bool_new(0);
+    return t125;
 }
 
 void __sk__copy(sk_string src, sk_string dest) {
@@ -2329,745 +3068,6 @@ void __sk__move(sk_string src, sk_string dest) {
             err->msg = sk_string_new("Failed to move file.");
             sk_throw(err, "<builtin:std/files>", 451, 5);
         }
-    return;
-}
-
-void __sk__std_io_send(sk_string line) {
-    if (line.__is_null) {
-                printf("null");
-            } else {
-                printf("%s", line.value);
-            }
-            fflush(stdout);
-    return;
-}
-
-sk_string __sk__std_io_input(sk_string prompt) {
-    sk_string t89;
-    sk_string t90;
-
-    if (!prompt.__is_null) {
-                printf("%s", prompt.value);
-            }
-            char buffer[256];
-            fgets(buffer, sizeof(buffer), stdin);
-            size_t len = strlen(buffer);
-            if (len > 0 && buffer[len-1] == '\n') {
-                buffer[len-1] = '\0';
-            }
-            return sk_string_new(buffer);
-    t89 = sk_string_new("");
-    prompt = t89;
-    t90 = sk_string_new("");
-    return t90;
-}
-
-void __sk__sendln(sk_any msg) {
-    sk_string t91;
-    sk_string t92;
-    sk_string t93;
-
-    t91 = any_to_string(msg);
-    t92 = sk_string_new("\n");
-    t93 = sk_string_concat(t91, t92);
-    sk_call_push("<builtin:std/io>", 37, 5);
-    __sk__std_io_send(t93);
-    sk_call_pop();
-    return;
-}
-
-void __sk__sendf(sk_any msg) {
-    sk_string t94;
-
-    t94 = any_to_string(msg);
-    sk_call_push("<builtin:std/io>", 41, 5);
-    __sk__std_io_send(t94);
-    sk_call_pop();
-    return;
-}
-
-sk_string __sk__input(sk_string prefix) {
-    sk_string t95;
-
-    sk_call_push("<builtin:std/io>", 45, 12);
-    t95 = __sk__std_io_input(prefix);
-    sk_call_pop();
-    return t95;
-}
-
-sk_string __sk__getEnv(sk_string env) {
-    sk_string t96;
-
-    if (env.__is_null || env.value == NULL) return sk_string_new("");
-        const char* val = getenv(env.value);
-        return sk_string_new(val ? val : "");
-    t96 = sk_string_new("");
-    return t96;
-}
-
-sk_bool __sk__hasEnv(sk_string env) {
-    sk_bool t97;
-
-    if (env.__is_null || env.value == NULL) return sk_bool_new(0);
-        return sk_bool_new(getenv(env.value) != NULL);
-    t97 = sk_bool_new(0);
-    return t97;
-}
-
-void __sk__setEnv(sk_string env, sk_string val) {
-    if (env.__is_null || val.__is_null) return;
-        if (env.value == NULL || val.value == NULL) return;
-        #if defined(_WIN32)
-            _putenv_s(env.value, val.value);
-        #else
-            setenv(env.value, val.value, 1);
-        #endif
-    return;
-}
-
-void __sk__unsetEnv(sk_string env) {
-    if (env.__is_null || env.value == NULL) return;
-        #if defined(_WIN32)
-            _putenv_s(env.value, "");
-        #else
-            unsetenv(env.value);
-        #endif
-    return;
-}
-
-sk_arr __sk__getEnvAll(void) {
-    sk_arr t98;
-
-    sk_array* a = sk_array_new(sizeof(sk_string), 1);
-        #if defined(_WIN32)
-            LPCH envBlock = GetEnvironmentStringsA();
-            if (envBlock != NULL) {
-                char* p = envBlock;
-                while (*p != '\0') {
-                    sk_string s = sk_string_new(p);
-                    sk_array_push(a, &s);
-                    p += strlen(p) + 1;
-                }
-                FreeEnvironmentStringsA(envBlock);
-            }
-        #else
-            extern char** environ;
-            if (environ != NULL) {
-                for (char** p = environ; *p != NULL; p++) {
-                    sk_string s = sk_string_new(*p);
-                    sk_array_push(a, &s);
-                }
-            }
-        #endif
-        return sk_arr_new(a);
-    t98 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t98;
-}
-
-sk_string __sk__getExePath(void) {
-    sk_string t99;
-
-    #if defined(_WIN32)
-            char buf[MAX_PATH];
-            DWORD n = GetModuleFileNameA(NULL, buf, (DWORD)sizeof(buf));
-            if (n == 0 || n >= sizeof(buf)) return sk_string_new("");
-            return sk_string_new(buf);
-        #elif defined(__linux__)
-            char buf[4096];
-            ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
-            if (n <= 0) return sk_string_new("");
-            buf[n] = '\0';
-            return sk_string_new(buf);
-        #elif defined(__APPLE__)
-            char buf[4096];
-            uint32_t size = (uint32_t)sizeof(buf);
-            if (_NSGetExecutablePath(buf, &size) != 0) return sk_string_new("");
-            return sk_string_new(buf);
-        #else
-            return sk_string_new("");
-        #endif
-    t99 = sk_string_new("");
-    return t99;
-}
-
-sk_string __sk__getCwd(void) {
-    sk_string t100;
-
-    char buf[4096];
-        if (getcwd(buf, sizeof(buf)) == NULL) return sk_string_new("");
-        return sk_string_new(buf);
-    t100 = sk_string_new("");
-    return t100;
-}
-
-void __sk__setCwd(sk_string path) {
-    if (path.__is_null || path.value == NULL) return;
-        #if defined(_WIN32)
-            _chdir(path.value);
-        #else
-            chdir(path.value);
-        #endif
-    return;
-}
-
-sk_string __sk__getHomeDir(void) {
-    sk_string t101;
-
-    #if defined(_WIN32)
-            const char* h = getenv("USERPROFILE");
-            if (h == NULL) h = getenv("HOMEPATH");
-            return sk_string_new(h ? h : "");
-        #else
-            const char* h = getenv("HOME");
-            return sk_string_new(h ? h : "");
-        #endif
-    t101 = sk_string_new("");
-    return t101;
-}
-
-sk_string __sk__getTempDir(void) {
-    sk_string t102;
-
-    #if defined(_WIN32)
-            char buf[MAX_PATH];
-            DWORD n = GetTempPathA((DWORD)sizeof(buf), buf);
-            if (n == 0) return sk_string_new("");
-            return sk_string_new(buf);
-        #else
-            const char* t = getenv("TMPDIR");
-            if (t == NULL || *t == '\0') t = "/tmp";
-            return sk_string_new(t);
-        #endif
-    t102 = sk_string_new("");
-    return t102;
-}
-
-sk_int __sk__getPid(void) {
-    sk_int t103;
-
-    #if defined(_WIN32)
-            return sk_int_new((int)GetCurrentProcessId());
-        #else
-            return sk_int_new((int)getpid());
-        #endif
-    t103 = sk_int_new(0);
-    return t103;
-}
-
-sk_int __sk__getPPid(void) {
-    sk_int t104;
-
-    #if defined(_WIN32)
-            // на Windows родительский PID не доступен напрямую через WinAPI
-            return sk_int_new(0);
-        #else
-            return sk_int_new((int)getppid());
-        #endif
-    t104 = sk_int_new(0);
-    return t104;
-}
-
-sk_arr __sk__getArgs(void) {
-    sk_arr t105;
-
-    sk_array* a = sk_array_new(sizeof(sk_string), 1);
-        for (int i = 0; i < __sk__argc; i++) {
-            sk_string s = sk_string_new(__sk__argv[i]);
-            sk_array_push(a, &s);
-        }
-        return sk_arr_new(a);
-    t105 = sk_arr_new(sk_array_new(sizeof(sk_any), 5));
-    return t105;
-}
-
-sk_string __sk__getArg(sk_int idx) {
-    sk_string t106;
-
-    if (idx.__is_null) return sk_string_new("");
-        int i = idx.value;
-        if (i < 0 || i >= __sk__argc) return sk_string_new("");
-        return sk_string_new(__sk__argv[i]);
-    t106 = sk_string_new("");
-    return t106;
-}
-
-sk_int __sk__getArgc(void) {
-    sk_int t107;
-
-    return sk_int_new(__sk__argc);
-    t107 = sk_int_new(0);
-    return t107;
-}
-
-void __sk__exit(sk_int code, sk_string msg) {
-    if (!msg.__is_null && msg.value != NULL && msg.value[0] != '\0') {
-          fprintf(stderr, "%s\n", msg.value);
-        }
-        if (code.__is_null) exit(0);
-        exit(code.value);
-    return;
-}
-
-void __sk__abort(sk_string msg) {
-    if (!msg.__is_null && msg.value != NULL && msg.value[0] != '\0') {
-          fprintf(stderr, "%s\n", msg.value);
-        }
-        abort();
-    return;
-}
-
-void __sk__kill(sk_int pid, sk_int sig) {
-    if (pid.__is_null || sig.__is_null) return;
-        #if defined(_WIN32)
-            HANDLE h = OpenProcess(PROCESS_TERMINATE, FALSE, (DWORD)pid.value);
-            if (h != NULL) {
-                TerminateProcess(h, (UINT)sig.value);
-                CloseHandle(h);
-            }
-        #else
-            kill((pid_t)pid.value, sig.value);
-        #endif
-    return;
-}
-
-sk_string __sk__getOSName(void) {
-    sk_string t108;
-
-    #if defined(_WIN32)
-            return sk_string_new("windows");
-        #elif defined(__APPLE__)
-            return sk_string_new("darwin");
-        #elif defined(__linux__)
-            return sk_string_new("linux");
-        #elif defined(__FreeBSD__)
-            return sk_string_new("freebsd");
-        #else
-            return sk_string_new("unknown");
-        #endif
-    t108 = sk_string_new("");
-    return t108;
-}
-
-sk_string __sk__getArchName(void) {
-    sk_string t109;
-
-    #if defined(_M_X64) || defined(__x86_64__)
-            return sk_string_new("x86_64");
-        #elif defined(_M_IX86) || defined(__i386__)
-            return sk_string_new("x86");
-        #elif defined(_M_ARM64) || defined(__aarch64__)
-            return sk_string_new("aarch64");
-        #elif defined(_M_ARM) || defined(__arm__)
-            return sk_string_new("arm");
-        #else
-            return sk_string_new("unknown");
-        #endif
-    t109 = sk_string_new("");
-    return t109;
-}
-
-sk_string __sk__getHostname(void) {
-    sk_string t110;
-
-    char buf[256];
-        if (gethostname(buf, sizeof(buf)) != 0) return sk_string_new("");
-        buf[sizeof(buf) - 1] = '\0';
-        return sk_string_new(buf);
-    t110 = sk_string_new("");
-    return t110;
-}
-
-sk_string __sk__getUsername(void) {
-    sk_string t111;
-
-    #if defined(_WIN32)
-            char buf[256];
-            DWORD n = (DWORD)sizeof(buf);
-            if (GetUserNameA(buf, &n) == 0) return sk_string_new("");
-            return sk_string_new(buf);
-        #else
-            const char* u = getenv("USER");
-            if (u == NULL) u = getenv("LOGNAME");
-            return sk_string_new(u ? u : "");
-        #endif
-    t111 = sk_string_new("");
-    return t111;
-}
-
-sk_int __sk__getCPUCount(void) {
-    sk_int t112;
-
-    #if defined(_WIN32)
-            SYSTEM_INFO si;
-            GetSystemInfo(&si);
-            return sk_int_new((int)si.dwNumberOfProcessors);
-        #else
-            long n = sysconf(_SC_NPROCESSORS_ONLN);
-            return sk_int_new(n > 0 ? (int)n : 1);
-        #endif
-    t112 = sk_int_new(1);
-    return t112;
-}
-
-sk_int __sk__getPageSize(void) {
-    sk_int t113;
-
-    #if defined(_WIN32)
-            SYSTEM_INFO si;
-            GetSystemInfo(&si);
-            return sk_int_new((int)si.dwPageSize);
-        #else
-            long n = sysconf(_SC_PAGESIZE);
-            return sk_int_new(n > 0 ? (int)n : 4096);
-        #endif
-    t113 = sk_int_new(4096);
-    return t113;
-}
-
-sk_int __sk__getTotalMemory(void) {
-    sk_int t114;
-
-    #if defined(_WIN32)
-            MEMORYSTATUSEX ms;
-            ms.dwLength = sizeof(ms);
-            if (!GlobalMemoryStatusEx(&ms)) return sk_int_new(0);
-            return sk_int_new((int)ms.ullTotalPhys);
-        #elif defined(__APPLE__)
-            long long pages = 0; long long page_size = 0;
-            size_t sz = sizeof(pages);
-            sysctlbyname("hw.memsize", &pages, &sz, NULL, 0);
-            page_size = 4096;
-            (void)page_size;
-            return sk_int_new((int)pages);
-        #else
-            long pages = sysconf(_SC_PHYS_PAGES);
-            long page_size = sysconf(_SC_PAGESIZE);
-            if (pages <= 0 || page_size <= 0) return sk_int_new(0);
-            return sk_int_new((int)(pages * page_size));
-        #endif
-    t114 = sk_int_new(0);
-    return t114;
-}
-
-void __sk__sleep(sk_int ms) {
-    if (ms.__is_null || ms.value <= 0) return;
-        #if defined(_WIN32)
-            Sleep((DWORD)ms.value);
-        #else
-            usleep((useconds_t)ms.value * 1000);
-        #endif
-    return;
-}
-
-sk_int __sk__monotonicMs(void) {
-    sk_int t115;
-
-    #if defined(_WIN32)
-            LARGE_INTEGER f, c;
-            QueryPerformanceFrequency(&f);
-            QueryPerformanceCounter(&c);
-            return sk_int_new((int)((c.QuadPart * 1000) / f.QuadPart));
-        #else
-            struct timespec ts;
-            clock_gettime(CLOCK_MONOTONIC, &ts);
-            return sk_int_new((int)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000));
-        #endif
-    t115 = sk_int_new(0);
-    return t115;
-}
-
-sk_int __sk__unixTime(void) {
-    sk_int t116;
-
-    return sk_int_new((int)time(NULL));
-    t116 = sk_int_new(0);
-    return t116;
-}
-
-sk_string __sk__unixTimeStr(sk_string fmt) {
-    sk_string t117;
-
-    time_t t = time(NULL);
-        struct tm tmv;
-        #if defined(_WIN32)
-            localtime_s(&tmv, &t);
-        #else
-            localtime_r(&t, &tmv);
-        #endif
-        const char* f = (fmt.__is_null || fmt.value == NULL) ? "%Y-%m-%d %H:%M:%S" : fmt.value;
-        char buf[256];
-        if (strftime(buf, sizeof(buf), f, &tmv) == 0) return sk_string_new("");
-        return sk_string_new(buf);
-    t117 = sk_string_new("");
-    return t117;
-}
-
-sk_int __sk__exec(sk_string cmd) {
-    sk_int t118;
-
-    if (cmd.__is_null || cmd.value == NULL) return sk_int_new(-1);
-        int rc = system(cmd.value);
-        #if defined(_WIN32)
-            return sk_int_new(rc);
-        #else
-            if (rc == -1) return sk_int_new(-1);
-            if (WIFEXITED(rc)) return sk_int_new(WEXITSTATUS(rc));
-            return sk_int_new(-1);
-        #endif
-    t118 = sk_int_new(-1);
-    return t118;
-}
-
-sk_dict_ref __sk__parse(sk_string text) {
-    sk_dict_ref t119;
-
-    if (text.__is_null) {
-            JsonParseError* err = malloc(sizeof(JsonParseError));
-            err->__type = "Error.JsonError.JsonParseError";
-            err->msg = sk_string_new("Cannot parse 'null'.");
-            sk_throw(err, "<builtin:std/json>", 340, 5);
-        }
-        sk_any res = __sk__json_parse(text.value);
-        if (res.type == 6 && strcmp(text.value, "null") != 0) {
-            JsonParser p;
-            p.src = text.value;
-            p.pos = 0;
-            p.len = (int)strlen(text.value);
-            __sk__json_skip_ws(&p);
-            if (p.pos + 4 <= p.len && strncmp(&p.src[p.pos], "null", 4) == 0) {
-                p.pos += 4;
-                __sk__json_skip_ws(&p);
-                if (p.pos != p.len) {
-                    JsonParseError* err = malloc(sizeof(JsonParseError));
-                    err->__type = "Error.JsonError.JsonParseError";
-                    err->msg = sk_string_new("Trailing garbage after JSON value.");
-                    sk_throw(err, "<builtin:std/json>", 350, 5);
-                }
-            } else {
-                JsonParseError* err = malloc(sizeof(JsonParseError));
-                err->__type = "Error.JsonError.JsonParseError";
-                err->msg = sk_string_new("Invalid JSON.");
-                sk_throw(err, "<builtin:std/json>", 355, 5);
-            }
-        }
-        if (res.type == 8) {
-            return any_to_dict(res);
-        }
-        sk_dict* d = sk_dict_new();
-        sk_dict_set(d, sk_string_new("value"), res);
-        return sk_dict_ref_new(d);
-    t119 = sk_dict_ref_new(sk_dict_new());
-    return t119;
-}
-
-sk_dict_ref __sk__parseFile(sk_string path) {
-    sk_dict_ref t120;
-
-    if (path.__is_null) {
-            JsonFileError* err = malloc(sizeof(JsonFileError));
-            err->__type = "Error.JsonError.JsonFileError";
-            err->msg = sk_string_new("Path cannot be null.");
-            sk_throw(err, "<builtin:std/json>", 380, 5);
-        }
-        FILE* f = fopen(path.value, "rb");
-        if (!f) {
-            JsonFileError* err = malloc(sizeof(JsonFileError));
-            err->__type = "Error.JsonError.JsonFileError";
-            err->msg = sk_string_new("Cannot open JSON file.");
-            sk_throw(err, "<builtin:std/json>", 386, 5);
-        }
-        fseek(f, 0, SEEK_END);
-        long size = ftell(f);
-        fseek(f, 0, SEEK_SET);
-        if (size <= 0) {
-            fclose(f);
-            JsonFileError* err = malloc(sizeof(JsonFileError));
-            err->__type = "Error.JsonError.JsonFileError";
-            err->msg = sk_string_new("JSON file is empty.");
-            sk_throw(err, "<builtin:std/json>", 396, 5);
-        }
-        char* content = malloc(size + 1);
-        size_t n = fread(content, 1, size, f);
-        content[n] = '\0';
-        fclose(f);
-        sk_any res = __sk__json_parse(content);
-        if (res.type == 6 && strcmp(content, "null") != 0) {
-            JsonParser p;
-            p.src = content;
-            p.pos = 0;
-            p.len = (int)n;
-            __sk__json_skip_ws(&p);
-            if (p.pos + 4 <= p.len && strncmp(&p.src[p.pos], "null", 4) == 0) {
-                p.pos += 4;
-                __sk__json_skip_ws(&p);
-                if (p.pos != p.len) {
-                    free(content);
-                    JsonParseError* err = malloc(sizeof(JsonParseError));
-                    err->__type = "Error.JsonError.JsonParseError";
-                    err->msg = sk_string_new("Trailing garbage after JSON value in file.");
-                    sk_throw(err, "<builtin:std/json>", 412, 5);
-                }
-            } else {
-                free(content);
-                JsonParseError* err = malloc(sizeof(JsonParseError));
-                err->__type = "Error.JsonError.JsonParseError";
-                err->msg = sk_string_new("Invalid JSON in file.");
-                sk_throw(err, "<builtin:std/json>", 418, 5);
-            }
-        }
-        free(content);
-        if (res.type == 8) {
-            return any_to_dict(res);
-        }
-        sk_dict* d = sk_dict_new();
-        sk_dict_set(d, sk_string_new("value"), res);
-        return sk_dict_ref_new(d);
-    t120 = sk_dict_ref_new(sk_dict_new());
-    return t120;
-}
-
-sk_any __sk__parseAny(sk_string text) {
-    sk_any t121;
-
-    if (text.__is_null) {
-            JsonParseError* err = malloc(sizeof(JsonParseError));
-            err->__type = "Error.JsonError.JsonParseError";
-            err->msg = sk_string_new("Cannot parse 'null'.");
-            sk_throw(err, "<builtin:std/json>", 440, 5);
-        }
-        sk_any res = __sk__json_parse(text.value);
-        if (res.type == 6 && strcmp(text.value, "null") != 0) {
-            JsonParser p;
-            p.src = text.value;
-            p.pos = 0;
-            p.len = (int)strlen(text.value);
-            __sk__json_skip_ws(&p);
-            if (p.pos + 4 <= p.len && strncmp(&p.src[p.pos], "null", 4) == 0) {
-                p.pos += 4;
-                __sk__json_skip_ws(&p);
-                if (p.pos != p.len) {
-                    JsonParseError* err = malloc(sizeof(JsonParseError));
-                    err->__type = "Error.JsonError.JsonParseError";
-                    err->msg = sk_string_new("Trailing garbage after JSON value.");
-                    sk_throw(err, "<builtin:std/json>", 452, 5);
-                }
-            } else {
-                JsonParseError* err = malloc(sizeof(JsonParseError));
-                err->__type = "Error.JsonError.JsonParseError";
-                err->msg = sk_string_new("Invalid JSON.");
-                sk_throw(err, "<builtin:std/json>", 457, 5);
-            }
-        }
-        return res;
-    t121 = SK_NULL_any;
-    return t121;
-}
-
-sk_string __sk__toString(sk_dict_ref data) {
-    sk_string t122;
-
-    if (data.__is_null) {
-            JsonSerializeError* err = malloc(sizeof(JsonSerializeError));
-            err->__type = "Error.JsonError.JsonSerializeError";
-            err->msg = sk_string_new("Cannot serialize 'null' dict.");
-            sk_throw(err, "<builtin:std/json>", 480, 5);
-        }
-        JsonOut o;
-        __sk__json_out_init(&o);
-        sk_any any = any_dict(data);
-        __sk__json_write_any(&o, any);
-        return sk_string_new_take(o.buf);
-    t122 = sk_string_new("");
-    return t122;
-}
-
-sk_string __sk__toStringAny(sk_any data) {
-    sk_string t123;
-
-    JsonOut o;
-        __sk__json_out_init(&o);
-        __sk__json_write_any(&o, data);
-        return sk_string_new_take(o.buf);
-    t123 = sk_string_new("");
-    return t123;
-}
-
-sk_bool __sk__isValid(sk_string text) {
-    sk_bool t124;
-
-    if (text.__is_null || text.value == NULL) return sk_bool_new(0);
-        JsonParser p;
-        p.src = text.value;
-        p.pos = 0;
-        p.len = (int)strlen(text.value);
-        sk_any res = __sk__json_parse_value(&p);
-        __sk__json_skip_ws(&p);
-        if (p.pos != p.len) return sk_bool_new(0);
-        if (res.type == 6) {
-            JsonParser p2;
-            p2.src = text.value;
-            p2.pos = 0;
-            p2.len = (int)strlen(text.value);
-            __sk__json_skip_ws(&p2);
-            if (p2.pos + 4 <= p2.len && strncmp(&p2.src[p2.pos], "null", 4) == 0) {
-                return sk_bool_new(1);
-            }
-            return sk_bool_new(0);
-        }
-        return sk_bool_new(1);
-    t124 = sk_bool_new(0);
-    return t124;
-}
-
-sk_bool __sk__isValidFile(sk_string path) {
-    sk_bool t125;
-
-    if (path.__is_null || path.value == NULL) return sk_bool_new(0);
-        FILE* f = fopen(path.value, "rb");
-        if (!f) return sk_bool_new(0);
-        fseek(f, 0, SEEK_END);
-        long size = ftell(f);
-        fseek(f, 0, SEEK_SET);
-        if (size <= 0) { fclose(f); return sk_bool_new(0); }
-        char* buf = malloc(size + 1);
-        size_t n = fread(buf, 1, size, f);
-        buf[n] = '\0';
-        fclose(f);
-        JsonParser p;
-        p.src = buf;
-        p.pos = 0;
-        p.len = (int)n;
-        sk_any res = __sk__json_parse_value(&p);
-        __sk__json_skip_ws(&p);
-        bool ok = 1;
-        if (p.pos != p.len) ok = 0;
-        if (res.type == 6) {
-            JsonParser p2;
-            p2.src = buf;
-            p2.pos = 0;
-            p2.len = (int)n;
-            __sk__json_skip_ws(&p2);
-            if (!(p2.pos + 4 <= p2.len && strncmp(&p2.src[p2.pos], "null", 4) == 0)) {
-                ok = 0;
-            }
-        }
-        free(buf);
-        return sk_bool_new(ok);
-    t125 = sk_bool_new(0);
-    return t125;
-}
-
-void __sk__print(sk_any line) {
-    sk_call_push("lib.sk", 6, 5);
-    __sk__sendln(line);
-    sk_call_pop();
-    return;
-}
-
-void __sk__println(sk_any msg) {
-    sk_call_push("lib.sk", 10, 5);
-    __sk__print(msg);
-    sk_call_pop();
     return;
 }
 

@@ -28,7 +28,7 @@ const (
 	maxIncludeFileSize  int64 = 64 << 20
 	maxLibrarySize      int64 = 64 << 20
 	maxIncludesSize     int64 = 4 << 20
-	maxPackageTotalSize int64 = 512 << 20
+	maxPackageTotalSize int64 = 1024 << 20
 	maxPackageEntries         = 8192
 )
 
