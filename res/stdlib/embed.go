@@ -29,6 +29,9 @@ var JSON_SK string
 //go:embed terminal.sk
 var TERMINAL_SK string
 
+//go:embed number.sk
+var NUMBER_SK string
+
 var StdLib = map[string]string{
 	"std/io":       IO_SK,
 	"std/os":       OS_SK,
@@ -39,6 +42,7 @@ var StdLib = map[string]string{
 	"std/math":     MATH_SK,
 	"std/arrays":   ARRAYS_SK,
 	"std/terminal": TERMINAL_SK,
+	"std/number":   NUMBER_SK,
 }
 
 func GetModule(path string) (string, bool) {

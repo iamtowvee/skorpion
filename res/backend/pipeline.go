@@ -1171,6 +1171,19 @@ func (p *Pipeline) processUnary(unary *front.UnaryExpr, irFn *IRFunction) IRValu
 		return IRValue{Type: "bool", Var: result}
 	}
 
+	if unary.Op == "NOT" {
+		expr := p.processExpression(unary.Expr, irFn)
+		result := p.newTemp()
+		irFn.Locals = append(irFn.Locals, IRLocal{Type: "int", Name: result})
+		irFn.Instructions = append(irFn.Instructions, IRInstruction{
+			Op:         OpBitNot,
+			Result:     result,
+			Arg1:       expr.Var,
+			ReturnType: "int",
+		})
+		return IRValue{Type: "int", Var: result}
+	}
+
 	if unary.Op == "-" {
 		exprType := p.getExprType(unary.Expr, irFn)
 		expr := p.processExpression(unary.Expr, irFn)
@@ -1847,6 +1860,12 @@ func (p *Pipeline) processBinary(bin *front.BinaryExpr, irFn *IRFunction) IRValu
 		return IRValue{Type: "bool", Var: result}
 	}
 
+	// === Битовые операции (только int) ===
+	if bin.Op == "<<" || bin.Op == ">>" ||
+		bin.Op == "AND" || bin.Op == "OR" || bin.Op == "XOR" || bin.Op == "NAND" {
+		return p.processBitwiseBinary(bin, irFn)
+	}
+
 	leftType := p.getExprType(bin.Left, irFn)
 	rightType := p.getExprType(bin.Right, irFn)
 
@@ -2042,6 +2061,38 @@ func (p *Pipeline) processAnyBinary(bin *front.BinaryExpr, left, right IRValue, 
 	return IRValue{Type: "any", Var: result}
 }
 
+func (p *Pipeline) processBitwiseBinary(bin *front.BinaryExpr, irFn *IRFunction) IRValue {
+	left := p.processExpression(bin.Left, irFn)
+	right := p.processExpression(bin.Right, irFn)
+	result := p.newTemp()
+	irFn.Locals = append(irFn.Locals, IRLocal{Type: "int", Name: result})
+
+	var opcode Opcode
+	switch bin.Op {
+	case "<<":
+		opcode = OpShl
+	case ">>":
+		opcode = OpShr
+	case "AND":
+		opcode = OpBitAnd
+	case "OR":
+		opcode = OpBitOr
+	case "XOR":
+		opcode = OpBitXor
+	case "NAND":
+		opcode = OpBitNand
+	}
+
+	irFn.Instructions = append(irFn.Instructions, IRInstruction{
+		Op:         opcode,
+		Result:     result,
+		Arg1:       left.Var,
+		Arg2:       right.Var,
+		ReturnType: "int",
+	})
+	return IRValue{Type: "int", Var: result}
+}
+
 func (p *Pipeline) processCharBinary(bin *front.BinaryExpr, leftType, rightType string, irFn *IRFunction) IRValue {
 	if bin.Op != "+" || !(leftType == "char" || leftType == "string") || !(rightType == "char" || rightType == "string") {
 		errors.NewError("1520",
@@ -2211,6 +2262,18 @@ func (p *Pipeline) processExpression(expr front.Node, irFn *IRFunction) IRValue 
 
 func (p *Pipeline) emitNumber(n *front.Number, irFn *IRFunction) IRValue {
 	result := p.newTemp()
+
+	// Префиксы 0x, 0b, 0o
+	if len(n.Value) > 2 && n.Value[0] == '0' {
+		prefix := n.Value[1]
+		if prefix == 'x' || prefix == 'X' || prefix == 'b' || prefix == 'B' || prefix == 'o' || prefix == 'O' {
+			v, _ := strconv.ParseInt(n.Value, 0, 64)
+			irFn.Locals = append(irFn.Locals, IRLocal{Type: "int", Name: result})
+			irFn.Instructions = append(irFn.Instructions, NewConstInt(result, v))
+			return IRValue{Type: "int", Var: result}
+		}
+	}
+
 	if strings.HasSuffix(n.Value, "f") || strings.HasSuffix(n.Value, "F") {
 		val := n.Value[:len(n.Value)-1]
 		irFn.Locals = append(irFn.Locals, IRLocal{Type: "float", Name: result})
@@ -2804,6 +2867,12 @@ func (p *Pipeline) getDeclaredType(expr front.Node, irFn *IRFunction) string {
 		}
 		return "unknown"
 	case *front.Number:
+		if len(n.Value) > 2 && n.Value[0] == '0' {
+			prefix := n.Value[1]
+			if prefix == 'x' || prefix == 'X' || prefix == 'b' || prefix == 'B' || prefix == 'o' || prefix == 'O' {
+				return "int"
+			}
+		}
 		if strings.HasSuffix(n.Value, "f") || strings.HasSuffix(n.Value, "F") {
 			return "float"
 		}
@@ -3545,6 +3614,13 @@ func (p *Pipeline) processToArr(args []front.Node, irFn *IRFunction) IRValue {
 func (p *Pipeline) getExprType(expr front.Node, irFn *IRFunction) string {
 	switch n := expr.(type) {
 	case *front.Number:
+		// Префиксы 0x, 0b, 0o — всегда int
+		if len(n.Value) > 2 && n.Value[0] == '0' {
+			prefix := n.Value[1]
+			if prefix == 'x' || prefix == 'X' || prefix == 'b' || prefix == 'B' || prefix == 'o' || prefix == 'O' {
+				return "int"
+			}
+		}
 		if strings.HasSuffix(n.Value, "f") || strings.HasSuffix(n.Value, "F") {
 			return "float"
 		}

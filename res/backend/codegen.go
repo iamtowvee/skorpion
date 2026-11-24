@@ -257,6 +257,13 @@ func (cg *CodeGenerator) writeTypes() {
 	cg.writeLine("sk_int sk_int_div(sk_int a, sk_int b) { if (a.__is_null || b.__is_null || b.value == 0) return SK_NULL_int; return sk_int_new(a.value / b.value); }")
 	cg.writeLine("sk_int sk_int_mod(sk_int a, sk_int b) { if (a.__is_null || b.__is_null || b.value == 0) return SK_NULL_int; return sk_int_new(a.value % b.value); }")
 	cg.writeLine("sk_int sk_int_neg(sk_int a) { if (a.__is_null) return SK_NULL_int; return sk_int_new(-a.value); }")
+	cg.writeLine("sk_int sk_int_shl(sk_int a, sk_int b) { if (a.__is_null || b.__is_null) return SK_NULL_int; return sk_int_new(a.value << b.value); }")
+	cg.writeLine("sk_int sk_int_shr(sk_int a, sk_int b) { if (a.__is_null || b.__is_null) return SK_NULL_int; return sk_int_new(a.value >> b.value); }")
+	cg.writeLine("sk_int sk_int_and(sk_int a, sk_int b) { if (a.__is_null || b.__is_null) return SK_NULL_int; return sk_int_new(a.value & b.value); }")
+	cg.writeLine("sk_int sk_int_or(sk_int a, sk_int b) { if (a.__is_null || b.__is_null) return SK_NULL_int; return sk_int_new(a.value | b.value); }")
+	cg.writeLine("sk_int sk_int_xor(sk_int a, sk_int b) { if (a.__is_null || b.__is_null) return SK_NULL_int; return sk_int_new(a.value ^ b.value); }")
+	cg.writeLine("sk_int sk_int_nand(sk_int a, sk_int b) { if (a.__is_null || b.__is_null) return SK_NULL_int; return sk_int_new(~(a.value & b.value)); }")
+	cg.writeLine("sk_int sk_int_not(sk_int a) { if (a.__is_null) return SK_NULL_int; return sk_int_new(~a.value); }")
 	cg.writeLine("sk_int sk_int_pow(sk_int a, sk_int b) {")
 	cg.writeLine("    if (a.__is_null || b.__is_null) return SK_NULL_int;")
 	cg.writeLine("    if (b.value < 0) return SK_NULL_int;")
@@ -1707,6 +1714,21 @@ func (cg *CodeGenerator) emit(ins *IRInstruction, fn *IRFunction) {
 		}
 
 		cg.writeLine(fmt.Sprintf("%s%s = %s(%s, %s);", indent, ins.Result, fnName, ins.Arg1, ins.Arg2))
+
+	case OpShl:
+		cg.writeLine(fmt.Sprintf("%s%s = sk_int_shl(%s, %s);", indent, ins.Result, ins.Arg1, ins.Arg2))
+	case OpShr:
+		cg.writeLine(fmt.Sprintf("%s%s = sk_int_shr(%s, %s);", indent, ins.Result, ins.Arg1, ins.Arg2))
+	case OpBitAnd:
+		cg.writeLine(fmt.Sprintf("%s%s = sk_int_and(%s, %s);", indent, ins.Result, ins.Arg1, ins.Arg2))
+	case OpBitOr:
+		cg.writeLine(fmt.Sprintf("%s%s = sk_int_or(%s, %s);", indent, ins.Result, ins.Arg1, ins.Arg2))
+	case OpBitXor:
+		cg.writeLine(fmt.Sprintf("%s%s = sk_int_xor(%s, %s);", indent, ins.Result, ins.Arg1, ins.Arg2))
+	case OpBitNand:
+		cg.writeLine(fmt.Sprintf("%s%s = sk_int_nand(%s, %s);", indent, ins.Result, ins.Arg1, ins.Arg2))
+	case OpBitNot:
+		cg.writeLine(fmt.Sprintf("%s%s = sk_int_not(%s);", indent, ins.Result, ins.Arg1))
 
 	// --- Логика ---
 	case OpAnd:

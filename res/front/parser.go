@@ -1885,6 +1885,16 @@ func (p *Parser) parseUnary() Node {
 
 	pos := p.pos()
 
+	// --- NOT (побитовое) ---
+	if p.peek.Type == TOKEN_BIT_NOT {
+		p.advance()
+		expr := p.parseUnary()
+		if expr == nil {
+			return nil
+		}
+		return &UnaryExpr{Position: pos, Op: "NOT", Expr: expr}
+	}
+
 	if p.peek.Type == TOKEN_KEYWORD && p.peek.Literal == "await" {
 		p.advance()
 		expr := p.parseUnary()
@@ -2069,13 +2079,21 @@ func (p *Parser) parseBinary(prec int) Node {
 			nextPrec = 6
 		case TOKEN_POW:
 			nextPrec = 5
+		case TOKEN_SHL, TOKEN_SHR:
+			nextPrec = 5
 		case TOKEN_STAR, TOKEN_SLASH, TOKEN_PERCENT:
 			nextPrec = 4
 		case TOKEN_PLUS, TOKEN_MINUS:
 			nextPrec = 3
+		case TOKEN_BIT_AND:
+			nextPrec = 3
+		case TOKEN_BIT_XOR:
+			nextPrec = 2
 		case TOKEN_LT, TOKEN_GT, TOKEN_EQUALS,
 			TOKEN_NEQ, TOKEN_EQEQ, TOKEN_LTE, TOKEN_GTE:
 			nextPrec = 2
+		case TOKEN_BIT_OR, TOKEN_BIT_NAND:
+			nextPrec = 1
 		case TOKEN_AND:
 			nextPrec = 1
 		case TOKEN_OR:

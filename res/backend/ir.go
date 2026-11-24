@@ -110,6 +110,14 @@ const (
 	OpDictSet Opcode = "dict_set" // Arg1[Arg2] = Arg3
 	OpDictGet Opcode = "dict_get" // Result = Arg1[Arg2] (always any)
 
+	OpShl     Opcode = "shl"
+	OpShr     Opcode = "shr"
+	OpBitAnd  Opcode = "bit_and"
+	OpBitOr   Opcode = "bit_or"
+	OpBitXor  Opcode = "bit_xor"
+	OpBitNot  Opcode = "bit_not"
+	OpBitNand Opcode = "bit_nand"
+
 	// --- Вызов функции ---
 	OpCall Opcode = "call" // Result = Arg1(Arg2...) — Arg1 = имя, Arg2 = "a, b, c"
 

@@ -411,6 +411,12 @@ type Number struct {
 
 func (n *Number) GetType() NodeType { return NODE_NUMBER }
 func (n *Number) GetTypeString() string {
+	if len(n.Value) > 2 && n.Value[0] == '0' {
+		prefix := n.Value[1]
+		if prefix == 'x' || prefix == 'X' || prefix == 'b' || prefix == 'B' || prefix == 'o' || prefix == 'O' {
+			return "int"
+		}
+	}
 	if strings.HasSuffix(n.Value, "f") || strings.HasSuffix(n.Value, "F") {
 		return "float"
 	}

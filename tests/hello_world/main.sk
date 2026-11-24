@@ -3,6 +3,7 @@ use std/files &fs
 use std/io
 use std/os
 use std/json
+use std/number
 
 const arr X = [15]
 
@@ -70,6 +71,12 @@ void main(arr args) {
 SOMETHING
 """
     io.sendln(x)
+    io.sendln(255 == 0xFF)      // 255
+    io.sendln(number.toNum(0b1010, "decimal"))    // 10
+    io.sendln($0o17)      // 0o17
+    io.sendln($0x0F)      // 0x0F
+    io.sendln($0x0f)      // 0x0F
+    io.sendln($0b1111)    // 0b1111
 
     const dict d = {x: "hi"}
     dict fd = d

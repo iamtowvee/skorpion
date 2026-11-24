@@ -239,6 +239,12 @@ func (sa *SemanticAnalyzer) registerGlobalVars() {
 func (sa *SemanticAnalyzer) getGlobalInitType(node front.Node) string {
 	switch n := node.(type) {
 	case *front.Number:
+		if len(n.Value) > 2 && n.Value[0] == '0' {
+			prefix := n.Value[1]
+			if prefix == 'x' || prefix == 'X' || prefix == 'b' || prefix == 'B' || prefix == 'o' || prefix == 'O' {
+				return "int"
+			}
+		}
 		if strings.HasSuffix(n.Value, "f") || strings.HasSuffix(n.Value, "F") {
 			return "float"
 		}
@@ -1331,6 +1337,21 @@ func (sa *SemanticAnalyzer) analyzeNumber(num *front.Number) front.Node {
 	if strings.HasSuffix(value, "f") || strings.HasSuffix(value, "F") {
 		value = value[:len(value)-1]
 	}
+
+	// Если есть префикс 0x, 0b, 0o — парсим через ParseInt с базой 0
+	if len(value) > 2 && value[0] == '0' {
+		prefix := value[1]
+		if prefix == 'x' || prefix == 'X' || prefix == 'b' || prefix == 'B' || prefix == 'o' || prefix == 'O' {
+			_, err := strconv.ParseInt(value, 0, 64)
+			if err != nil {
+				sa.addError("1513", fmt.Sprintf("Invalid number '%s'", num.Value),
+					num.GetLine(), num.GetColumn(), sa.CurrentFile)
+			}
+			return num
+		}
+	}
+
+	// Обычное число
 	if _, err := strconv.Atoi(value); err != nil {
 		if _, err := strconv.ParseFloat(value, 64); err != nil {
 			sa.addError("1513", fmt.Sprintf("Invalid number '%s'", num.Value),
@@ -1835,6 +1856,12 @@ func (sa *SemanticAnalyzer) getNodeType(node front.Node) string {
 	case *front.NotReady:
 		return "void"
 	case *front.Number:
+		if len(n.Value) > 2 && n.Value[0] == '0' {
+			prefix := n.Value[1]
+			if prefix == 'x' || prefix == 'X' || prefix == 'b' || prefix == 'B' || prefix == 'o' || prefix == 'O' {
+				return "int"
+			}
+		}
 		if strings.HasSuffix(n.Value, "f") || strings.HasSuffix(n.Value, "F") {
 			return "float"
 		}

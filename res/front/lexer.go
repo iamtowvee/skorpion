@@ -64,6 +64,13 @@ const (
 	TOKEN_TILDE
 	TOKEN_VERSION // @1.0.0
 	TOKEN_ELLIPSIS
+	TOKEN_SHL      // <<
+	TOKEN_SHR      // >>
+	TOKEN_BIT_AND  // AND
+	TOKEN_BIT_OR   // OR
+	TOKEN_BIT_XOR  // XOR
+	TOKEN_BIT_NOT  // NOT
+	TOKEN_BIT_NAND // NAND
 )
 
 type Token struct {
@@ -248,6 +255,12 @@ func (l *Lexer) NextToken() Token {
 		}
 		return l.makeToken(TOKEN_NOT, "!")
 	case '<':
+		if l.peek() == '<' {
+			col := l.col
+			l.pos += 2
+			l.col += 2
+			return Token{Type: TOKEN_SHL, Literal: "<<", Line: l.line, Column: col}
+		}
 		if l.peek() == '=' {
 			col := l.col
 			l.pos += 2
@@ -256,6 +269,12 @@ func (l *Lexer) NextToken() Token {
 		}
 		return l.makeToken(TOKEN_LT, "<")
 	case '>':
+		if l.peek() == '>' {
+			col := l.col
+			l.pos += 2
+			l.col += 2
+			return Token{Type: TOKEN_SHR, Literal: ">>", Line: l.line, Column: col}
+		}
 		if l.peek() == '=' {
 			col := l.col
 			l.pos += 2
@@ -458,6 +477,11 @@ func (l *Lexer) readIdent() Token {
 		"true":     TOKEN_KEYWORD,
 		"false":    TOKEN_KEYWORD,
 		"T":        TOKEN_KEYWORD,
+		"AND":      TOKEN_BIT_AND,
+		"OR":       TOKEN_BIT_OR,
+		"XOR":      TOKEN_BIT_XOR,
+		"NOT":      TOKEN_BIT_NOT,
+		"NAND":     TOKEN_BIT_NAND,
 		"new":      TOKEN_KEYWORD,
 		"inherit":  TOKEN_KEYWORD,
 		"Error":    TOKEN_KEYWORD,
@@ -534,13 +558,52 @@ func (l *Lexer) readCharLit() Token {
 	return Token{Type: TOKEN_CHARLIT, Literal: string(ch), Line: l.line, Column: startCol}
 }
 
+func isHexDigit(c byte) bool {
+	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+}
+
 func (l *Lexer) readNumber() Token {
 	start := l.pos
 	startCol := l.col
+
+	// Минус
 	if l.input[l.pos] == '-' {
 		l.pos++
 		l.col++
 	}
+
+	// Префиксы 0x, 0b, 0o
+	if l.pos+1 < len(l.input) && l.input[l.pos] == '0' {
+		next := l.input[l.pos+1]
+		if next == 'x' || next == 'X' {
+			l.pos += 2
+			l.col += 2
+			for l.pos < len(l.input) && isHexDigit(l.input[l.pos]) {
+				l.pos++
+				l.col++
+			}
+			return Token{Type: TOKEN_NUMBER, Literal: l.input[start:l.pos], Line: l.line, Column: startCol}
+		}
+		if next == 'b' || next == 'B' {
+			l.pos += 2
+			l.col += 2
+			for l.pos < len(l.input) && (l.input[l.pos] == '0' || l.input[l.pos] == '1') {
+				l.pos++
+				l.col++
+			}
+			return Token{Type: TOKEN_NUMBER, Literal: l.input[start:l.pos], Line: l.line, Column: startCol}
+		}
+		if next == 'o' || next == 'O' {
+			l.pos += 2
+			l.col += 2
+			for l.pos < len(l.input) && l.input[l.pos] >= '0' && l.input[l.pos] <= '7' {
+				l.pos++
+				l.col++
+			}
+			return Token{Type: TOKEN_NUMBER, Literal: l.input[start:l.pos], Line: l.line, Column: startCol}
+		}
+	}
+
 	for l.pos < len(l.input) && unicode.IsDigit(rune(l.input[l.pos])) {
 		l.pos++
 		l.col++

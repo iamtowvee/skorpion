@@ -1,0 +1,190 @@
+/* ------------------------------------
+                std/number
+    ---------------------------------
+      SPDX-License-Identifier: MIT
+      Copyrights (c) 2026 iamtowvee
+  ------------------------------------- */
+
+new NumberFormatError{} inherit Error
+
+includeC ~~~
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include <ctype.h>
+
+// Конвертирует строку в число с учётом префикса (0x, 0b, 0o, 0d)
+// Возвращает 1 при успехе, 0 при ошибке.
+static int __sk__num_parse(const char* s, long long* out) {
+    if (!s || !*s) return 0;
+    const char* p = s;
+    int neg = 0;
+    if (*p == '-') { neg = 1; p++; }
+    else if (*p == '+') { p++; }
+
+    int base = 10;
+    if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) { base = 16; p += 2; }
+    else if (p[0] == '0' && (p[1] == 'b' || p[1] == 'B')) { base = 2; p += 2; }
+    else if (p[0] == '0' && (p[1] == 'o' || p[1] == 'O')) { base = 8; p += 2; }
+    else if (p[0] == '0' && (p[1] == 'd' || p[1] == 'D')) { base = 10; p += 2; }
+
+    if (!*p) return 0;
+
+    char* end = NULL;
+    errno = 0;
+    long long v = strtoll(p, &end, base);
+    if (errno != 0 || end == p) return 0;
+    // Пропускаем trailing whitespace
+    while (*end && isspace((unsigned char)*end)) end++;
+    if (*end != '\0') return 0;
+
+    *out = neg ? -v : v;
+    return 1;
+}
+
+// Форматирует число в строку с указанным префиксом.
+// out: "hex", "bin", "oct", "dec" (или "decimal")
+static char* __sk__num_format(long long n, const char* out) {
+    char* buf = malloc(80);
+    if (!buf) return NULL;
+
+    if (!out || strcmp(out, "dec") == 0 || strcmp(out, "decimal") == 0) {
+        snprintf(buf, 80, "%lld", n);
+        return buf;
+    }
+
+    if (n < 0) {
+        // Отрицательные: для hex/bin/oct используем decimal
+        snprintf(buf, 80, "%lld", n);
+        return buf;
+    }
+
+    if (strcmp(out, "hex") == 0 || strcmp(out, "h") == 0) {
+        snprintf(buf, 80, "0x%llx", n);
+        return buf;
+    }
+    if (strcmp(out, "bin") == 0 || strcmp(out, "b") == 0) {
+        char tmp[65];
+        int i = 0;
+        if (n == 0) { tmp[i++] = '0'; }
+        else {
+            unsigned long long v = (unsigned long long)n;
+            while (v > 0) { tmp[i++] = '0' + (v & 1); v >>= 1; }
+        }
+        int j = 0;
+        buf[j++] = '0'; buf[j++] = 'b';
+        for (int k = i - 1; k >= 0; k--) buf[j++] = tmp[k];
+        buf[j] = '\0';
+        return buf;
+    }
+    if (strcmp(out, "oct") == 0 || strcmp(out, "o") == 0) {
+        snprintf(buf, 80, "0o%llo", n);
+        return buf;
+    }
+
+    // fallback — decimal
+    snprintf(buf, 80, "%lld", n);
+    return buf;
+}
+~~~
+
+/* === Парсинг числа из строки === */
+
+// toNum(value, out) — приводит значение к числу.
+// value может быть: int, float, double, bool, char, string (с префиксом или без).
+// out: "decimal", "hex", "bin", "oct", "dec", "h", "b", "o".
+// Возвращает строку (с префиксом) — потому что, например, 255 в hex → "0xff".
+string toNum(any value, string out) {
+  includeC ~~~
+    if (value.type == 6) {
+        return sk_string_new("null");
+    }
+
+    long long n = 0;
+    int ok = 0;
+
+    switch (value.type) {
+        case 0: n = value.data.i; ok = 1; break;       // int
+        case 2: n = (long long)value.data.f; ok = 1; break; // float
+        case 3: n = (long long)value.data.d; ok = 1; break; // double
+        case 4: n = value.data.b ? 1 : 0; ok = 1; break;     // bool
+        case 7: n = (long long)(unsigned char)value.data.i; ok = 1; break; // char
+        case 1: {                                       // string
+            if (__sk__num_parse(value.data.s, &n)) { ok = 1; }
+            break;
+        }
+    }
+
+    if (!ok) {
+        NumberFormatError* err = malloc(sizeof(NumberFormatError));
+        err->__type = "Error.NumberFormatError";
+        err->msg = sk_string_new("Cannot convert value to number.");
+        sk_throw(err, "<builtin:std/number>", 0, 0);
+    }
+
+    char* result = __sk__num_format(n, out.__is_null ? "dec" : out.value);
+    if (!result) {
+        return sk_string_new("");
+    }
+    return sk_string_new_take(result);
+  ~~~
+  return ""
+}
+
+/* === Проверка: является ли строка числом === */
+
+bool isNum(string s) {
+  includeC ~~~
+    if (s.__is_null || s.value == NULL) {
+        return sk_bool_new(0);
+    }
+    long long dummy;
+    return sk_bool_new(__sk__num_parse(s.value, &dummy));
+  ~~~
+  return false
+}
+
+/* === Извлечь префикс числа (если есть) === */
+
+string getPrefix(string s) {
+  includeC ~~~
+    if (s.__is_null || s.value == NULL) {
+        return sk_string_new("");
+    }
+    const char* p = s.value;
+    if (*p == '-' || *p == '+') p++;
+    if (p[0] == '0') {
+        if (p[1] == 'x' || p[1] == 'X') return sk_string_new("0x");
+        if (p[1] == 'b' || p[1] == 'B') return sk_string_new("0b");
+        if (p[1] == 'o' || p[1] == 'O') return sk_string_new("0o");
+        if (p[1] == 'd' || p[1] == 'D') return sk_string_new("0d");
+    }
+    return sk_string_new("");
+  ~~~
+  return ""
+}
+
+/* === Убрать префикс (оставить только цифры) === */
+
+string stripPrefix(string s) {
+  includeC ~~~
+    if (s.__is_null || s.value == NULL) {
+        return sk_string_new("");
+    }
+    const char* p = s.value;
+    int neg = 0;
+    if (*p == '-') { neg = 1; p++; }
+    else if (*p == '+') { p++; }
+    if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X' || p[1] == 'b' || p[1] == 'B' || p[1] == 'o' || p[1] == 'O' || p[1] == 'd' || p[1] == 'D')) {
+        p += 2;
+    }
+    if (neg) {
+        char* buf = malloc(strlen(p) + 2);
+        buf[0] = '-';
+        strcpy(buf + 1, p);
+        return sk_string_new_take(buf);
+    }
+    return sk_string_new(p);
+  ~~~
+  return ""
+}

@@ -914,6 +914,11 @@ func numberStripSuffix(s string) string {
 // numberParseFloat — парсит число как float64 (без суффикса)
 func numberParseFloat(s string) float64 {
 	v := numberStripSuffix(s)
+	if len(v) > 2 && v[0] == '0' {
+		if i, err := strconv.ParseInt(v, 0, 64); err == nil {
+			return float64(i)
+		}
+	}
 	f, _ := strconv.ParseFloat(v, 64)
 	return f
 }
@@ -921,6 +926,11 @@ func numberParseFloat(s string) float64 {
 // numberParseInt — парсит число как int (ok = true, если получилось)
 func numberParseInt(s string) (int, bool) {
 	v := numberStripSuffix(s)
+	if len(v) > 2 && v[0] == '0' {
+		if i, err := strconv.ParseInt(v, 0, 64); err == nil {
+			return int(i), true
+		}
+	}
 	i, err := strconv.Atoi(v)
 	return i, err == nil
 }
